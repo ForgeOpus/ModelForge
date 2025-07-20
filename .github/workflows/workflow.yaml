@@ -11,7 +11,7 @@ on:
 env:
   PACKAGE_NAME: "modelforge-finetuning"
   OWNER: "RETR0-OS"
-  TAP_NAME: "BREW_TAP_TOKEN"
+  TAP_NAME: "ModelForge"
 
 jobs:
   details:
