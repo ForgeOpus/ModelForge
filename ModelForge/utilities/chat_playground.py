@@ -66,18 +66,29 @@ class PlaygroundModel:
             print(traceback.format_exc())
             exit(1)
 
-    def generate_response(self, prompt: str, context=None, temperature=0.2, top_p=0.92, top_k=50, repetition_penalty=1.3):
+    def generate_response(self, prompt: str, context=None, temperature=0.2, top_p=0.92, top_k=50,
+                          repetition_penalty=1.3):
         try:
+            tokenizer = self.generator.tokenizer
+            model_config = self.generator.model.config
+            max_length = getattr(model_config, "max_position_embeddings", 2048)
+            input_ids = tokenizer(prompt, return_tensors="pt").input_ids
+            input_len = input_ids.shape[1]
+            max_new_tokens = max(32, max_length - input_len)
+
+            if input_len >= max_length:
+                prompt = tokenizer.decode(input_ids[0, -max_length + 32:])
+                print("Prompt truncated to fit model context window.")
+
             if context is None:
                 response = self.generator(
                     prompt,
-                    max_length=1000,
+                    max_new_tokens=max_new_tokens,
                     do_sample=True,
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
                     repetition_penalty=repetition_penalty,
-                    num_beams=1,
                 )[0]['generated_text']
             else:
                 response = self.generator(
@@ -85,7 +96,8 @@ class PlaygroundModel:
                     context=context,
                 )["answer"]
             return response
-        except KeyboardInterrupt:
+        except Exception as e:
+            print(f"Error during generation: {e}")
             return ""
 
     def chat(self):
@@ -137,13 +149,10 @@ class PlaygroundModel:
             self.clean_up()
 
     def clean_up(self):
-        if hasattr(self, 'model'):
-            del self.model
-        if hasattr(self, 'tokenizer'):
-            del self.tokenizer
+        if hasattr(self, 'generator'):
+            del self.generator
         torch.cuda.empty_cache()
         print("Resources cleaned")
-        exit(1)
 
 
 if __name__ == "__main__":
