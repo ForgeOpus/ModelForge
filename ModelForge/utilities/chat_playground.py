@@ -32,6 +32,9 @@ class ModelForgeConfig(BaseModel):
             raise ValueError("pipeline_task must be a string")
 
 class PlaygroundModel:
+
+    MIN_CONTEXT_LENGTH = 32
+
     def __init__(self, model_path: str):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         if self.device == "cpu":
@@ -74,7 +77,7 @@ class PlaygroundModel:
             max_length = getattr(model_config, "max_position_embeddings", 2048)
             input_ids = tokenizer(prompt, return_tensors="pt").input_ids
             input_len = input_ids.shape[1]
-            max_new_tokens = max(32, max_length - input_len)
+            max_new_tokens = max(self.MIN_CONTEXT_LENGTH, max_length - input_len)
 
             if input_len >= max_length:
                 prompt = tokenizer.decode(input_ids[0, -max_length + 32:])
