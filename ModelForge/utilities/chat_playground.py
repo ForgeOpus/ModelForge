@@ -80,7 +80,7 @@ class PlaygroundModel:
             max_new_tokens = max(self.MIN_CONTEXT_LENGTH, max_length - input_len)
 
             if input_len >= max_length:
-                prompt = tokenizer.decode(input_ids[0, -max_length + 32:])
+                prompt = tokenizer.decode(input_ids[0, -max_length + self.MIN_CONTEXT_LENGTH:])
                 print("Prompt truncated to fit model context window.")
 
             if context is None:
