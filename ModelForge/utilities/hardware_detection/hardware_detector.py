@@ -1,8 +1,8 @@
 import psutil
 import pynvml
 import logging
-from typing import Dict, List, Tuple, Union, Optional
-from .config_manager import ConfigurationManager
+from typing import Dict, List, Tuple, Union
+from utilities.hardware_detection.config_manager import ConfigurationManager
 from .model_recommendation import ModelRecommendationEngine
 
 

@@ -1,9 +1,9 @@
 import os
 
-from ..utilities.DBManager import DatabaseManager
-from ..utilities.FileManager import FileManager
-from ..utilities.hardware_detector import HardwareDetector
-from ..utilities.settings_builder import SettingsBuilder
+from utilities.settings_managers.DBManager import DatabaseManager
+from utilities.settings_managers.FileManager import FileManager
+from utilities.hardware_detection.hardware_detector import HardwareDetector
+from utilities.finetuning.settings_builder import SettingsBuilder
 
 class GlobalSettings:
     _instance = None
