@@ -58,7 +58,11 @@ async def push_model_to_hub(request: Request) -> JSONResponse:
                 token=os.getenv("HUGGINGFACE_TOKEN"),
             )
 
-            return JSONResponse({"message": f"Model pushed to HuggingFace Hub at '{repo_name}' successfully."}, status_code=200)
+            return JSONResponse(
+                {"message": f"Model pushed to HuggingFace Hub at '{repo_name}' successfully."
+                            f"Navigate to https://huggingface.co/{repo_name} to view your model"
+                            f"and edit the model card."},
+                status_code=200)
     except GatedRepoError:
         return JSONResponse({"error": f"The repository '{repo_name}' is gated. "
                                       f"Please request access from the repository owner on huggingface.co."}, status_code=403)

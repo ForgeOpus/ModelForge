@@ -9,7 +9,6 @@ const ListAllModels = () => {
   const [error, setError] = useState(null);
   const [selectedModel, setSelectedModel] = useState(null);
   const [showPushForm, setShowPushForm] = useState(false);
-  const [successMessage, setSuccessMessage] = useState("");
   const [showErrorDialog, setShowErrorDialog] = useState(false);
   const [errorDetails, setErrorDetails] = useState(null);
 
@@ -34,10 +33,8 @@ const ListAllModels = () => {
   }, []);
 
   const handlePushSuccess = (message) => {
-    setSuccessMessage(message);
     setShowPushForm(false);
     setSelectedModel(null);
-    setTimeout(() => setSuccessMessage(""), 5000);
   };
 
   const handleCloseForm = () => {
@@ -176,11 +173,6 @@ const ListAllModels = () => {
         <PushToHubForm model={selectedModel} onClose={handleCloseForm} onPush={handlePushSuccess} />
       )}
 
-      {successMessage && (
-        <div className="fixed bottom-4 right-4 bg-green-500 text-white rounded-lg py-2 px-4 shadow-lg">
-          {successMessage}
-        </div>
-      )}
 
       <ErrorDialog
         isOpen={showErrorDialog}
