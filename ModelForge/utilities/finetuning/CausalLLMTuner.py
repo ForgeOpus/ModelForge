@@ -4,7 +4,7 @@ from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from typing import Dict, Optional
-from utilities.finetuning.Finetuner import Finetuner
+from .Finetuner import Finetuner
 import os
 from huggingface_hub import errors as hf_errors
 import traceback

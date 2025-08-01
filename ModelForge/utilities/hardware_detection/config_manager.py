@@ -1,5 +1,4 @@
 import json
-import os
 import logging
 from typing import Dict, Any, List, Optional
 from pathlib import Path
@@ -18,7 +17,7 @@ class ConfigurationManager:
         """
         if config_dir is None:
             # Default to configs directory relative to this file
-            current_dir = Path(__file__).parent
+            current_dir = Path(__file__).parent.parent
             config_dir = current_dir / "configs"
         
         self.config_dir = Path(config_dir)

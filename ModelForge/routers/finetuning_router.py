@@ -9,10 +9,10 @@ from fastapi import Request
 from starlette.responses import JSONResponse
 from pydantic import BaseModel, field_validator
 
-from utilities.settings_managers.CausalLLMTuner import CausalLLMFinetuner
-from utilities.finetuning.QuestionAnsweringTuner import QuestionAnsweringTuner
-from utilities.finetuning.Seq2SeqLMTuner import Seq2SeqFinetuner
-from utilities.hardware_detection.model_validator import ModelValidator
+from ..utilities.finetuning.CausalLLMTuner import CausalLLMFinetuner
+from ..utilities.finetuning.QuestionAnsweringTuner import QuestionAnsweringTuner
+from ..utilities.finetuning.Seq2SeqLMTuner import Seq2SeqFinetuner
+from ..utilities.hardware_detection.model_validator import ModelValidator
 
 from ..globals.globals_instance import global_manager
 

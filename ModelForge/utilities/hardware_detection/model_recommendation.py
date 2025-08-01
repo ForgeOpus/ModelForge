@@ -1,6 +1,6 @@
 import logging
 from typing import Dict, List, Tuple
-from utilities.hardware_detection.config_manager import ConfigurationManager
+from .config_manager import ConfigurationManager
 
 
 class ModelRecommendationEngine:

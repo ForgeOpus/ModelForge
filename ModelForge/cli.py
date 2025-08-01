@@ -6,6 +6,7 @@ from huggingface_hub import HfApi
 from huggingface_hub import errors as hf_errors
 import os
 import signal
+from socket import gaierror
 
 load_dotenv()
 
@@ -14,7 +15,6 @@ def main():
         ## Validate HuggingFace login
         try:
             api = HfApi()
-            api.whoami()
         except hf_errors.LocalTokenNotFoundError:
             print(f"""
             {'*' * 100}
@@ -27,6 +27,14 @@ def main():
             {'*' * 100}
             """)
             os.kill(os.getpid(), signal.SIGTERM)
+        except gaierror:
+            warnings.warn(
+                """
+                You are not connected to the internet.\n
+                Downloading new models from Hugging Face is not enabled.\n
+                Please connect to the internet to finetune any new models.
+                """
+            )
         except hf_errors.HTTPError:
             warnings.warn(
                 """

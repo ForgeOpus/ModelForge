@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [tool.setuptools]
-packages = ["ModelForge", "ModelForge.globals", "ModelForge.routers", "ModelForge.utilities"]
+packages = ["ModelForge", "ModelForge.globals", "ModelForge.routers", "ModelForge.utilities", "ModelForge.Frontend.build", "ModelForge.Frontend.build.static.js"]
 
 [project.scripts]
 modelforge = "ModelForge.cli:main"

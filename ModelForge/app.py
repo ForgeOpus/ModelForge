@@ -10,9 +10,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from .routers.finetuning_router import router as finetuning_router
 from .routers.playground_router import router as playground_router
+from .routers.hub_management_router import router as hub_management_router
 from .routers.models_router import router as models_router
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 app = FastAPI()
 ## Static files
@@ -33,6 +38,7 @@ app.add_middleware(
 app.include_router(prefix="/api", router=finetuning_router)
 app.include_router(prefix="/api", router=playground_router)
 app.include_router(prefix="/api", router=models_router)
+app.include_router(prefix="/api", router=hub_management_router)
 
 ## Mount static files
 app.mount(

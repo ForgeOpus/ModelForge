@@ -1,7 +1,7 @@
 import logging
 from typing import Optional, Dict, Any
 from .hardware_detector import HardwareDetector
-from utilities.hardware_detection.config_manager import ConfigurationManager
+from .config_manager import ConfigurationManager
 
 
 class HardwareDetectorFactory:
