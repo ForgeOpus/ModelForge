@@ -3,6 +3,36 @@ import webbrowser
 import tensorboard
 from typing import Dict, List, Optional, Union
 import json
+from transformers import TrainerCallback
+
+
+class ProgressCallback(TrainerCallback):
+    """
+    Callback to update the global finetuning status progress during training.
+    """
+    def __init__(self):
+        super().__init__()
+        from ...globals.globals_instance import global_manager
+        self.global_manager = global_manager
+        
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """
+        Called when logging happens. Updates progress based on training steps.
+        """
+        if state.max_steps > 0:
+            # Calculate progress as percentage of total steps
+            # Cap at 95% during training, will reach 100% on completion
+            progress = min(95, int((state.global_step / state.max_steps) * 100))
+            self.global_manager.finetuning_status["progress"] = progress
+            self.global_manager.finetuning_status["message"] = f"Training step {state.global_step}/{state.max_steps}"
+        
+    def on_train_end(self, args, state, control, **kwargs):
+        """
+        Called at the end of training. Sets progress to 100%.
+        """
+        self.global_manager.finetuning_status["progress"] = 100
+        self.global_manager.finetuning_status["message"] = "Training completed!"
+
 
 class Finetuner(ABC):
     """

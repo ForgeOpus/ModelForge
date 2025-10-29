@@ -3,7 +3,7 @@ from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoTokenizer, BitsAndBytesConfig, AutoModelForQuestionAnswering, Trainer, TrainingArguments
 from typing import Dict
-from .Finetuner import Finetuner
+from .Finetuner import Finetuner, ProgressCallback
 import os
 import traceback
 import huggingface_hub.errors as hf_errors
@@ -143,6 +143,7 @@ class QuestionAnsweringTuner(Finetuner):
                 model=model,
                 train_dataset=self.dataset,
                 args=training_arguments,
+                callbacks=[ProgressCallback()],
             )
             trainer.train()
             trainer.model.save_pretrained(self.fine_tuned_name)

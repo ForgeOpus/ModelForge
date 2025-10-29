@@ -4,7 +4,7 @@ from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from typing import Dict, Optional
-from .Finetuner import Finetuner
+from .Finetuner import Finetuner, ProgressCallback
 import os
 from huggingface_hub import errors as hf_errors
 import traceback
@@ -121,6 +121,7 @@ class CausalLLMFinetuner(Finetuner):
                 train_dataset=self.dataset,
                 args=training_arguments,
                 peft_config=peft_config,
+                callbacks=[ProgressCallback()],
             )
             trainer.train()
             trainer.model.save_pretrained(self.fine_tuned_name)

@@ -2,7 +2,7 @@ from typing import Dict
 import torch
 from datasets import load_dataset
 from trl import SFTTrainer, SFTConfig
-from .Finetuner import Finetuner
+from .Finetuner import Finetuner, ProgressCallback
 from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
 import os
@@ -133,6 +133,7 @@ class Seq2SeqFinetuner(Finetuner):
                 model=model,
                 args=training_args,
                 train_dataset=self.dataset,
+                callbacks=[ProgressCallback()],
             )
 
             trainer.train()
