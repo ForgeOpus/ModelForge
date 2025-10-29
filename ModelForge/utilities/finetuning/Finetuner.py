@@ -21,8 +21,8 @@ class ProgressCallback(TrainerCallback):
         """
         # Determine total steps - state.max_steps is automatically calculated by trainer
         # even when using epochs instead of max_steps parameter
-        if state.max_steps <= 0 or state.global_step <= 0:
-            # Can't calculate progress yet, skip update
+        if state.max_steps <= 0:
+            # Can't calculate progress without knowing total steps
             return
             
         # Calculate progress as percentage of total steps
