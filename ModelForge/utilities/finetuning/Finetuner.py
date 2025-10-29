@@ -19,22 +19,17 @@ class ProgressCallback(TrainerCallback):
         """
         Called when logging happens. Updates progress based on training steps.
         """
-        # Calculate total steps based on epochs if max_steps is not set
-        if state.max_steps > 0:
-            total_steps = state.max_steps
-        elif hasattr(args, 'num_train_epochs') and args.num_train_epochs > 0:
-            # Estimate total steps from epochs
-            # state.max_steps is automatically calculated by trainer from epochs
-            total_steps = state.max_steps if state.max_steps > 0 else state.global_step
-        else:
-            total_steps = state.global_step
+        # Determine total steps - state.max_steps is automatically calculated by trainer
+        # even when using epochs instead of max_steps parameter
+        if state.max_steps <= 0 or state.global_step <= 0:
+            # Can't calculate progress yet, skip update
+            return
             
-        if total_steps > 0:
-            # Calculate progress as percentage of total steps
-            # Cap at 95% during training, will reach 100% on completion
-            progress = min(95, int((state.global_step / total_steps) * 100))
-            self.global_manager.finetuning_status["progress"] = progress
-            self.global_manager.finetuning_status["message"] = f"Training step {state.global_step}/{total_steps}"
+        # Calculate progress as percentage of total steps
+        # Cap at 95% during training, will reach 100% on completion
+        progress = min(95, int((state.global_step / state.max_steps) * 100))
+        self.global_manager.finetuning_status["progress"] = progress
+        self.global_manager.finetuning_status["message"] = f"Training step {state.global_step}/{state.max_steps}"
         
     def on_train_end(self, args, state, control, **kwargs):
         """
