@@ -120,7 +120,6 @@ class CausalLLMFinetuner(Finetuner):
                 model=model,
                 train_dataset=self.dataset,
                 args=training_arguments,
-                peft_config=peft_config,
                 callbacks=[ProgressCallback()],
             )
             trainer.train()
