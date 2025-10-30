@@ -34,10 +34,25 @@ class DatabaseManager:
                 task TEXT NOT NULL,
                 description TEXT,
                 creation_date TEXT NOT NULL,
-                model_path TEXT NOT NULL
+                model_path TEXT NOT NULL,
+                is_custom_base_model BOOLEAN DEFAULT 0
             )
             ''')
             self.conn.commit()
+            
+            # Migration: Add is_custom_base_model column if it doesn't exist
+            # This ensures backward compatibility with existing databases
+            try:
+                self.cursor.execute("SELECT is_custom_base_model FROM fine_tuned_models LIMIT 1")
+            except sqlite3.OperationalError:
+                # Column doesn't exist, add it
+                print("Migrating database: Adding is_custom_base_model column...")
+                self.cursor.execute('''
+                ALTER TABLE fine_tuned_models 
+                ADD COLUMN is_custom_base_model BOOLEAN DEFAULT 0
+                ''')
+                self.conn.commit()
+                print("Database migration completed successfully.")
         except sqlite3.Error as e:
             print(f"Database error: {e}")
             traceback.print_exc()
@@ -52,8 +67,8 @@ class DatabaseManager:
             self.cursor.execute('''
             INSERT INTO fine_tuned_models 
             (model_name, base_model, task, description, creation_date, 
-            model_path)
-            VALUES (?, ?, ?, ?, ?, ?)
+            model_path, is_custom_base_model)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ''', (
                 model_data['model_name'],
                 model_data['base_model'],
@@ -61,6 +76,7 @@ class DatabaseManager:
                 model_data.get('description', ''),
                 model_data.get('creation_date', datetime.now().isoformat()),
                 model_data['model_path'],
+                model_data.get('is_custom_base_model', False),
             ))
             self.conn.commit()
             return self.cursor.lastrowid
