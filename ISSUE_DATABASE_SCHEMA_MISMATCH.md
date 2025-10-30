@@ -227,7 +227,7 @@ Now that the critical bug is fixed, consider these enhancements:
 ### Documentation
 - [ModelForge README](README.md)
 - [Model Configuration Guide](ModelForge/model_configs/README.md)
-- [Contributing Guide](CODE_OF_CONDUCT.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
 
 ### Code References
 - [Finetuning Router](ModelForge/routers/finetuning_router.py)
