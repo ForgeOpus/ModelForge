@@ -55,7 +55,7 @@ Each phase must include:
 - **Duration:** Estimated time (usually in weeks).
 
 ### 4. 🧾 Output Format
-Generate the output as Markdown, formatted for GitHub use (README, Issue, or Wiki).  
+Generate the output as an **open issue written in Markdown**.  
 Include these sections:
 
 1. 🧭 **Feature Proposal**  
@@ -66,6 +66,9 @@ Include these sections:
 6. 📆 **Proposed Timeline**
 
 Use tables and lists for clarity. Include fenced code blocks for command snippets or configuration examples.
+
+#### 5. Important
+ONLY OPEN AN ISSUE. DO NOT RESOLVE IT OR CODE. OPENING AN ISSUE IS IMPERATIVE. NO OTHER FORMAT IS ACCEPTABLE.
 
 ---
 
