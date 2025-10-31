@@ -96,6 +96,8 @@ class SettingsFormData(BaseModel):
     def validate_num_train_epochs(cls, num_train_epochs):
         if num_train_epochs <= 0:
             raise ValueError("Number of training epochs must be greater than 0.")
+        if num_train_epochs >= 50:
+            raise ValueError("Number of training epochs must be less than 50.")
         return num_train_epochs
     @field_validator("compute_specs")
     def validate_compute_specs(cls, compute_specs):
