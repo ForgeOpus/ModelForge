@@ -96,8 +96,6 @@ class SettingsFormData(BaseModel):
     def validate_num_train_epochs(cls, num_train_epochs):
         if num_train_epochs <= 0:
             raise ValueError("Number of training epochs must be greater than 0.")
-        elif num_train_epochs > 30:
-            raise ValueError("Number of training epochs must be less than 31.")
         return num_train_epochs
     @field_validator("compute_specs")
     def validate_compute_specs(cls, compute_specs):
@@ -111,8 +109,8 @@ class SettingsFormData(BaseModel):
         return lora_r
     @field_validator("lora_alpha")
     def validate_lora_alpha(cls, lora_alpha):
-        if lora_alpha < 8 or lora_alpha > 128:
-            raise ValueError("LoRA alpha must be between 8 and 128.")
+        if lora_alpha >= 0.5:
+            raise ValueError("LoRA learning rate is too high. Gradients will explode.")
         return lora_alpha
     @field_validator("lora_dropout")
     def validate_lora_dropout(cls, lora_dropout):
