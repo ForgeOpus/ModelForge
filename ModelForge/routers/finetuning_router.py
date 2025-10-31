@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import os
+import shutil
 import traceback
 import uuid
 
@@ -429,8 +430,10 @@ async def load_settings(json_file: UploadFile = File(...), settings: str = Form(
 
 
 def finetuning_task(llm_tuner) -> None:
+    output_dir = None
     try:
         llm_tuner.load_dataset(global_manager.settings_builder.dataset)
+        output_dir = llm_tuner.output_dir  # Store for cleanup on failure
         path = llm_tuner.finetune()
         
         # Handle both absolute and relative paths
@@ -450,6 +453,17 @@ def finetuning_task(llm_tuner) -> None:
             "is_custom_base_model": global_manager.settings_builder.is_custom_model
         }
         global_manager.db_manager.add_model(model_data)
+    
+    except Exception as e:
+        print(f"Fine-tuning failed: {e}")
+        # Cleanup failed fine-tuning artifacts
+        if output_dir and os.path.exists(output_dir):
+            try:
+                shutil.rmtree(output_dir)
+                print(f"Cleaned up failed fine-tuning artifacts at: {output_dir}")
+            except Exception as cleanup_error:
+                print(f"Warning: Could not cleanup output directory: {cleanup_error}")
+        raise
 
     finally:
         global_manager.settings_cache.clear()
@@ -490,6 +504,19 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
             status_code=400,
             detail="A finetuning is already in progress. Please wait until it completes."
         )
+    
+    # Validate available disk space (require at least 10GB free)
+    try:
+        stat = shutil.disk_usage(global_manager.model_path)
+        available_gb = stat.free / (1024 ** 3)  # Convert to GB
+        if available_gb < 10:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient disk space. Available: {available_gb:.2f}GB. Required: at least 10GB."
+            )
+    except Exception as e:
+        print(f"Warning: Could not check disk space: {e}")
+    
     global_manager.finetuning_status["status"] = "initializing"
     global_manager.finetuning_status["message"] = "Starting finetuning process..."
     if global_manager.settings_builder.task == "text-generation":

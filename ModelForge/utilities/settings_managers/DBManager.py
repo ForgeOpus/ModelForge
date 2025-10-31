@@ -153,4 +153,5 @@ class DatabaseManager:
     def kill_connection(self) -> None:
         if self.conn:
             self.conn.close()
+            self.conn = None
             del self.cursor

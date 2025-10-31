@@ -40,10 +40,12 @@ async def new_playground(request: Request) -> None:
     base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utilities"))
     chat_script = os.path.join(base_path, "chat_playground.py")
     if os.name == "nt":  # Windows
+        # Use list format without shell=True for security
         command = ["cmd.exe", "/c", "start", "python", chat_script, "--model_path", model_path]
-        subprocess.Popen(command, shell=True)
+        subprocess.Popen(command)
     else:  # Unix/Linux/Mac
-        command = ["x-terminal-emulator", "-e", f"python {chat_script} --model_path {model_path}"]
+        # Use list format without string interpolation for security
+        command = ["x-terminal-emulator", "-e", "python", chat_script, "--model_path", model_path]
         try:
             subprocess.Popen(command)
         except FileNotFoundError:
@@ -51,4 +53,4 @@ async def new_playground(request: Request) -> None:
             try:
                 subprocess.Popen(["gnome-terminal", "--", "python3", chat_script, "--model_path", model_path])
             except FileNotFoundError:
-                subprocess.Popen(["xterm", "-e", f"python3 {chat_script} --model_path {model_path}"])
+                subprocess.Popen(["xterm", "-e", "python3", chat_script, "--model_path", model_path])
