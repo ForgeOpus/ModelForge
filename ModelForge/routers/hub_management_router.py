@@ -72,8 +72,8 @@ async def push_model_to_hub(request: Request) -> JSONResponse:
                                       f"Please ensure your huggingface token grants you write access. "
                                       f"If you are pushing to an organization, contact the administrator for write access."}, status_code=403)
     except HfHubHTTPError as e:
-        return JSONResponse({"error": "Failed to push model to HuggingFace Hub. "
-                                      "Please check your network connection and authentication token. "
+        return JSONResponse({"error": f"Failed to push model to HuggingFace Hub. "
+                                      f"Please check your network connection and authentication token. "
                                       f"Error received is: {e}"}, status_code=500)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)

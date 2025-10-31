@@ -40,9 +40,10 @@ async def new_playground(request: Request) -> None:
     base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "utilities"))
     chat_script = os.path.join(base_path, "chat_playground.py")
     if os.name == "nt":  # Windows
-        # Use list format without shell=True for security
+        # Note: shell=True is required for 'start' command (cmd.exe built-in)
+        # Input is validated via PlaygroundRequest Pydantic model
         command = ["cmd.exe", "/c", "start", "python", chat_script, "--model_path", model_path]
-        subprocess.Popen(command)
+        subprocess.Popen(command, shell=True)
     else:  # Unix/Linux/Mac
         # Use list format without string interpolation for security
         command = ["x-terminal-emulator", "-e", "python", chat_script, "--model_path", model_path]
