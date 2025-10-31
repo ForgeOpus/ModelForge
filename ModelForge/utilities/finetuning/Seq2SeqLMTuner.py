@@ -20,30 +20,14 @@ class Seq2SeqFinetuner(Finetuner):
         if keys is None:
             keys = ["article", "summary"]
             
-        if specs == "low_end":
-            return {
-                "text": f'''
-                    ["role": "system", "content": "You are a text summarization assistant."],
-                    [role": "user", "content": {example[keys[0]]}],
-                    ["role": "assistant", "content": {example[keys[1]]}]
-                '''
-            }
-        elif specs == "mid_range":
-            return {
-                "text": f'''
-                            ["role": "system", "content": "You are a text summarization assistant."],
-                            [role": "user", "content": {example[keys[0]]}],
-                            ["role": "assistant", "content": {example[keys[1]]}]
-                        '''
-            }
-        elif specs == "high_end":
-            return {
-                "text": f'''
-                            ["role": "system", "content": "You are a text summarization assistant."],
-                            [role": "user", "content": {example[keys[0]]}],
-                            ["role": "assistant", "content": {example[keys[1]]}]
-                        '''
-            }
+        # Format is the same regardless of specs, so we can simplify
+        return {
+            "text": f'''
+                ["role": "system", "content": "You are a text summarization assistant."],
+                ["role": "user", "content": {example[keys[0]]}],
+                ["role": "assistant", "content": {example[keys[1]]}]
+            '''
+        }
 
     def load_dataset(self, dataset_path: str) -> None:
         dataset = load_dataset("json", data_files=dataset_path, split="train")

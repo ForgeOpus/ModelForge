@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi import Request
 from starlette.responses import JSONResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 
 from ..utilities.finetuning.CausalLLMTuner import CausalLLMFinetuner
 from ..utilities.finetuning.QuestionAnsweringTuner import QuestionAnsweringTuner
@@ -110,8 +110,8 @@ class SettingsFormData(BaseModel):
         return lora_r
     @field_validator("lora_alpha")
     def validate_lora_alpha(cls, lora_alpha):
-        if lora_alpha >= 0.5:
-            raise ValueError("LoRA learning rate is too high. Gradients will explode.")
+        if lora_alpha < 8 or lora_alpha > 128:
+            raise ValueError("LoRA alpha must be between 8 and 128.")
         return lora_alpha
     @field_validator("lora_dropout")
     def validate_lora_dropout(cls, lora_dropout):
@@ -154,13 +154,9 @@ class SettingsFormData(BaseModel):
             raise ValueError("bf16 must be true or false.")
         return bf16
     @field_validator("per_device_train_batch_size")
-    def validate_per_device_train_batch_size(cls, per_device_train_batch_size, compute_specs):
+    def validate_per_device_train_batch_size(cls, per_device_train_batch_size):
         if per_device_train_batch_size <= 0:
             raise ValueError("Batch size must be greater than 0.")
-        elif per_device_train_batch_size > 3 and compute_specs != "high_end":
-            raise ValueError("Batch size must be less than 4. Your device cannot support a higher batch size.")
-        elif per_device_train_batch_size > 8 and compute_specs == "high_end":
-            raise ValueError("Batch size must be less than 9. Higher batch sizes cause out of memory error.")
         return per_device_train_batch_size
     @field_validator("per_device_eval_batch_size")
     def validate_per_device_eval_batch_size(cls, per_device_eval_batch_size):
@@ -236,11 +232,20 @@ class SettingsFormData(BaseModel):
         if not dataset:
             raise ValueError("Dataset cannot be empty.")
         return dataset
+    
+    @model_validator(mode='after')
+    def validate_batch_size_with_compute_specs(self):
+        """Validate batch size based on compute specs"""
+        if self.per_device_train_batch_size > 3 and self.compute_specs != "high_end":
+            raise ValueError("Batch size must be less than 4. Your device cannot support a higher batch size.")
+        elif self.per_device_train_batch_size > 8 and self.compute_specs == "high_end":
+            raise ValueError("Batch size must be less than 9. Higher batch sizes cause out of memory error.")
+        return self
 
 
 @router.get("/detect")
 async def detect_hardware_page(request: Request) -> JSONResponse:
-    global_manager.clear_global_manager.settings_cache()  # Clear the cache to ensure fresh detection
+    global_manager.clear_settings_cache()  # Clear the cache to ensure fresh detection
     return JSONResponse({
         "app_name": global_manager.app_name,
         "message": "Ready to detect hardware"
