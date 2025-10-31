@@ -7,6 +7,7 @@ from ..utilities.finetuning.settings_builder import SettingsBuilder
 
 class GlobalSettings:
     _instance = None
+    _initialized = False
     file_manager = None
     hardware_detector = None
     settings_builder = None
@@ -23,19 +24,27 @@ class GlobalSettings:
         return cls._instance
 
     def __init__(self):
-        self.file_manager = FileManager()
-        self.hardware_detector = HardwareDetector()
-        self.settings_builder = SettingsBuilder(None, None, None)
-        self.settings_cache = {}
-        self.finetuning_status = {"status": "idle", "progress": 0, "message": ""}
-        self.datasets_dir = self.file_manager.return_default_dirs()["datasets"]
-        self.model_path = self.file_manager.return_default_dirs()["models"]
-        self.db_manager = DatabaseManager(db_path=os.path.join(self.file_manager.return_default_dirs()["database"], "modelforge.sqlite"))
-        self.app_name = "ModelForge"
+        # Only initialize once to maintain singleton behavior
+        if not GlobalSettings._initialized:
+            self.file_manager = FileManager()
+            self.hardware_detector = HardwareDetector()
+            self.settings_builder = SettingsBuilder(None, None, None)
+            self.settings_cache = {}
+            # NOTE: finetuning_status is accessed from multiple places (callback, background task)
+            # without locking. Python's GIL provides basic protection, but be cautious with
+            # complex operations. Consider using threading.Lock if race conditions occur.
+            self.finetuning_status = {"status": "idle", "progress": 0, "message": ""}
+            self.datasets_dir = self.file_manager.return_default_dirs()["datasets"]
+            self.model_path = self.file_manager.return_default_dirs()["models"]
+            self.db_manager = DatabaseManager(db_path=os.path.join(self.file_manager.return_default_dirs()["database"], "modelforge.sqlite"))
+            self.app_name = "ModelForge"
+            GlobalSettings._initialized = True
 
     @classmethod
     def get_instance(cls):
-        return cls.__new__(cls)
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
 
     def clear_settings_cache(self):
         self.settings_cache.clear()

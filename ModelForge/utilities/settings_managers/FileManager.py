@@ -50,7 +50,7 @@ class FileManager:
         return check_path
 
     @classmethod
-    def save_file(cls, content:bytes, file_path: str) -> str | None:
+    def save_file(cls, file_path: str, content: bytes) -> str | None:
         try:
             file_dir = os.path.dirname(file_path)
             cls.validate_or_create_dirs(os.path.abspath(file_dir))

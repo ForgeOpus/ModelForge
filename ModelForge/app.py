@@ -23,9 +23,10 @@ app = FastAPI()
 ## Static files
 frontend_dir = os.path.join(os.path.dirname(__file__), "./Frontend/build")
 app_name = "ModelForge"
-origins = [
-    "http://localhost:8000",
-]
+
+# CORS origins - configurable via environment variable
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:8000")
+origins = [origin.strip() for origin in cors_origins_env.split(",")]
 
 app.add_middleware(
     CORSMiddleware,

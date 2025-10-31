@@ -323,6 +323,14 @@ async def set_model(request: Request) -> None:
 
 @router.post("/validate_custom_model", response_class=JSONResponse)
 async def validate_custom_model(request: Request) -> JSONResponse:
+    """
+    Validate a custom model from HuggingFace Hub.
+    
+    Note: Currently validates repository existence but not task compatibility.
+    Consider adding architecture-task compatibility checks (e.g., ensure
+    summarization models aren't used for text generation tasks) for better
+    user experience and to prevent fine-tuning failures.
+    """
     try:
         form = await request.json()
         validation_data = CustomModelValidationData(repo_name=form["repo_name"])
@@ -436,11 +444,8 @@ def finetuning_task(llm_tuner) -> None:
         output_dir = llm_tuner.output_dir  # Store for cleanup on failure
         path = llm_tuner.finetune()
         
-        # Handle both absolute and relative paths
-        if os.path.isabs(path):
-            model_path = path
-        else:
-            model_path = os.path.join(os.path.dirname(__file__), path.replace("./", ""))
+        # Use the path returned from finetune (should be absolute)
+        model_path = os.path.abspath(path) if not os.path.isabs(path) else path
 
         model_data = {
             "model_name": global_manager.settings_builder.fine_tuned_name.split('/')[-1] if global_manager.settings_builder.fine_tuned_name else os.path.basename(model_path),
