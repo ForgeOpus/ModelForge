@@ -1,5 +1,7 @@
 # ModelForge 🔧⚡
 
+[![release](https://github.com/RETR0-OS/ModelForge/actions/workflows/workflow.yaml/badge.svg)](https://github.com/RETR0-OS/ModelForge/actions/workflows/workflow.yaml)
+
 **Finetune LLMs on your laptop’s GPU—no code, no PhD, no hassle.**  
 
 ![logo](https://github.com/user-attachments/assets/12b3545d-0e8b-4460-9291-d0786c9cb0fa)
