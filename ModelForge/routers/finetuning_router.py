@@ -21,13 +21,17 @@ router = APIRouter(
     prefix="/finetune",
 )
 
+# Valid task types
+VALID_TASKS = ["text-generation", "summarization", "extractive-question-answering"]
+VALID_TASKS_STR = "'text-generation', 'summarization', or 'extractive-question-answering'"
+
 ## Pydantic Data Validator Classes
 class TaskFormData(BaseModel):
     task: str
     @field_validator("task")
     def validate_task(cls, task):
-        if task not in ["text-generation", "summarization", "extractive-question-answering"]:
-            raise ValueError("Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'.")
+        if task not in VALID_TASKS:
+            raise ValueError(f"Invalid task. Must be one of {VALID_TASKS_STR}.")
         return task
 
 class SelectedModelFormData(BaseModel):
@@ -84,8 +88,8 @@ class SettingsFormData(BaseModel):
         return dataset
     @field_validator("task")
     def validate_task(cls, task):
-        if task not in ["text-generation", "summarization", "extractive-question-answering"]:
-            raise ValueError("Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'.")
+        if task not in VALID_TASKS:
+            raise ValueError(f"Invalid task. Must be one of {VALID_TASKS_STR}.")
         return task
     @field_validator("model_name")
     def validate_model_name(cls, model_name):
@@ -296,7 +300,7 @@ async def detect_hardware(request: Request) -> JSONResponse:
         print(e)
         raise HTTPException(
             status_code=400,
-            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'."
+            detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
         )
     except Exception as e:
         print("General exception triggered")
@@ -545,7 +549,7 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'."
+            detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
         )
 
     llm_tuner.set_settings(**global_manager.settings_builder.get_settings())
