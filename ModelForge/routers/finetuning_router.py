@@ -83,8 +83,8 @@ class SettingsFormData(BaseModel):
         return dataset
     @field_validator("task")
     def validate_task(cls, task):
-        if task not in ["text-generation", "summarization", "question-answering"]:
-            raise ValueError("Invalid task. Must be one of 'text-generation', 'summarization', or 'question-answering'.")
+        if task not in ["text-generation", "summarization", "extractive-question-answering"]:
+            raise ValueError("Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'.")
         return task
     @field_validator("model_name")
     def validate_model_name(cls, model_name):
@@ -96,7 +96,7 @@ class SettingsFormData(BaseModel):
         if num_train_epochs <= 0:
             raise ValueError("Number of training epochs must be greater than 0.")
         elif num_train_epochs > 30:
-            raise ValueError("Number of training epochs must be less than 50.")
+            raise ValueError("Number of training epochs must be less than 31.")
         return num_train_epochs
     @field_validator("compute_specs")
     def validate_compute_specs(cls, compute_specs):
@@ -295,7 +295,7 @@ async def detect_hardware(request: Request) -> JSONResponse:
         print(e)
         raise HTTPException(
             status_code=400,
-            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'question-answering'."
+            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'."
         )
     except Exception as e:
         print("General exception triggered")
@@ -513,7 +513,7 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
     else:
         raise HTTPException(
             status_code=400,
-            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'question-answering'."
+            detail="Invalid task. Must be one of 'text-generation', 'summarization', or 'extractive-question-answering'."
         )
 
     llm_tuner.set_settings(**global_manager.settings_builder.get_settings())
