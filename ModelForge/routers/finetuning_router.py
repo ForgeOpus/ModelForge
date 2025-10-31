@@ -238,9 +238,9 @@ class SettingsFormData(BaseModel):
     def validate_batch_size_with_compute_specs(self):
         """Validate batch size based on compute specs"""
         if self.per_device_train_batch_size > 3 and self.compute_specs != "high_end":
-            raise ValueError("Batch size must be less than 4. Your device cannot support a higher batch size.")
+            raise ValueError("Batch size must be 3 or less. Your device cannot support a higher batch size.")
         elif self.per_device_train_batch_size > 8 and self.compute_specs == "high_end":
-            raise ValueError("Batch size must be less than 9. Higher batch sizes cause out of memory error.")
+            raise ValueError("Batch size must be 8 or less. Higher batch sizes cause out of memory error.")
         return self
 
 
