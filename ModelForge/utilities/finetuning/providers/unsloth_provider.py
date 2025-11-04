@@ -260,7 +260,9 @@ class UnslothProvider(FinetuningProvider):
         """
         Export the fine-tuned Unsloth model.
         
-        Supports multiple export formats including HuggingFace, GGUF, etc.
+        Supports multiple export formats including HuggingFace format.
+        Note: GGUF export requires additional Unsloth methods that may not be
+        available in all versions. Currently defaults to HuggingFace format.
         
         Args:
             output_path: Path to export the model
@@ -269,30 +271,15 @@ class UnslothProvider(FinetuningProvider):
         Returns:
             True if successful
         """
-        try:
-            from unsloth import FastLanguageModel
-        except ImportError:
-            return False
-        
         export_format = kwargs.get("export_format", "huggingface")
         
         if export_format == "huggingface":
             # Already saved in HuggingFace format during training
             return True
-        elif export_format == "gguf":
-            # Export to GGUF format for llama.cpp
-            if self.model is None:
-                return False
-            
-            quantization_method = kwargs.get("quantization_method", "q4_k_m")
-            self.model.save_pretrained_gguf(
-                output_path,
-                self.tokenizer,
-                quantization_method=quantization_method
-            )
-            return True
         else:
-            # Unsupported export format
+            # Other export formats (e.g., GGUF) may be supported in future Unsloth versions
+            # For now, return False for unsupported formats
+            print(f"Warning: Export format '{export_format}' is not yet supported. Model saved in HuggingFace format.")
             return False
     
     def get_supported_hyperparameters(self) -> List[str]:
