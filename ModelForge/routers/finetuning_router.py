@@ -13,6 +13,8 @@ from pydantic import BaseModel, field_validator, model_validator
 from ..utilities.finetuning.CausalLLMTuner import CausalLLMFinetuner
 from ..utilities.finetuning.QuestionAnsweringTuner import QuestionAnsweringTuner
 from ..utilities.finetuning.Seq2SeqLMTuner import Seq2SeqFinetuner
+from ..utilities.finetuning.provider_adapter import ProviderFinetuner
+from ..utilities.finetuning.providers import ProviderRegistry
 from ..utilities.hardware_detection.model_validator import ModelValidator
 
 from ..globals.globals_instance import global_manager
@@ -24,6 +26,12 @@ router = APIRouter(
 # Valid task types
 VALID_TASKS = ["text-generation", "summarization", "extractive-question-answering"]
 VALID_TASKS_STR = "'text-generation', 'summarization', or 'extractive-question-answering'"
+
+# Valid providers (dynamically loaded from registry)
+def get_valid_providers():
+    """Get list of available provider names."""
+    providers = ProviderRegistry.list_available()
+    return [p["name"] for p in providers]
 
 ## Pydantic Data Validator Classes
 class TaskFormData(BaseModel):
@@ -53,6 +61,7 @@ class CustomModelValidationData(BaseModel):
 class SettingsFormData(BaseModel):
     task: str
     model_name: str
+    provider: str = "huggingface"  # Default to huggingface for backward compatibility
     num_train_epochs: int
     compute_specs: str
     lora_r: int
@@ -96,6 +105,15 @@ class SettingsFormData(BaseModel):
         if not model_name:
             raise ValueError("Model name cannot be empty.")
         return model_name
+    @field_validator("provider")
+    def validate_provider(cls, provider):
+        valid_providers = get_valid_providers()
+        if not valid_providers:
+            # If no providers available, default to huggingface
+            return "huggingface"
+        if provider not in valid_providers:
+            raise ValueError(f"Invalid provider. Must be one of {', '.join(valid_providers)}.")
+        return provider
     @field_validator("num_train_epochs")
     def validate_num_train_epochs(cls, num_train_epochs):
         if num_train_epochs <= 0:
@@ -246,6 +264,31 @@ class SettingsFormData(BaseModel):
         elif self.per_device_train_batch_size > 8 and self.compute_specs == "high_end":
             raise ValueError("Batch size must be 8 or less. Higher batch sizes cause out of memory error.")
         return self
+
+
+@router.get("/providers")
+async def list_providers(request: Request) -> JSONResponse:
+    """
+    List all available fine-tuning providers.
+    
+    Returns provider information including availability status.
+    """
+    try:
+        all_providers = ProviderRegistry.list_all()
+        available_providers = ProviderRegistry.list_available()
+        
+        return JSONResponse({
+            "status_code": 200,
+            "providers": all_providers,
+            "available": available_providers,
+            "default": "huggingface"
+        })
+    except Exception as e:
+        print(f"Error listing providers: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Error retrieving provider information"
+        )
 
 
 @router.get("/detect")
@@ -451,15 +494,20 @@ def finetuning_task(llm_tuner) -> None:
         # Use the path returned from finetune (should be absolute)
         model_path = os.path.abspath(path) if not os.path.isabs(path) else path
 
+        # Get provider name (either from ProviderFinetuner or default to huggingface)
+        provider_name = getattr(llm_tuner, 'provider_name', 'huggingface')
+
         model_data = {
             "model_name": global_manager.settings_builder.fine_tuned_name.split('/')[-1] if global_manager.settings_builder.fine_tuned_name else os.path.basename(model_path),
             "base_model": global_manager.settings_builder.model_name,
             "task": global_manager.settings_builder.task,
             "description": f"Fine-tuned {global_manager.settings_builder.model_name} for {global_manager.settings_builder.task}" + 
-                          (" (Custom Model)" if global_manager.settings_builder.is_custom_model else " (Recommended Model)"),
+                          (" (Custom Model)" if global_manager.settings_builder.is_custom_model else " (Recommended Model)") +
+                          f" using {provider_name}",
             "creation_date": datetime.now().isoformat(),
             "model_path": model_path,
-            "is_custom_base_model": global_manager.settings_builder.is_custom_model
+            "is_custom_base_model": global_manager.settings_builder.is_custom_model,
+            "provider": provider_name
         }
         global_manager.db_manager.add_model(model_data)
     
@@ -501,6 +549,10 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
         print(f"Starting finetuning with CUSTOM MODEL: {global_manager.settings_builder.model_name}")
     else:
         print(f"Starting finetuning with RECOMMENDED MODEL: {global_manager.settings_builder.model_name}")
+    
+    # Log provider selection
+    provider = global_manager.settings_builder.provider
+    print(f"Using provider: {provider}")
 
     if not global_manager.settings_cache:
         raise HTTPException(
@@ -528,29 +580,43 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
     
     global_manager.finetuning_status["status"] = "initializing"
     global_manager.finetuning_status["message"] = "Starting finetuning process..."
-    if global_manager.settings_builder.task == "text-generation":
-        llm_tuner = CausalLLMFinetuner(
+    
+    # Use provider adapter if a provider is explicitly specified
+    # Otherwise fall back to legacy tuners for backward compatibility
+    if provider and provider != "huggingface":
+        # Use provider adapter for non-HuggingFace providers
+        llm_tuner = ProviderFinetuner(
             model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="text-generation"
-        )
-    elif global_manager.settings_builder.task == "summarization":
-        llm_tuner = Seq2SeqFinetuner(
-            model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="summarization"
-        )
-    elif global_manager.settings_builder.task == "extractive-question-answering":
-        llm_tuner = QuestionAnsweringTuner(
-            model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="question-answering"
+            task=global_manager.settings_builder.task,
+            provider=provider,
+            compute_specs=global_manager.settings_builder.compute_profile
         )
     else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
-        )
+        # Legacy path - use existing tuner classes for HuggingFace
+        # This maintains backward compatibility
+        if global_manager.settings_builder.task == "text-generation":
+            llm_tuner = CausalLLMFinetuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="text-generation"
+            )
+        elif global_manager.settings_builder.task == "summarization":
+            llm_tuner = Seq2SeqFinetuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="summarization"
+            )
+        elif global_manager.settings_builder.task == "extractive-question-answering":
+            llm_tuner = QuestionAnsweringTuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="question-answering"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
+            )
 
     llm_tuner.set_settings(**global_manager.settings_builder.get_settings())
 

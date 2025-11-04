@@ -12,6 +12,7 @@ class SettingsBuilder:
         self.dataset = None
         self.compute_profile = compute_profile
         self.is_custom_model = False
+        self.provider = "huggingface"  # Default provider for backward compatibility
         self.lora_r = 16
         self.lora_alpha = 32
         self.lora_dropout = 0.1
@@ -56,6 +57,8 @@ class SettingsBuilder:
         for key, value in settings_dict.items():
             if key == "dataset":
                 self.dataset = value
+            elif key == "provider":
+                self.provider = value
             elif key == "max_seq_length":
                 if value == -1:
                     self.max_seq_length = None
@@ -99,6 +102,7 @@ class SettingsBuilder:
         return {
             "task": self.task,
             "model_name": self.model_name,
+            "provider": self.provider,
             "num_train_epochs": self.num_train_epochs,
             "compute_specs": self.compute_profile,
             "lora_r": self.lora_r,

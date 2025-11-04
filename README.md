@@ -7,7 +7,8 @@
 
 ## 🚀 **Features**  
 - **GPU-Powered Finetuning**: Optimized for NVIDIA GPUs (even 4GB VRAM).  
-- **One-Click Workflow**: Upload data → Pick task → Train → Test.  
+- **Multiple Providers**: Choose between HuggingFace (standard) or Unsloth AI (2x faster, reduced memory) for fine-tuning.
+- **One-Click Workflow**: Upload data → Pick task → Select provider → Train → Test.  
 - **Hardware-Aware**: Auto-detects your GPU/CPU and recommends models.  
 - **React UI**: No CLI or notebooks—just a friendly interface.  
 
@@ -78,6 +79,52 @@ To stop the application and free up resources, press `Ctrl+C` in the terminal ru
 {"input": "Enter a really long article here...", "output": "Short summary."},
 {"input": "Enter the poem topic here...", "output": "Roses are red..."}
 ```
+
+## 🔧 **Fine-tuning Providers**
+
+ModelForge supports multiple fine-tuning providers, allowing you to choose the best backend for your needs:
+
+### **HuggingFace (Default)**
+- **Description**: Standard fine-tuning using HuggingFace Transformers with PEFT/LoRA
+- **Installation**: Included by default
+- **Best for**: General use, maximum compatibility
+- **Features**: 4-bit/8-bit quantization, gradient checkpointing, standard LoRA
+
+### **Unsloth AI (Optional)**
+- **Description**: Optimized fine-tuning with 2x faster training and reduced memory usage
+- **Installation**: 
+  ```bash
+  pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+  ```
+- **Best for**: Faster training, lower memory usage, larger models on limited hardware
+- **Features**: Optimized LoRA/QLoRA, memory-efficient attention, faster gradient computation
+- **Documentation**: [Unsloth Docs](https://docs.unsloth.ai/)
+
+### **Selecting a Provider**
+
+The provider can be selected when configuring your fine-tuning job:
+
+1. **Via UI**: Choose your provider from the dropdown in the settings page
+2. **Via API**: Include the `provider` field in your settings:
+   ```json
+   {
+     "provider": "unsloth",
+     "task": "text-generation",
+     "model_name": "meta-llama/Llama-2-7b-hf",
+     ...
+   }
+   ```
+
+**Note**: If a provider is not installed, ModelForge will fall back to HuggingFace automatically.
+
+### **Performance Comparison**
+
+| Provider    | Training Speed | Memory Usage | Compatibility |
+|------------|---------------|--------------|---------------|
+| HuggingFace | 1x (baseline) | 1x (baseline)| Excellent     |
+| Unsloth     | ~2x faster    | ~30% less    | Good          |
+
+*Performance metrics may vary based on model size, hardware, and configuration.*
 
 ## 🤝 **Contributing Model Recommendations**
 ModelForge uses a modular configuration system for model recommendations. Contributors can easily add new recommended models by adding configuration files to the `model_configs/` directory. Each hardware profile (low_end, mid_range, high_end) has its own configuration file where you can specify primary and alternative models for different tasks.
