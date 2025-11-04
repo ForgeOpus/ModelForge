@@ -8,27 +8,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [formState, setFormState] = useState({});
   const [activeTooltip, setActiveTooltip] = useState(null);
-  const [providers, setProviders] = useState([]);
-  const [loadingProviders, setLoadingProviders] = useState(true);
-  
-  useEffect(() => {
-    const fetchProviders = async () => {
-      try {
-        const response = await fetch(`${config.baseURL}/finetune/providers`);
-        if (!response.ok) throw new Error('Failed to fetch providers');
-        
-        const data = await response.json();
-        console.log("Fetched providers:", data);
-        setProviders(data.providers || []);
-        setLoadingProviders(false);
-      } catch (err) {
-        console.error("Error fetching providers:", err);
-        setLoadingProviders(false);
-      }
-    };
-
-    fetchProviders();
-  }, []);
   
   useEffect(() => {
     const fetchDefaultSettings = async () => {
@@ -142,7 +121,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     model_name: "The base AI model you're customizing",
     gpu: "The graphics card that will run your training",
     ram: "Computer memory available for training",
-    provider: "Choose the fine-tuning backend for optimal performance",
     num_train_epochs: "How many times the AI will see your training data",
     learning_rate: "How quickly the model adapts to new information",
     per_device_train_batch_size: "How many examples are processed at once",
@@ -154,12 +132,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     bnb_4bit_compute_dtype: "Technical setting for calculation precision",
     optim: "Method used to update the model during training",
     lr_scheduler_type: "How learning speed changes during training"
-  };
-
-  // Provider-specific tooltips
-  const providerTooltips = {
-    huggingface: "Standard HuggingFace transformers with PEFT/LoRA - Maximum compatibility",
-    unsloth: "Optimized training: 2x faster, 30% less memory - Install with: pip install \"unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git\""
   };
 
   // Tooltip display component
@@ -210,91 +182,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-white">
                 {formState.model_name || defaultValues.model_name || 'Not set'}
               </div>
-            </div>
-            <div>
-              <Tooltip id="provider">
-                <label htmlFor="provider" className="block text-sm font-medium text-gray-400 mb-1">
-                  Fine-tuning Provider
-                </label>
-              </Tooltip>
-              <div className="relative">
-                <select
-                  id="provider"
-                  name="provider"
-                  value={formState.provider || 'huggingface'}
-                  onChange={handleInputChange}
-                  disabled={loadingProviders}
-                  className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none appearance-none pr-10"
-                >
-                  {loadingProviders ? (
-                    <option>Loading providers...</option>
-                  ) : (
-                    providers.map((provider) => (
-                      <option 
-                        key={provider.name} 
-                        value={provider.name}
-                        disabled={!provider.available}
-                        style={{ 
-                          color: provider.available ? 'white' : '#6B7280',
-                          cursor: provider.available ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        {provider.name}{!provider.available ? ' (Not installed)' : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
-                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-gray-400">
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </div>
-              </div>
-              {/* Provider info and installation instructions */}
-              {formState.provider && (
-                <div className="mt-2 space-y-2">
-                  {/* Description */}
-                  {providerTooltips[formState.provider] && (
-                    <div className="text-xs text-gray-400 bg-gray-900 border border-gray-700 rounded p-2">
-                      <strong className="text-orange-400">ℹ️ Info:</strong> {providerTooltips[formState.provider].split(' - ')[0]}
-                    </div>
-                  )}
-                  {/* Installation instructions for unavailable providers */}
-                  {providers.find(p => p.name === formState.provider && !p.available) && (
-                    <div className="text-xs text-yellow-400 bg-gray-900 border border-yellow-600 rounded p-2">
-                      <strong className="block mb-1">⚠️ Installation Required:</strong>
-                      <code className="block bg-gray-800 p-1 rounded mt-1 text-white">
-                        pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-                      </code>
-                    </div>
-                  )}
-                </div>
-              )}
-              {/* Show all unavailable providers with installation tooltips */}
-              {providers.filter(p => !p.available).length > 0 && (
-                <div className="mt-3 text-xs text-gray-500">
-                  <details className="cursor-pointer">
-                    <summary className="hover:text-gray-400">
-                      📦 {providers.filter(p => !p.available).length} provider(s) not installed (click to view)
-                    </summary>
-                    <div className="mt-2 space-y-2 pl-4">
-                      {providers.filter(p => !p.available).map((provider) => (
-                        <div key={provider.name} className="bg-gray-900 border border-gray-700 rounded p-2">
-                          <div className="font-semibold text-gray-400">{provider.name}</div>
-                          <div className="text-gray-500 text-xs mt-1">{provider.description}</div>
-                          {provider.name === 'unsloth' && (
-                            <div className="mt-2">
-                              <code className="block bg-gray-800 p-1 rounded text-xs text-white">
-                                pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
-                              </code>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-              )}
             </div>
             <div>
               <Tooltip id="gpu">

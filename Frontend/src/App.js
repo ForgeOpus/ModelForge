@@ -3,12 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LandingPage from './pages/AppLanding';
+import ProviderSelectionPage from './pages/ProviderSelectionPage';
 import DetectHardwarePage from './pages/DetectHardwarePage';
 import FinetuneSettings from './pages/FinetuningSettingsPage';
 import Loading from './pages/Loading';
 import TechnicalDetailsPage from './pages/TechnicalDetailsPage';
-import ListModels from './pages/ListModels';
-import './index.css';
 import ListAllModels from "./pages/ListAllModels";
 
 const RedirectToFastAPI = () => {
@@ -21,6 +20,7 @@ const RedirectToFastAPI = () => {
 
 function App() {
   const [finetuneSettings, setFinetuneSettings] = useState({
+    provider: 'huggingface', // Default provider
     task: 'text-generation',
     model_name: 'llama2-7b',
     compute_specs: 'Standard GPU',
@@ -88,10 +88,10 @@ function App() {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route 
-            path="/finetune/load_settings" 
+            path="/finetune/provider" 
             element={
-              <FinetuneSettings 
-                defaultValues={finetuneSettings}
+              <ProviderSelectionPage 
+                currentSettings={finetuneSettings}
                 updateSettings={updateSettings}
               />
             } 
@@ -101,6 +101,15 @@ function App() {
             element={
               <DetectHardwarePage 
                 currentSettings={finetuneSettings}
+                updateSettings={updateSettings}
+              />
+            } 
+          />
+          <Route 
+            path="/finetune/load_settings" 
+            element={
+              <FinetuneSettings 
+                defaultValues={finetuneSettings}
                 updateSettings={updateSettings}
               />
             } 
