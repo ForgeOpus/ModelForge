@@ -44,6 +44,7 @@ const ProviderSelectionPage = ({ currentSettings, updateSettings }) => {
 
   const providerDetails = {
     huggingface: {
+      logo: 'https://huggingface.co/datasets/huggingface/brand-assets/resolve/main/hf-logo.svg',
       features: [
         'Standard HuggingFace transformers',
         'PEFT/LoRA fine-tuning',
@@ -55,6 +56,7 @@ const ProviderSelectionPage = ({ currentSettings, updateSettings }) => {
       bestFor: 'General use, maximum compatibility'
     },
     unsloth: {
+      logo: 'https://raw.githubusercontent.com/unslothai/unsloth/main/images/unsloth%20logo%20white%20text.png',
       features: [
         'Optimized FastLanguageModel',
         'Enhanced LoRA/QLoRA',
@@ -128,10 +130,27 @@ const ProviderSelectionPage = ({ currentSettings, updateSettings }) => {
                   {/* Provider Header */}
                   <div className="flex items-center mb-4">
                     <div className={`
-                      w-12 h-12 rounded-lg flex items-center justify-center mr-4
-                      ${isAvailable ? 'bg-orange-500/20' : 'bg-gray-700/20'}
+                      w-16 h-16 rounded-lg flex items-center justify-center mr-4 p-2
+                      ${isAvailable ? 'bg-white' : 'bg-gray-700/20'}
                     `}>
-                      <svg className={`w-6 h-6 ${isAvailable ? 'text-orange-500' : 'text-gray-500'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      {details.logo ? (
+                        <img 
+                          src={details.logo} 
+                          alt={`${provider.name} logo`}
+                          className="w-full h-full object-contain"
+                          onError={(e) => {
+                            e.target.style.display = 'none';
+                            e.target.nextSibling.style.display = 'block';
+                          }}
+                        />
+                      ) : null}
+                      <svg 
+                        className={`w-8 h-8 ${isAvailable ? 'text-orange-500' : 'text-gray-500'}`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                        style={{ display: details.logo ? 'none' : 'block' }}
+                      >
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                     </div>
@@ -175,9 +194,9 @@ const ProviderSelectionPage = ({ currentSettings, updateSettings }) => {
                   )}
 
                   {/* Installation Instructions */}
-                  {!isAvailable && details.installCommand && hoveredProvider === provider.name && (
+                  {!isAvailable && details.installCommand && (
                     <div className="mt-4 p-3 bg-gray-900 border border-yellow-600 rounded-lg">
-                      <p className="text-xs text-yellow-400 font-semibold mb-2">Installation Required:</p>
+                      <p className="text-xs text-yellow-400 font-semibold mb-2">⚠️ Installation Required:</p>
                       <code className="block bg-gray-800 p-2 rounded text-xs text-white overflow-x-auto">
                         {details.installCommand}
                       </code>
@@ -188,44 +207,6 @@ const ProviderSelectionPage = ({ currentSettings, updateSettings }) => {
             })}
           </div>
         )}
-
-        {/* Comparison Table */}
-        <div className="bg-gray-800/50 rounded-xl p-6 mb-8">
-          <h3 className="text-xl font-bold mb-4 text-center">Provider Comparison</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="pb-3 text-gray-400 font-medium">Feature</th>
-                  <th className="pb-3 text-center text-gray-400 font-medium">HuggingFace</th>
-                  <th className="pb-3 text-center text-gray-400 font-medium">Unsloth</th>
-                </tr>
-              </thead>
-              <tbody className="text-sm">
-                <tr className="border-b border-gray-700/50">
-                  <td className="py-3 text-gray-300">Training Speed</td>
-                  <td className="py-3 text-center">1x (baseline)</td>
-                  <td className="py-3 text-center text-orange-400 font-semibold">~2x faster</td>
-                </tr>
-                <tr className="border-b border-gray-700/50">
-                  <td className="py-3 text-gray-300">Memory Usage</td>
-                  <td className="py-3 text-center">1x (baseline)</td>
-                  <td className="py-3 text-center text-orange-400 font-semibold">~30% less</td>
-                </tr>
-                <tr className="border-b border-gray-700/50">
-                  <td className="py-3 text-gray-300">Compatibility</td>
-                  <td className="py-3 text-center text-green-400">Excellent</td>
-                  <td className="py-3 text-center text-yellow-400">Good</td>
-                </tr>
-                <tr>
-                  <td className="py-3 text-gray-300">Installation</td>
-                  <td className="py-3 text-center text-green-400">Pre-installed</td>
-                  <td className="py-3 text-center text-yellow-400">Optional</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
 
         {/* Continue Button */}
         <div className="text-center">
