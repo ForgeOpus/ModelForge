@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LandingPage from './pages/AppLanding';
+import ProviderSelectionPage from './pages/ProviderSelectionPage';
 import DetectHardwarePage from './pages/DetectHardwarePage';
 import FinetuneSettings from './pages/FinetuningSettingsPage';
 import Loading from './pages/Loading';
@@ -48,6 +49,7 @@ function App() {
     optim: 'paged_adamw_32bit',
     lr_scheduler_type: 'cosine',
     max_steps: -1,
+    provider: 'huggingface',  // Default provider
     hardware_config: { 
       gpu: '',
       ram: 0,
@@ -87,6 +89,15 @@ function App() {
         <Navbar />
         <Routes>
           <Route path="/" element={<LandingPage />} />
+          <Route 
+            path="/finetune/select-provider" 
+            element={
+              <ProviderSelectionPage 
+                currentSettings={finetuneSettings}
+                updateSettings={updateSettings}
+              />
+            } 
+          />
           <Route 
             path="/finetune/load_settings" 
             element={

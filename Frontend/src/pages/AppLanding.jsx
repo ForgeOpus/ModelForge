@@ -89,7 +89,7 @@ const LandingPage = ({ appName = "ModelForge" }) => {
             </p>
 
             <div className="flex flex-wrap justify-center gap-4">
-              <Link to="/finetune/detect" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-8 py-4 rounded-lg text-lg font-medium transition shadow-lg hover:shadow-orange-500/30 transform hover:-translate-y-1">
+              <Link to="/finetune/select-provider" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-8 py-4 rounded-lg text-lg font-medium transition shadow-lg hover:shadow-orange-500/30 transform hover:-translate-y-1">
                 Start Building Your AI
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block ml-2 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -224,7 +224,7 @@ const LandingPage = ({ appName = "ModelForge" }) => {
               </ul>
               
               <div className="mt-8">
-                <Link to="/finetune/detect" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-8 py-4 rounded-lg text-lg font-medium transition shadow-lg hover:shadow-orange-500/30">
+                <Link to="/finetune/select-provider" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-8 py-4 rounded-lg text-lg font-medium transition shadow-lg hover:shadow-orange-500/30">
                   Start Your Business AI
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 inline-block ml-2 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
@@ -270,7 +270,7 @@ const LandingPage = ({ appName = "ModelForge" }) => {
             No coding. No technical skills. Just pure AI power at your fingertips.
           </p>
           
-          <Link to="/finetune/detect" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-10 py-5 rounded-lg text-xl font-bold transition shadow-xl hover:shadow-orange-500/30 transform hover:-translate-y-1">
+          <Link to="/finetune/select-provider" className="group bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 px-10 py-5 rounded-lg text-xl font-bold transition shadow-xl hover:shadow-orange-500/30 transform hover:-translate-y-1">
             Start Building Now
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 inline-block ml-2 transition-transform group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7l5 5m0 0l-5 5m5-5H6" />
