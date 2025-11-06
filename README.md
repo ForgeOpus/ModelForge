@@ -7,6 +7,7 @@
 
 ## 🚀 **Features**  
 - **GPU-Powered Finetuning**: Optimized for NVIDIA GPUs (even 4GB VRAM).  
+- **Multiple Providers**: Choose between HuggingFace (comprehensive) or Unsloth (optimized for speed).
 - **One-Click Workflow**: Upload data → Pick task → Train → Test.  
 - **Hardware-Aware**: Auto-detects your GPU/CPU and recommends models.  
 - **React UI**: No CLI or notebooks—just a friendly interface.  
@@ -61,6 +62,23 @@
 
 5. **Done!**:
    Navigate to [http://localhost:8000](http://localhost:8000) in your browser and get started!
+
+### **Optional: Enable Unsloth Provider for Faster Training**
+ModelForge supports multiple fine-tuning providers. By default, it uses HuggingFace, but you can optionally install Unsloth for 2x faster training and 60% less memory usage.
+
+**To enable Unsloth:**
+```bash
+pip install "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git"
+```
+
+**Or install with the optional dependency:**
+```bash
+pip install modelforge-finetuning[unsloth]
+```
+
+After installation, restart the application. The Unsloth provider will be automatically detected and available in the provider selection page.
+
+**Note:** Unsloth currently optimizes text-generation tasks. For summarization and question-answering, continue using the HuggingFace provider.
 
 ### **Running the Application Again in the Future**
 1. **Start the Application**:
