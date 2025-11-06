@@ -17,8 +17,16 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         
         const data = await response.json();
         console.log("Fetched default values:", data.default_values);
-        // Update form state with fetched values
-        setFormState(data.default_values);
+        
+        // Preserve the provider from defaultValues if it exists
+        const preservedProvider = defaultValues?.provider || 'huggingface';
+        console.log("Preserving provider:", preservedProvider);
+        
+        // Update form state with fetched values but preserve provider
+        setFormState({
+          ...data.default_values,
+          provider: preservedProvider
+        });
       } catch (err) {
         console.error("Error fetching settings:", err);
       }
@@ -86,10 +94,17 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
       formData.append("json_file", selectedFile, selectedFile.name);
     }
 
-    // Append settings as a JSON string
-    formData.append("settings", JSON.stringify(formState));
+    // Ensure provider is included in formState
+    const settingsToSend = {
+      ...formState,
+      provider: formState.provider || defaultValues.provider || 'huggingface'
+    };
 
-    console.log("Sending data to server:",JSON.stringify(formState));
+    // Append settings as a JSON string
+    formData.append("settings", JSON.stringify(settingsToSend));
+
+    console.log("Sending data to server:", JSON.stringify(settingsToSend));
+    console.log("Provider being sent:", settingsToSend.provider);
 
     try {
       const response = await fetch(`${config.baseURL}/finetune/load_settings`, {
@@ -181,6 +196,12 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
               </Tooltip>
               <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-white">
                 {formState.model_name || defaultValues.model_name || 'Not set'}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-400 mb-1">Fine-tuning Provider</label>
+              <div className="bg-gray-900 border border-gray-700 rounded-lg p-3 text-white capitalize">
+                {formState.provider || defaultValues.provider || 'huggingface'}
               </div>
             </div>
             <div>
