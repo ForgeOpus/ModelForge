@@ -123,15 +123,20 @@ class Seq2SeqFinetuner(Finetuner):
             trainer.train()
             trainer.model.save_pretrained(self.fine_tuned_name)
             print(f"Model saved to: {self.fine_tuned_name}")
-            modelforge_config_file = os.path.abspath(self.fine_tuned_name)
-            config_file_result = self.build_config_file(modelforge_config_file, self.pipeline_task,
-                                                        "AutoPeftModelForSeq2SeqLM")
+            modelforge_config_file = os.path.abspath(self.fine_tuned_name or "")
+            provider: str = self.provider if isinstance(self.provider, str) and self.provider else 'huggingface'
+            config_file_result = self.build_config_file(
+                modelforge_config_file,
+                self.pipeline_task,
+                "AutoPeftModelForSeq2SeqLM",
+                provider=provider
+            )
             if not config_file_result:
                 raise Warning(
                     "Error building config file.\nRetry finetuning. This might cause problems in the model playground.")
 
             super().report_finish()
-            return self.fine_tuned_name
+            return self.fine_tuned_name or ""
         except hf_errors.GatedRepoError as e:
             super().invalid_access()
             super().report_finish(error=True, message="You do not have access to this model.")

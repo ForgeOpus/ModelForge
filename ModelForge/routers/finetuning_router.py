@@ -17,6 +17,12 @@ from ..utilities.hardware_detection.model_validator import ModelValidator
 
 from ..globals.globals_instance import global_manager
 
+# Explicit runtime assertions instead of silent defensive re-initialization.
+if global_manager is None or getattr(global_manager, 'settings_builder', None) is None:
+    raise RuntimeError("Global manager not initialized before router mount. Initialize globals_instance first.")
+if getattr(global_manager, 'finetuning_status', None) is None:
+    global_manager.reset_finetuning_status()
+
 router = APIRouter(
     prefix="/finetune",
 )
@@ -277,6 +283,17 @@ async def detect_hardware(request: Request) -> JSONResponse:
         task = TaskFormData(task=form["task"])
         task = task.task
         global_manager.settings_builder.task = task
+
+        # Extract and validate provider from request
+        provider = form.get("provider", "huggingface")
+        registered_providers = [p["name"] for p in ProviderRegistry.list_all()]
+        if provider in registered_providers:
+            global_manager.settings_builder.provider = provider
+            print(f"Provider set to: {provider}")
+        else:
+            print(f"Warning: Provider '{provider}' not registered. Using default 'huggingface'")
+            global_manager.settings_builder.provider = "huggingface"
+
         # Reset custom model settings when running new hardware detection
         global_manager.settings_builder.is_custom_model = False
         model_requirements, hardware_profile, model_recommendation, possible_options = global_manager.hardware_detector.run(task)
@@ -471,6 +488,7 @@ def finetuning_task(llm_tuner) -> None:
         # Use the path returned from finetune (should be absolute)
         model_path = os.path.abspath(path) if not os.path.isabs(path) else path
 
+        provider_value = global_manager.settings_builder.provider if hasattr(global_manager.settings_builder, 'provider') else None
         model_data = {
             "model_name": global_manager.settings_builder.fine_tuned_name.split('/')[-1] if global_manager.settings_builder.fine_tuned_name else os.path.basename(model_path),
             "base_model": global_manager.settings_builder.model_name,
@@ -479,7 +497,8 @@ def finetuning_task(llm_tuner) -> None:
                           (" (Custom Model)" if global_manager.settings_builder.is_custom_model else " (Recommended Model)"),
             "creation_date": datetime.now().isoformat(),
             "model_path": model_path,
-            "is_custom_base_model": global_manager.settings_builder.is_custom_model
+            "is_custom_base_model": global_manager.settings_builder.is_custom_model,
+            "provider": provider_value or global_manager.finetuning_status.get("provider") or "huggingface"
         }
         global_manager.db_manager.add_model(model_data)
     
@@ -505,23 +524,35 @@ def finetuning_task(llm_tuner) -> None:
 
 @router.get("/status")
 async def finetuning_status_page(request: Request) -> JSONResponse:
+    status_obj = global_manager.finetuning_status if isinstance(global_manager.finetuning_status, dict) else {}
     return JSONResponse({
-        "status": global_manager.finetuning_status["status"],
-        "progress": global_manager.finetuning_status["progress"],
-        "message": global_manager.finetuning_status["message"]
+        "status": status_obj.get("status"),
+        "progress": status_obj.get("progress"),
+        "message": status_obj.get("message"),
+        "provider": status_obj.get("provider")
     })
+
+@router.get("/providers")
+async def list_providers(request: Request) -> JSONResponse:
+    """Return registered providers with availability and supported tasks."""
+    try:
+        from ..utilities.finetuning.providers import ProviderRegistry
+        return JSONResponse({"providers": ProviderRegistry.list_all()})
+    except Exception as e:
+        return JSONResponse({"providers": [], "error": str(e)})
 
 @router.get("/start")
 async def start_finetuning_page(request: Request, background_task: BackgroundTasks) -> JSONResponse:
     from ..utilities.finetuning.providers import ProviderFinetuner
 
-    print(global_manager.settings_builder.get_settings())
+    settings_builder = global_manager.settings_builder
+    print(settings_builder.get_settings())
     
     # Log whether using custom model
-    if global_manager.settings_builder.is_custom_model:
-        print(f"Starting finetuning with CUSTOM MODEL: {global_manager.settings_builder.model_name}")
+    if settings_builder.is_custom_model:
+        print(f"Starting finetuning with CUSTOM MODEL: {settings_builder.model_name}")
     else:
-        print(f"Starting finetuning with RECOMMENDED MODEL: {global_manager.settings_builder.model_name}")
+        print(f"Starting finetuning with RECOMMENDED MODEL: {settings_builder.model_name}")
 
     if not global_manager.settings_cache:
         raise HTTPException(
@@ -551,8 +582,9 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
     global_manager.finetuning_status["message"] = "Starting finetuning process..."
     
     # Get provider from settings (default to huggingface for backward compatibility)
-    settings = global_manager.settings_builder.get_settings()
+    settings = settings_builder.get_settings()
     provider = settings.get("provider", "huggingface")
+    global_manager.finetuning_status["provider"] = provider
     
     # Branch based on provider
     if provider != "huggingface":
@@ -560,29 +592,29 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
         print(f"Using provider: {provider}")
         llm_tuner = ProviderFinetuner(
             provider_name=provider,
-            model_name=global_manager.settings_builder.model_name,
-            task=global_manager.settings_builder.task,
-            compute_specs=global_manager.settings_builder.compute_profile
+            model_name=settings_builder.model_name or "",
+            task=settings_builder.task or "text-generation",
+            compute_specs=settings_builder.compute_profile or "low_end"
         )
     else:
         # Use legacy HuggingFace tuners for backward compatibility
         print("Using legacy HuggingFace tuner")
-        if global_manager.settings_builder.task == "text-generation":
+        if settings_builder.task == "text-generation":
             llm_tuner = CausalLLMFinetuner(
-                model_name=global_manager.settings_builder.model_name,
-                compute_specs=global_manager.settings_builder.compute_profile,
+                model_name=settings_builder.model_name or "",
+                compute_specs=settings_builder.compute_profile or "low_end",
                 pipeline_task="text-generation"
             )
-        elif global_manager.settings_builder.task == "summarization":
+        elif settings_builder.task == "summarization":
             llm_tuner = Seq2SeqFinetuner(
-                model_name=global_manager.settings_builder.model_name,
-                compute_specs=global_manager.settings_builder.compute_profile,
+                model_name=settings_builder.model_name or "",
+                compute_specs=settings_builder.compute_profile or "low_end",
                 pipeline_task="summarization"
             )
-        elif global_manager.settings_builder.task == "extractive-question-answering":
+        elif settings_builder.task == "extractive-question-answering":
             llm_tuner = QuestionAnsweringTuner(
-                model_name=global_manager.settings_builder.model_name,
-                compute_specs=global_manager.settings_builder.compute_profile,
+                model_name=settings_builder.model_name or "",
+                compute_specs=settings_builder.compute_profile or "low_end",
                 pipeline_task="question-answering"
             )
         else:

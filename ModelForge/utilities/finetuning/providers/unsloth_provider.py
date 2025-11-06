@@ -4,7 +4,10 @@ Unsloth AI provider implementation for optimized fine-tuning.
 This provider implements Unsloth's optimized fine-tuning workflow
 with efficient memory usage and faster training.
 """
-
+try:
+    import unsloth
+except ImportError:
+    pass  # Unsloth is an optional dependency
 import os
 from typing import Dict, Any, Optional, List
 from datasets import Dataset
@@ -73,7 +76,7 @@ class UnslothProvider(BaseProvider):
         
         # Normalize max_seq_length (Unsloth requires explicit value)
         max_seq_length = validated.get("max_seq_length", -1)
-        if max_seq_length <= 0:
+        if max_seq_length is None or max_seq_length <= 0:
             validated["max_seq_length"] = 2048
             print(f"Unsloth: Setting max_seq_length to default 2048")
         
@@ -220,6 +223,8 @@ class UnslothProvider(BaseProvider):
             packing=hyperparameters.get("packing", False),
             args=training_args,
             callbacks=callbacks,
+            fp16=False,
+            bf16=True
         )
         
         # Train the model

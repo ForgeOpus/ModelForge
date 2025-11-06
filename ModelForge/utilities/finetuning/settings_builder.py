@@ -1,11 +1,15 @@
-from typing import Dict, Union
+from typing import Dict, Union, Any
 
 
 class SettingsBuilder:
 
     def __init__(self, task, model_name, compute_profile) -> None:
-        self.model_name = model_name
-        self.task = task
+        # Normalize potentially None inputs to sane defaults for static analysis and downstream usage
+        self.model_name = model_name if model_name is not None else ""
+        self.task = task if task is not None else "text-generation"
+        compute_profile = compute_profile if compute_profile is not None else "low_end"
+        # Fine-tuning provider (default huggingface for backward compatibility)
+        self.provider = "huggingface"
         self.fine_tuned_name = None
         self.output_dir = None  # Will be set properly in set_settings()
         self.num_train_epochs = 1
@@ -53,9 +57,21 @@ class SettingsBuilder:
         """
         Update settings from a dictionary
         """
+        ignored_keys = []
         for key, value in settings_dict.items():
             if key == "dataset":
                 self.dataset = value
+            elif key == "provider":
+                # Validate provider via registry if available
+                try:
+                    from .providers.provider_registry import ProviderRegistry
+                    registered = [p["name"] for p in ProviderRegistry.list_all()]
+                    if value in registered:
+                        self.provider = value
+                    else:
+                        print(f"Warning: Requested provider '{value}' not registered. Keeping '{self.provider}'.")
+                except Exception as e:
+                    print(f"Warning: Could not validate provider '{value}': {e}. Using '{self.provider}'.")
             elif key == "max_seq_length":
                 if value == -1:
                     self.max_seq_length = None
@@ -94,11 +110,17 @@ class SettingsBuilder:
                         pass
                 else:
                     setattr(self, key, value)
+            else:
+                ignored_keys.append(key)
 
-    def get_settings(self) -> Dict[str, Union[str, float]]:
+        if ignored_keys:
+            print(f"SettingsBuilder: Ignored unrecognized keys: {ignored_keys}")
+
+    def get_settings(self) -> Dict[str, Any]:
         return {
             "task": self.task,
             "model_name": self.model_name,
+            "provider": self.provider,
             "num_train_epochs": self.num_train_epochs,
             "compute_specs": self.compute_profile,
             "lora_r": self.lora_r,

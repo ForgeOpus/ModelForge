@@ -102,6 +102,7 @@ class Finetuner(ABC):
         self.dataset = None
         self.model_name = model_name
         self.logging_dir = "./training_logs"
+        self.provider = "huggingface"
 
 
     @staticmethod
@@ -198,6 +199,9 @@ class Finetuner(ABC):
         self.group_by_length = kwargs.get('group_by_length')
         self.packing = kwargs.get('packing')
         self.device_map = kwargs.get('device_map')
+        # Provider persistence (for legacy tuners so config file reflects selected backend)
+        if 'provider' in kwargs and kwargs.get('provider'):
+            self.provider = kwargs.get('provider')
 
     def invalid_access(self):
         print("*"*100)

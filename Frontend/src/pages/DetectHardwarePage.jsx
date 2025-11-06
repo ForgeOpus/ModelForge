@@ -99,7 +99,7 @@ const HardwareDetection = ({ currentSettings, updateSettings }) => {
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({ task: selectedTask })
+            body: JSON.stringify({ task: selectedTask, provider: currentSettings.provider })
         });
 
         const mockResponse = await resp.json();

@@ -125,12 +125,18 @@ class CausalLLMFinetuner(Finetuner):
             trainer.train()
             trainer.model.save_pretrained(self.fine_tuned_name)
             modelforge_config_file = os.path.abspath(self.fine_tuned_name)
-            config_file_result = self.build_config_file(modelforge_config_file, self.pipeline_task,
-                                                        "AutoPeftModelForCausalLM")
+            # Ensure provider is a string; fallback to 'huggingface' if unset
+            provider: str = self.provider if isinstance(self.provider, str) and self.provider else 'huggingface'
+            config_file_result = self.build_config_file(
+                modelforge_config_file,
+                self.pipeline_task,
+                "AutoPeftModelForCausalLM",
+                provider=provider
+            )
             if not config_file_result:
                 raise Warning("Error building config file.\nRetry finetuning. This might cause problems in the model playground.")
             super().report_finish()
-            return self.fine_tuned_name
+            return self.fine_tuned_name or ""
         except Exception as e:
             print(f"An error occurred during training: {e}")
             super().report_finish(error=True, message=e)
