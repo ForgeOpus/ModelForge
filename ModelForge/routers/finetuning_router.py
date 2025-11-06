@@ -80,7 +80,18 @@ class SettingsFormData(BaseModel):
     packing: bool
     max_seq_length: int
     dataset: str
+    provider: str = "huggingface"  # Default to huggingface for backward compatibility
 
+    @field_validator("provider")
+    def validate_provider(cls, provider):
+        from ..utilities.finetuning.providers import ProviderRegistry
+        available_providers = ProviderRegistry.list_available()
+        if provider not in available_providers:
+            raise ValueError(
+                f"Provider '{provider}' is not available. "
+                f"Available providers: {', '.join(available_providers)}"
+            )
+        return provider
     @field_validator("dataset")
     def validate_dataset_prescence(cls, dataset):
         if not dataset:
@@ -259,6 +270,8 @@ async def detect_hardware_page(request: Request) -> JSONResponse:
 @router.post("/detect", response_class=JSONResponse)
 async def detect_hardware(request: Request) -> JSONResponse:
     try:
+        from ..utilities.finetuning.providers import ProviderRegistry
+        
         form = await request.json()
         print(form)
         task = TaskFormData(task=form["task"])
@@ -275,6 +288,11 @@ async def detect_hardware(request: Request) -> JSONResponse:
             "selected_model": None,
             "is_custom_model": False
         })
+        
+        # Get available providers
+        providers_list = ProviderRegistry.list_all()
+        available_providers = ProviderRegistry.list_available()
+        
         return JSONResponse(
             {
                 "status_code": 200,
@@ -287,6 +305,8 @@ async def detect_hardware(request: Request) -> JSONResponse:
                 "cpu_cores": hardware_profile.get("cpu_cores"),
                 "model_recommendation": model_recommendation,
                 "possible_options": possible_options,
+                "providers": providers_list,
+                "available_providers": available_providers,
 
             }
         )
@@ -493,6 +513,7 @@ async def finetuning_status_page(request: Request) -> JSONResponse:
 
 @router.get("/start")
 async def start_finetuning_page(request: Request, background_task: BackgroundTasks) -> JSONResponse:
+    from ..utilities.finetuning.providers import ProviderFinetuner
 
     print(global_manager.settings_builder.get_settings())
     
@@ -528,31 +549,49 @@ async def start_finetuning_page(request: Request, background_task: BackgroundTas
     
     global_manager.finetuning_status["status"] = "initializing"
     global_manager.finetuning_status["message"] = "Starting finetuning process..."
-    if global_manager.settings_builder.task == "text-generation":
-        llm_tuner = CausalLLMFinetuner(
+    
+    # Get provider from settings (default to huggingface for backward compatibility)
+    settings = global_manager.settings_builder.get_settings()
+    provider = settings.get("provider", "huggingface")
+    
+    # Branch based on provider
+    if provider != "huggingface":
+        # Use new provider path
+        print(f"Using provider: {provider}")
+        llm_tuner = ProviderFinetuner(
+            provider_name=provider,
             model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="text-generation"
-        )
-    elif global_manager.settings_builder.task == "summarization":
-        llm_tuner = Seq2SeqFinetuner(
-            model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="summarization"
-        )
-    elif global_manager.settings_builder.task == "extractive-question-answering":
-        llm_tuner = QuestionAnsweringTuner(
-            model_name=global_manager.settings_builder.model_name,
-            compute_specs=global_manager.settings_builder.compute_profile,
-            pipeline_task="question-answering"
+            task=global_manager.settings_builder.task,
+            compute_specs=global_manager.settings_builder.compute_profile
         )
     else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
-        )
+        # Use legacy HuggingFace tuners for backward compatibility
+        print("Using legacy HuggingFace tuner")
+        if global_manager.settings_builder.task == "text-generation":
+            llm_tuner = CausalLLMFinetuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="text-generation"
+            )
+        elif global_manager.settings_builder.task == "summarization":
+            llm_tuner = Seq2SeqFinetuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="summarization"
+            )
+        elif global_manager.settings_builder.task == "extractive-question-answering":
+            llm_tuner = QuestionAnsweringTuner(
+                model_name=global_manager.settings_builder.model_name,
+                compute_specs=global_manager.settings_builder.compute_profile,
+                pipeline_task="question-answering"
+            )
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid task. Must be one of {VALID_TASKS_STR}."
+            )
 
-    llm_tuner.set_settings(**global_manager.settings_builder.get_settings())
+    llm_tuner.set_settings(**settings)
 
     background_task.add_task(finetuning_task, llm_tuner)
     global_manager.finetuning_status["status"] = "running"

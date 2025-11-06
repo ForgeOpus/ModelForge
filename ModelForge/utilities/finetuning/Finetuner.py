@@ -214,12 +214,13 @@ class Finetuner(ABC):
         pass
 
     @staticmethod
-    def build_config_file(config_dir: str, pipeline_task:str, model_class: str) -> bool:
+    def build_config_file(config_dir: str, pipeline_task:str, model_class: str, provider: str = "huggingface") -> bool:
         """
         Builds the chat playground configuration file for the fine-tuned model.
         :param config_dir: Path to the model adapter settings directory. This is where the configurations file will also be saved.
         :param pipeline_task: The pipeline task flag for the model, as defined by huggingface. eg "text-generation".
         :param model_class: The model class name for the model, as defined by huggingface. eg "AutoModelForCausalLM".
+        :param provider: The provider used for fine-tuning (default: "huggingface" for backward compatibility).
         :return: True if the configuration file is successfully created, False otherwise.
         """
         print(config_dir)
@@ -228,6 +229,7 @@ class Finetuner(ABC):
                 configs = {
                     "model_class": model_class,
                     "pipeline_task": pipeline_task,
+                    "provider": provider,
                 }
                 configs = json.dumps(configs, indent=4)
                 f.write(configs)

@@ -29,6 +29,11 @@ dependencies = [
     "python-multipart",
 ]
 
+[project.optional-dependencies]
+unsloth = [
+    "unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git",
+]
+
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["ModelForge*"]
