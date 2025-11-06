@@ -97,6 +97,10 @@ To stop the application and free up resources, press `Ctrl+C` in the terminal ru
 {"input": "Enter the poem topic here...", "output": "Roses are red..."}
 ```
 
+## 📚 **Documentation**
+- [Provider System Guide](docs/PROVIDERS.md) - Learn about fine-tuning providers (HuggingFace, Unsloth)
+- [Model Configuration Guide](ModelForge/model_configs/README.md) - Add new model recommendations
+
 ## 🤝 **Contributing Model Recommendations**
 ModelForge uses a modular configuration system for model recommendations. Contributors can easily add new recommended models by adding configuration files to the `model_configs/` directory. Each hardware profile (low_end, mid_range, high_end) has its own configuration file where you can specify primary and alternative models for different tasks.
 
