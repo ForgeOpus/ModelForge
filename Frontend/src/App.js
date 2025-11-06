@@ -1,6 +1,6 @@
 // src/App.jsx
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LandingPage from './pages/AppLanding';
 import ProviderSelectionPage from './pages/ProviderSelectionPage';
@@ -8,7 +8,7 @@ import DetectHardwarePage from './pages/DetectHardwarePage';
 import FinetuneSettings from './pages/FinetuningSettingsPage';
 import Loading from './pages/Loading';
 import TechnicalDetailsPage from './pages/TechnicalDetailsPage';
-import ListModels from './pages/ListModels';
+// Removed unused import of ListModels (not referenced in routes)
 import './index.css';
 import ListAllModels from "./pages/ListAllModels";
 
@@ -61,7 +61,7 @@ function App() {
     console.log('Settings updated in App.js:', finetuneSettings);
   }, [finetuneSettings]);
   // Function to update settings from child components
-  const updateSettings = (newSettingsOrFunction) => {
+  const updateSettings = useCallback((newSettingsOrFunction) => {
     // Log what we're trying to update with
     console.log('Update triggered with:', 
       typeof newSettingsOrFunction === 'function' 
@@ -81,7 +81,7 @@ function App() {
       console.log('Updating settings in App.js:', newState);
       return newState;
     });
-  };
+  }, []);
 
   return (
     <Router>

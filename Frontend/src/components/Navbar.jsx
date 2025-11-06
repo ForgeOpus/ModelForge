@@ -85,10 +85,7 @@ const Navbar = ({ appName = "ModelForge" }) => {
     );
   };
   
-  // We're removing the footer since it's not in the screenshot
-  const renderFooter = () => {
-    return null;
-  };
+  // Removed unused renderFooter helper (was returning null and never used)
 
   return (
     <>

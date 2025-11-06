@@ -20,15 +20,7 @@ const Loading = () => {
     "Training in progress..."
   ];
   
-  // Function to manually set idle status (for demo purposes)
-  const setTrainingComplete = () => {
-    setIsIdle(true);
-    setProgress(100);
-    setCurrentStep(steps.length - 1);
-    if (statusIntervalRef.current) {
-      clearInterval(statusIntervalRef.current);
-    }
-  };
+  // Removed unused setTrainingComplete demo function
 
   // Function to check backend status
   useEffect(() => {
@@ -108,14 +100,13 @@ const Loading = () => {
       console.log("Received model path:", modelPath);
   
       // Now send POST request with the model path
-      const response = await fetch(`${config.baseURL}/playground/new`, {
+      await fetch(`${config.baseURL}/playground/new`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          model_path: modelPath
-        })
+        // Explicitly map backend expected key to local variable name
+        body: JSON.stringify({ model_path: modelPath })
       });
   
       // After successful POST request, redirect to homepage

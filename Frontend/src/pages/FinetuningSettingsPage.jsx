@@ -7,7 +7,7 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [formState, setFormState] = useState({});
-  const [settingsUpdated, setSettingsUpdated] = useState(false);
+  const [settingsUpdated, setSettingsUpdated] = useState(false); // Will set to true on successful submission
   const [activeTooltip, setActiveTooltip] = useState(null);
   
   useEffect(() => {
@@ -18,16 +18,19 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         
         const data = await response.json();
         console.log("Fetched default values:", data.default_values);
-        defaultValues = data.default_values;
-        // Update form state with fetched values
+        // Don't reassign prop; instead set local form state and optionally propagate up
         setFormState(data.default_values);
+        // Propagate to parent state if updateSettings provided
+        if (typeof updateSettings === 'function') {
+          updateSettings(data.default_values);
+        }
       } catch (err) {
         console.error("Error fetching settings:", err);
       }
     };
 
     fetchDefaultSettings();
-  }, []);
+  }, [updateSettings]);
 
   // Sync with props when they change
   useEffect(() => {
@@ -103,10 +106,9 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         throw new Error(`Server error: ${response.status}`);
       }
 
-      const responseGet = await fetch(`${config.baseURL}/finetune/start`, {
-        method: 'GET',
-      });
-      console.log("Response from GET request:", responseGet);
+      await fetch(`${config.baseURL}/finetune/start`, { method: 'GET' });
+      // Indicate settings update succeeded
+      setSettingsUpdated(true);
       setTimeout(() => {
         navigate('/finetune/loading'); // change here 
       }, 1000);

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+// Removed unused Link import
 
 const TechnicalDetailsPage = () => {
   const [activeTab, setActiveTab] = useState('architecture');

@@ -1,6 +1,5 @@
-import React from 'react';
-import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+// Removed unused Link and useLocation imports
 
 const ListModelsPage = () => {
   const [models, setModels] = useState([]);
