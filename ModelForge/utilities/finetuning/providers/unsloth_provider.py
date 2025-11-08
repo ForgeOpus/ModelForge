@@ -202,8 +202,8 @@ class UnslothProvider(BaseProvider):
             optim=hyperparameters.get("optim", "adamw_8bit"),
             warmup_ratio=hyperparameters.get("warmup_ratio", 0.03),
             learning_rate=hyperparameters.get("learning_rate", 2e-4),
-            fp16=not hyperparameters.get("bf16", False),
-            bf16=hyperparameters.get("bf16", False),
+            fp16=False,
+            bf16=True,
             logging_steps=hyperparameters.get("logging_steps", 1),
             save_steps=hyperparameters.get("save_steps", 0),
             weight_decay=hyperparameters.get("weight_decay", 0.01),
@@ -219,12 +219,10 @@ class UnslothProvider(BaseProvider):
             train_dataset=self.dataset,
             dataset_text_field="text",
             max_seq_length=hyperparameters.get("max_seq_length", 2048),
-            dataset_num_proc=2,
+            dataset_num_proc=1,
             packing=hyperparameters.get("packing", False),
             args=training_args,
             callbacks=callbacks,
-            fp16=False,
-            bf16=True
         )
         
         # Train the model
