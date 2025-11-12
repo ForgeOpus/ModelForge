@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { config, getSystemInfo, uploadDataset, startTraining } from '../services/api';
+import { config } from '../services/api';
 
 const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const navigate = useNavigate();
@@ -10,39 +10,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const [settingsUpdated, setSettingsUpdated] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState(null);
   
-  // New state for dynamic options
-  const [availableProviders, setAvailableProviders] = useState([]);
-  const [availableStrategies, setAvailableStrategies] = useState([]);
-  const [systemInfo, setSystemInfo] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  // Fetch system info on component mount
-  useEffect(() => {
-    const fetchSystemInfo = async () => {
-      try {
-        setIsLoading(true);
-        const info = await getSystemInfo();
-        console.log("Fetched system info:", info);
-        
-        setSystemInfo(info);
-        setAvailableProviders(info.available_providers || ['huggingface']);
-        setAvailableStrategies(info.available_strategies || ['sft']);
-        
-        setIsLoading(false);
-      } catch (err) {
-        console.error("Error fetching system info:", err);
-        setError("Failed to load system information");
-        // Fallback to defaults
-        setAvailableProviders(['huggingface']);
-        setAvailableStrategies(['sft']);
-        setIsLoading(false);
-      }
-    };
-
-    fetchSystemInfo();
-  }, []);
-
   useEffect(() => {
     const fetchDefaultSettings = async () => {
       try {
@@ -68,13 +35,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     if (defaultValues) {
       // Create a deep copy to break any references
       const values = JSON.parse(JSON.stringify(defaultValues));
-      
-      // Set defaults for new fields if not present
-      if (!values.provider) values.provider = 'huggingface';
-      if (!values.strategy) values.strategy = 'sft';
-      if (values.eval_split === undefined) values.eval_split = 0.2;
-      if (values.eval_steps === undefined) values.eval_steps = 100;
-      
       console.log("Setting form values to:", values);
       setFormState(values);
     }
@@ -110,7 +70,7 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     const updatedState = {
       ...formState,
       use_4bit: value === '4bit',
-      use_8bit: value === '8bit',
+      load_in_8bit: value === '8bit',
       quantization: value
     };
 
@@ -119,91 +79,41 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
+    // Create FormData to send multipart data
+    const formData = new FormData();
+
+    // Append the selected file
+    if (selectedFile) {
+      formData.append("json_file", selectedFile, selectedFile.name);
+    }
+
+    // Append settings as a JSON string
+    formData.append("settings", JSON.stringify(formState));
+
+    console.log("Sending data to server:",JSON.stringify(formState));
+
     try {
-      setError(null);
-      
-      // Step 1: Upload dataset if provided
-      if (selectedFile) {
-        console.log("Uploading dataset...");
-        const uploadResponse = await uploadDataset(selectedFile, formState);
-        console.log("Dataset uploaded:", uploadResponse);
-        
-        // Update form state with the uploaded file path
-        formState.dataset = uploadResponse.file_path;
-      } else {
-        throw new Error("Please select a dataset file");
+      const response = await fetch(`${config.baseURL}/finetune/load_settings`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Server error: ${response.status}`);
       }
 
-      // Step 2: Prepare training configuration
-      const trainingConfig = {
-        // Required fields
-        task: formState.task,
-        model_name: formState.model_name,
-        dataset: formState.dataset,
-        compute_specs: formState.compute_specs || 'low_end',
-        
-        // Provider and strategy (NEW)
-        provider: formState.provider || 'huggingface',
-        strategy: formState.strategy || 'sft',
-        
-        // LoRA settings
-        lora_r: formState.lora_r || 16,
-        lora_alpha: formState.lora_alpha || 32,
-        lora_dropout: formState.lora_dropout || 0.1,
-        
-        // Quantization settings
-        use_4bit: formState.use_4bit !== undefined ? formState.use_4bit : true,
-        use_8bit: formState.use_8bit || false,
-        bnb_4bit_compute_dtype: formState.bnb_4bit_compute_dtype || 'float16',
-        bnb_4bit_quant_type: formState.bnb_4bit_quant_type || 'nf4',
-        use_nested_quant: formState.use_nested_quant || false,
-        
-        // Training precision
-        fp16: formState.fp16 || false,
-        bf16: formState.bf16 || false,
-        
-        // Training hyperparameters
-        num_train_epochs: formState.num_train_epochs || 1,
-        per_device_train_batch_size: formState.per_device_train_batch_size || 1,
-        per_device_eval_batch_size: formState.per_device_eval_batch_size || 1,
-        gradient_accumulation_steps: formState.gradient_accumulation_steps || 4,
-        gradient_checkpointing: formState.gradient_checkpointing !== undefined ? formState.gradient_checkpointing : true,
-        max_grad_norm: formState.max_grad_norm || 0.3,
-        learning_rate: formState.learning_rate || 0.0002,
-        weight_decay: formState.weight_decay || 0.001,
-        optim: formState.optim || 'paged_adamw_32bit',
-        lr_scheduler_type: formState.lr_scheduler_type || 'cosine',
-        max_steps: formState.max_steps || -1,
-        warmup_ratio: formState.warmup_ratio || 0.03,
-        group_by_length: formState.group_by_length !== undefined ? formState.group_by_length : true,
-        packing: formState.packing || false,
-        
-        // Sequence settings
-        max_seq_length: formState.max_seq_length || null,
-        
-        // Evaluation settings (NEW)
-        eval_split: formState.eval_split !== undefined ? formState.eval_split : 0.2,
-        eval_steps: formState.eval_steps || 100,
-      };
-
-      console.log("Starting training with config:", trainingConfig);
-
-      // Step 3: Start training
-      const trainingResponse = await startTraining(trainingConfig);
-      console.log("Training started:", trainingResponse);
-
-      setSettingsUpdated(true);
-      
-      // Navigate to loading page after short delay
+      const responseGet = await fetch(`${config.baseURL}/finetune/start`, {
+        method: 'GET',
+      });
+      console.log("Response from GET request:", responseGet);
       setTimeout(() => {
-        navigate('/finetune/loading');
+        navigate('/finetune/loading'); // change here 
       }, 1000);
 
     } catch (error) {
       console.error("Error submitting form:", error);
-      setError(error.message || "Failed to start training");
-      alert(`Failed to start training: ${error.message}`);
+      alert("Failed to update settings.");
     }
   };
 
@@ -211,8 +121,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const tooltips = {
     task: "What you want your AI to be good at doing",
     model_name: "The base AI model you're customizing",
-    provider: "Model provider (HuggingFace for standard, Unsloth for 2x faster training)",
-    strategy: "Training method (SFT for basic, RLHF for preference learning, DPO for direct optimization, QLoRA for memory efficiency)",
     gpu: "The graphics card that will run your training",
     ram: "Computer memory available for training",
     num_train_epochs: "How many times the AI will see your training data",
@@ -225,23 +133,7 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     quantization: "Reduces model size to fit in memory",
     bnb_4bit_compute_dtype: "Technical setting for calculation precision",
     optim: "Method used to update the model during training",
-    lr_scheduler_type: "How learning speed changes during training",
-    eval_split: "Percentage of data to use for validation (0-1)",
-    eval_steps: "How often to evaluate the model during training"
-  };
-
-  // Provider descriptions
-  const providerDescriptions = {
-    huggingface: "Standard HuggingFace Hub models",
-    unsloth: "Optimized for 2x faster training with lower memory"
-  };
-
-  // Strategy descriptions
-  const strategyDescriptions = {
-    sft: "Supervised Fine-Tuning - Standard approach with LoRA",
-    rlhf: "Reinforcement Learning from Human Feedback - Preference-based training",
-    dpo: "Direct Preference Optimization - Simpler alternative to RLHF",
-    qlora: "Quantized LoRA - Memory-efficient training with 4-bit quantization"
+    lr_scheduler_type: "How learning speed changes during training"
   };
 
   // Tooltip display component
@@ -265,35 +157,12 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     </div>
   );
 
-  if (isLoading) {
-    return (
-      <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <div className="text-center">
-          <div className="animate-spin h-12 w-12 border-4 border-orange-500 rounded-full border-t-transparent mx-auto"></div>
-          <p className="text-gray-400 mt-4">Loading system information...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="container mx-auto px-4 py-8 max-w-4xl">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white">Finetuning Settings</h1>
         <p className="text-gray-400 mt-2">Configure your model training parameters</p>
-        
-        {systemInfo && (
-          <div className="mt-4 p-3 bg-gray-800 rounded-lg text-sm text-gray-300">
-            <strong>Available:</strong> {availableProviders.length} provider(s), {availableStrategies.length} strategy(ies)
-          </div>
-        )}
       </div>
-
-      {error && (
-        <div className="bg-red-700 text-white p-4 rounded-lg mb-6">
-          <strong>Error:</strong> {error}
-        </div>
-      )}
 
       {settingsUpdated && (
         <div className="bg-green-700 text-white p-4 rounded-lg mb-6 flex items-center justify-between">
@@ -339,64 +208,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
                 {formState.hardware_config?.ram || defaultValues.hardware_config?.ram ?
                   `${formState.hardware_config?.ram || defaultValues.hardware_config?.ram} GB` : 'N/A'}
               </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Provider and Strategy Selection */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">Provider & Strategy</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <Tooltip id="provider">
-                <label htmlFor="provider" className="block text-sm font-medium text-gray-400 mb-1">
-                  Model Provider
-                </label>
-              </Tooltip>
-              <select
-                id="provider"
-                name="provider"
-                value={formState.provider || 'huggingface'}
-                onChange={handleInputChange}
-                className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
-              >
-                {availableProviders.map(provider => (
-                  <option key={provider} value={provider}>
-                    {provider.charAt(0).toUpperCase() + provider.slice(1)}
-                  </option>
-                ))}
-              </select>
-              {formState.provider && providerDescriptions[formState.provider] && (
-                <p className="mt-2 text-xs text-gray-400">
-                  {providerDescriptions[formState.provider]}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Tooltip id="strategy">
-                <label htmlFor="strategy" className="block text-sm font-medium text-gray-400 mb-1">
-                  Training Strategy
-                </label>
-              </Tooltip>
-              <select
-                id="strategy"
-                name="strategy"
-                value={formState.strategy || 'sft'}
-                onChange={handleInputChange}
-                className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
-              >
-                {availableStrategies.map(strategy => (
-                  <option key={strategy} value={strategy}>
-                    {strategy.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-              {formState.strategy && strategyDescriptions[formState.strategy] && (
-                <p className="mt-2 text-xs text-gray-400">
-                  {strategyDescriptions[formState.strategy]}
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -513,55 +324,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
           </div>
         </div>
 
-        {/* Evaluation Settings */}
-        <div className="bg-gray-800 rounded-lg p-6">
-          <h2 className="text-xl font-semibold text-white mb-4">Evaluation Settings</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <Tooltip id="eval_split">
-                <label htmlFor="eval_split" className="block text-sm font-medium text-gray-400 mb-1">
-                  Validation Split
-                </label>
-              </Tooltip>
-              <input
-                type="number"
-                id="eval_split"
-                name="eval_split"
-                min="0"
-                max="1"
-                step="0.05"
-                value={formState.eval_split !== undefined ? formState.eval_split : 0.2}
-                onChange={handleInputChange}
-                className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
-              />
-              <p className="mt-2 text-xs text-gray-400">
-                {Math.round((formState.eval_split || 0.2) * 100)}% of data for validation
-              </p>
-            </div>
-
-            <div>
-              <Tooltip id="eval_steps">
-                <label htmlFor="eval_steps" className="block text-sm font-medium text-gray-400 mb-1">
-                  Evaluation Steps
-                </label>
-              </Tooltip>
-              <input
-                type="number"
-                id="eval_steps"
-                name="eval_steps"
-                min="10"
-                step="10"
-                value={formState.eval_steps || 100}
-                onChange={handleInputChange}
-                className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
-              />
-              <p className="mt-2 text-xs text-gray-400">
-                Evaluate every {formState.eval_steps || 100} training steps
-              </p>
-            </div>
-          </div>
-        </div>
-
         {/* Advanced Settings */}
         <div className="flex justify-center mb-6">
           <button
@@ -600,11 +362,10 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
                   value={formState.lora_r || 16}
                   onChange={handleInputChange}
                   className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none" >
-                  <option value="4">4</option>
+                  <option value="2">4</option>
                   <option value="8">8</option>
                   <option value="16">16</option>
                   <option value="32">32</option>
-                  <option value="64">64</option>
                 </select>
               </div>
               <div>
@@ -680,7 +441,7 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
                   <select
                     id="bnb_4bit_compute_dtype"
                     name="bnb_4bit_compute_dtype"
-                    value={formState.bnb_4bit_compute_dtype || 'float16'}
+                    value={formState.bnb_4bit_compute_dtype || 'nf4'}
                     onChange={handleInputChange}
                     className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
                   >
