@@ -12,9 +12,8 @@ ModelForge/utilities/__pycache__/*
 ModelForge/utilities/tests/
 *.pyc
 .env
-ModelForge/database/
-ModelForge/database/*
 *.db
+*.sqlite
 dist/
 dist/*
 ModelForge.egg-info/*
