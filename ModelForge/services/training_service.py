@@ -244,6 +244,21 @@ class TrainingService:
             config["output_dir"] = checkpoint_dir
             config["logging_dir"] = "./training_logs"
 
+            # Calculate max_steps for proper progress tracking
+            if config.get("max_steps", -1) <= 0:
+                # Calculate based on dataset size and batch settings
+                num_examples = len(train_dataset)
+                batch_size = config.get("per_device_train_batch_size", 1)
+                gradient_accumulation = config.get("gradient_accumulation_steps", 4)
+                num_epochs = config.get("num_train_epochs", 1)
+                
+                effective_batch_size = batch_size * gradient_accumulation
+                steps_per_epoch = max(1, num_examples // effective_batch_size)
+                total_steps = steps_per_epoch * num_epochs
+                
+                config["max_steps"] = total_steps
+                logger.info(f"Calculated max_steps: {total_steps} (epochs={num_epochs}, examples={num_examples}, effective_batch={effective_batch_size})")
+
             # Get metrics function
             metrics_fn = MetricsCalculator.get_metrics_fn_for_task(
                 config["task"],

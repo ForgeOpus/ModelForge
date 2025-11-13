@@ -254,6 +254,27 @@ async def set_custom_model(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/session")
+async def get_session():
+    """
+    Get current session data.
+
+    Returns session information including selected task, model, and other
+    selections made during the workflow.
+
+    Returns:
+        Session data dictionary
+    """
+    logger.info("Retrieving session data")
+
+    return {
+        "success": True,
+        "task": get_session_data("task"),
+        "selected_model": get_session_data("selected_model"),
+        "is_custom_model": get_session_data("is_custom_model") or False,
+    }
+
+
 @router.get("/load_settings")
 async def get_default_settings(
     hardware_service: HardwareService = Depends(get_hardware_service),
@@ -335,7 +356,7 @@ async def get_default_settings(
             "compute_profile": compute_profile,
             "selected_model": selected_model,
             "selected_task": selected_task,
-            "default_settings": settings,
+            "default_values": settings,
         }
 
         logger.info(f"Returning default settings for {compute_profile} profile")

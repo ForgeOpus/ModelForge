@@ -46,14 +46,29 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   useEffect(() => {
     const fetchDefaultSettings = async () => {
       try {
-        const response = await fetch(`${config.baseURL}/finetune/load_settings`);
-        if (!response.ok) throw new Error('Failed to fetch settings');
-        
-        const data = await response.json();
-        console.log("Fetched default values:", data.default_values);
-        defaultValues = data.default_values;
-        // Update form state with fetched values
-        setFormState(data.default_values);
+        // Fetch default settings
+        const settingsResponse = await fetch(`${config.baseURL}/finetune/load_settings`);
+        if (!settingsResponse.ok) throw new Error('Failed to fetch settings');
+        const settingsData = await settingsResponse.json();
+        console.log("Fetched default values:", settingsData.default_values);
+
+        // Fetch session data (task, model_name)
+        const sessionResponse = await fetch(`${config.baseURL}/finetune/session`);
+        if (!sessionResponse.ok) throw new Error('Failed to fetch session');
+        const sessionData = await sessionResponse.json();
+        console.log("Fetched session data:", sessionData);
+
+        // Merge defaults with session data
+        const mergedState = {
+          ...settingsData.default_values,
+          task: sessionData.task,
+          model_name: sessionData.selected_model,
+          compute_specs: settingsData.compute_profile || 'low_end',
+        };
+
+        console.log("Merged form state:", mergedState);
+        defaultValues = mergedState;
+        setFormState(mergedState);
       } catch (err) {
         console.error("Error fetching settings:", err);
       }
@@ -122,6 +137,12 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     
     try {
       setError(null);
+      
+      // Validate required fields
+      if (!formState.task || !formState.model_name) {
+        setError("Missing required fields. Please go back and complete previous steps.");
+        return;
+      }
       
       // Step 1: Upload dataset if provided
       if (selectedFile) {

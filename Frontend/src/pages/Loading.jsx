@@ -7,6 +7,8 @@ const Loading = () => {
   const [progress, setProgress] = useState(0);
   const [currentStep, setCurrentStep] = useState(0);
   const [isIdle, setIsIdle] = useState(false);
+  const [trainingStatus, setTrainingStatus] = useState('running'); // 'running', 'completed', 'error', 'idle'
+  const [statusMessage, setStatusMessage] = useState('');
   const [backendProgress, setBackendProgress] = useState(null);
   const statusIntervalRef = useRef(null);
   const navigate = useNavigate();
@@ -41,9 +43,13 @@ const Loading = () => {
         
         console.log('Status API response:', result);
         
-        // First check if status is idle (process completed)
-        if (result.status === 'idle') {
-          console.log('Training completed! Status is idle.');
+        // Update training status
+        setTrainingStatus(result.status || 'running');
+        setStatusMessage(result.message || '');
+        
+        // Check if training completed successfully
+        if (result.status === 'completed') {
+          console.log('Training completed successfully!');
           setIsIdle(true);
           setProgress(100); // Force progress to 100%
           setCurrentStep(steps.length - 1); // Set to final step
@@ -53,8 +59,18 @@ const Loading = () => {
           return; // Exit early to avoid conflicting updates
         }
         
-        // Only update progress if not idle and progress is provided
-        if (result.progress !== undefined) {
+        // Check if training encountered an error
+        if (result.status === 'error') {
+          console.error('Training failed:', result.message);
+          setProgress(0);
+          if (statusIntervalRef.current) {
+            clearInterval(statusIntervalRef.current);
+          }
+          return;
+        }
+        
+        // Only update progress if training is running and progress is provided
+        if (result.status === 'running' && result.progress !== undefined) {
           console.log('Backend progress:', result.progress);
           setBackendProgress(Number(result.progress));
         }
@@ -256,7 +272,25 @@ const Loading = () => {
       )} */}
     
       <div className="loading-card">
-        {!isIdle ? (
+        {trainingStatus === 'error' ? (
+          /* Error view */
+          <div className="error-container text-center">
+            <div className="mb-6">
+              <svg className="mx-auto h-24 w-24 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+            </div>
+            <h2 className="text-2xl text-red-500 font-bold mb-4">Training Failed</h2>
+            <p className="text-gray-300 mb-2">{statusMessage || 'An error occurred during training.'}</p>
+            <p className="text-gray-400 text-sm mb-6">Please check your configuration and try again.</p>
+            <button
+              onClick={() => navigate('/finetune/settings')}
+              className="bg-orange-500 hover:bg-orange-600 px-6 py-3 rounded-lg text-white font-semibold transition"
+            >
+              ← Back to Settings
+            </button>
+          </div>
+        ) : !isIdle ? (
           <>
             <h1 className="loading-title">Finetuning Your Model</h1>
             
@@ -324,6 +358,12 @@ const Loading = () => {
               <p className="text-gray-300 text-lg bouncing-text">
                 You just leveled up in the AI world! Your custom model is ready to blow minds!
               </p>
+              {statusMessage && (
+                <p className="text-gray-400 text-sm mt-2 italic">{statusMessage}</p>
+              )}
+              <div className="mt-4 inline-block px-4 py-2 bg-green-500/20 border border-green-500 rounded-lg">
+                <p className="text-green-400 text-sm font-semibold">✓ Training Completed Successfully</p>
+              </div>
             </div>
             
             <div className="flex justify-center">
