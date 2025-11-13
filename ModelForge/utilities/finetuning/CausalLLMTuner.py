@@ -121,6 +121,7 @@ class CausalLLMFinetuner(Finetuner):
                 train_dataset=self.dataset,
                 args=training_arguments,
                 callbacks=[ProgressCallback()],
+                dataset_num_proc=1,  # Stabilize preprocessing (single process)
             )
             trainer.train()
             trainer.model.save_pretrained(self.fine_tuned_name)

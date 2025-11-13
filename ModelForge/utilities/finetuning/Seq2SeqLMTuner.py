@@ -118,6 +118,7 @@ class Seq2SeqFinetuner(Finetuner):
                 args=training_args,
                 train_dataset=self.dataset,
                 callbacks=[ProgressCallback()],
+                dataset_num_proc=1,  # Stabilize preprocessing (single process)
             )
 
             trainer.train()
