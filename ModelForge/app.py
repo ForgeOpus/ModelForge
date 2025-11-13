@@ -192,15 +192,6 @@ async def get_info():
     }
 
 
-# Mount frontend static files (if available)
-frontend_path = os.path.join(os.path.dirname(__file__), "..", "Frontend", "build")
-if os.path.exists(frontend_path):
-    logger.info(f"Mounting frontend from: {frontend_path}")
-    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
-else:
-    logger.warning(f"Frontend not found at: {frontend_path}")
-
-
 # Root endpoint
 @app.get("/api")
 async def root():
@@ -211,6 +202,15 @@ async def root():
         "health": "/api/health",
         "info": "/api/info",
     }
+
+
+# Mount frontend static files (if available)
+frontend_path = os.path.join(os.path.dirname(__file__), "Frontend", "build")
+if os.path.exists(frontend_path):
+    logger.info(f"Mounting frontend from: {frontend_path}")
+    app.mount("/", StaticFiles(directory=frontend_path, html=True), name="frontend")
+else:
+    logger.warning(f"Frontend not found at: {frontend_path}")
 
 
 if __name__ == "__main__":

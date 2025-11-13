@@ -3,7 +3,6 @@ Dependency injection for ModelForge.
 Provides factory functions for services and managers.
 """
 import os
-from functools import lru_cache
 
 from .database.database_manager import DatabaseManager
 from .services.training_service import TrainingService
@@ -19,6 +18,9 @@ _file_manager = None
 _training_service = None
 _model_service = None
 _hardware_service = None
+
+# Session cache for storing temporary user selections
+_session_cache = {}
 
 
 def get_file_manager() -> FileManager:
@@ -100,6 +102,42 @@ def get_hardware_service() -> HardwareService:
     return _hardware_service
 
 
+def get_session_data(key: str = None):
+    """
+    Get session data from cache.
+
+    Args:
+        key: Specific key to retrieve. If None, returns entire cache.
+
+    Returns:
+        Session data for key, or entire cache, or None if not found
+    """
+    global _session_cache
+    if key is None:
+        return _session_cache.copy()
+    return _session_cache.get(key)
+
+
+def update_session_data(key: str, value):
+    """
+    Update session data in cache.
+
+    Args:
+        key: Key to store
+        value: Value to store
+    """
+    global _session_cache
+    _session_cache[key] = value
+    logger.debug(f"Session updated: {key} = {value}")
+
+
+def clear_session():
+    """Clear all session data."""
+    global _session_cache
+    _session_cache = {}
+    logger.info("Session cache cleared")
+
+
 def reset_services():
     """
     Reset all service instances.
@@ -115,5 +153,8 @@ def reset_services():
     _training_service = None
     _model_service = None
     _hardware_service = None
+
+    # Also clear session cache on reset
+    clear_session()
 
     logger.info("All services reset")

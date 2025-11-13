@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 from .config_manager import ConfigurationManager
 
 
@@ -109,7 +109,7 @@ class ModelRecommendationEngine:
             logging.error(error_msg)
             raise RuntimeError(error_msg) from e
     
-    def get_all_recommendations_for_profile(self, hardware_profile: str) -> Dict[str, Dict[str, any]]:
+    def get_all_recommendations_for_profile(self, hardware_profile: str) -> Dict[str, Dict[str, Any]]:
         """
         Get all model recommendations for a given hardware profile across all tasks.
         

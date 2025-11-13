@@ -79,8 +79,8 @@ class MetricsCalculator:
 
             # Try to compute ROUGE scores
             try:
-                from datasets import load_metric
-                rouge_metric = load_metric("rouge")
+                import evaluate
+                rouge_metric = evaluate.load("rouge")
                 result = rouge_metric.compute(
                     predictions=decoded_preds,
                     references=decoded_labels,

@@ -97,6 +97,33 @@ class SFTStrategy:
         """
         logger.info("Creating SFTTrainer")
 
+        # Handle max_seq_length = -1 (use model's maximum)
+        max_seq_length = config.get("max_seq_length")
+        if max_seq_length == -1:
+            # Attempt to get model's maximum sequence length from config
+            try:
+                if hasattr(model, 'config'):
+                    # Try different attribute names that models use
+                    if hasattr(model.config, 'max_position_embeddings'):
+                        max_seq_length = model.config.max_position_embeddings
+                    elif hasattr(model.config, 'n_positions'):
+                        max_seq_length = model.config.n_positions
+                    elif hasattr(model.config, 'max_sequence_length'):
+                        max_seq_length = model.config.max_sequence_length
+                    else:
+                        max_seq_length = 2048  # Fallback
+                else:
+                    max_seq_length = 2048  # Fallback
+
+                logger.info(f"max_seq_length was -1, resolved to model's max: {max_seq_length}")
+            except Exception as e:
+                logger.warning(f"Could not determine model's max sequence length: {e}. Using 2048.")
+                max_seq_length = 2048
+        elif max_seq_length is not None and max_seq_length <= 0:
+            # Handle other invalid values
+            logger.warning(f"Invalid max_seq_length: {max_seq_length}. Using 2048.")
+            max_seq_length = 2048
+
         # Create training arguments
         training_args = SFTConfig(
             output_dir=config.get("output_dir", "./checkpoints"),
@@ -118,7 +145,7 @@ class SFTStrategy:
             lr_scheduler_type=config.get("lr_scheduler_type", "cosine"),
             report_to="tensorboard",
             logging_dir=config.get("logging_dir", "./training_logs"),
-            max_seq_length=config.get("max_seq_length", None),
+            max_seq_length=max_seq_length,
             packing=config.get("packing", False),
             # Evaluation settings
             evaluation_strategy="steps" if eval_dataset else "no",

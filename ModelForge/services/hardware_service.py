@@ -5,7 +5,7 @@ Wraps hardware detection functionality.
 from typing import Dict, List, Optional
 
 from ..utilities.hardware_detection.hardware_detector import HardwareDetector
-from ..utilities.hardware_detection.model_recommendation import ModelRecommendation
+from ..utilities.hardware_detection.model_recommendation import ModelRecommendationEngine
 from ..logging_config import logger
 
 
@@ -15,8 +15,27 @@ class HardwareService:
     def __init__(self):
         """Initialize hardware service."""
         self.hardware_detector = HardwareDetector()
-        self.model_recommendation = ModelRecommendation()
+        self.model_recommendation = ModelRecommendationEngine()
+        self._detected = False  # Track if hardware detection has run
         logger.info("Hardware service initialized")
+
+    def _ensure_detected(self):
+        """
+        Ensure hardware detection has been performed.
+        Runs detection on first call, then caches results.
+        """
+        if not self._detected:
+            logger.info("Running hardware detection...")
+            try:
+                # Run detection sequence
+                self.hardware_detector.get_computer_specs()
+                self.hardware_detector.get_gpu_specs()
+                self.hardware_detector.classify_hardware_profile()
+                self._detected = True
+                logger.info(f"Hardware detection complete. Profile: {self.hardware_detector.compute_profile}")
+            except Exception as e:
+                logger.error(f"Hardware detection failed: {e}")
+                raise
 
     def get_hardware_specs(self) -> Dict:
         """
@@ -25,13 +44,21 @@ class HardwareService:
         Returns:
             Dictionary with hardware specifications
         """
-        logger.info("Detecting hardware specifications")
+        # Ensure hardware detection has run
+        self._ensure_detected()
+
+        logger.info("Getting hardware specifications")
+
+        # Get hardware profile data
+        hw_profile = self.hardware_detector.hardware_profile
 
         specs = {
             "gpu_count": self.hardware_detector.gpu_count,
-            "gpu_name": self.hardware_detector.gpu_name,
-            "total_memory_gb": self.hardware_detector.total_memory / (1024 ** 3),
-            "available_memory_gb": self.hardware_detector.available_memory / (1024 ** 3),
+            "gpu_name": self.hardware_detector.gpu_name or hw_profile.get("gpu_name", "Unknown"),
+            "gpu_memory_gb": hw_profile.get("gpu_total_memory_gb", 0),
+            "ram_gb": hw_profile.get("ram_total_gb", 0),
+            "disk_space_gb": hw_profile.get("available_diskspace_gb", 0),
+            "cpu_cores": hw_profile.get("cpu_cores", 0),
             "driver_version": self.hardware_detector.driver_version,
             "cuda_version": self.hardware_detector.cuda_version,
             "compute_profile": self.hardware_detector.compute_profile,
@@ -47,6 +74,8 @@ class HardwareService:
         Returns:
             Compute profile string
         """
+        # Ensure hardware detection has run
+        self._ensure_detected()
         return self.hardware_detector.compute_profile
 
     def get_recommended_models(self, task: str) -> Dict:
@@ -59,18 +88,24 @@ class HardwareService:
         Returns:
             Dictionary with recommended models
         """
+        # Ensure hardware detection has run
+        self._ensure_detected()
+
         logger.info(f"Getting model recommendations for task: {task}")
 
         compute_profile = self.get_compute_profile()
-        recommendations = self.model_recommendation.get_model_recommendations(
-            task=task,
-            compute_profile=compute_profile
+
+        # Get recommendation returns a tuple of (primary_model, alternative_models)
+        primary_model, alternative_models = self.model_recommendation.get_recommendation(
+            hardware_profile=compute_profile,
+            task=task
         )
 
         return {
             "compute_profile": compute_profile,
             "task": task,
-            "recommendations": recommendations,
+            "recommended_model": primary_model,
+            "possible_models": alternative_models,
         }
 
     def validate_batch_size(self, batch_size: int, compute_profile: str) -> bool:

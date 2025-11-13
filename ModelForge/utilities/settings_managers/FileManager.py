@@ -1,4 +1,5 @@
 import _io
+from typing import Dict, Optional
 
 from platformdirs import user_data_dir
 import os
@@ -50,7 +51,7 @@ class FileManager:
         return check_path
 
     @classmethod
-    def save_file(cls, file_path: str, content: bytes) -> str | None:
+    def save_file(cls, file_path: str, content: bytes) -> Optional[str]:
         try:
             file_dir = os.path.dirname(file_path)
             cls.validate_or_create_dirs(os.path.abspath(file_dir))
@@ -62,5 +63,5 @@ class FileManager:
             return None
 
     @classmethod
-    def return_default_dirs(cls) -> dict[str, str]:
+    def return_default_dirs(cls) -> Dict[str, str]:
         return cls._default_dirs

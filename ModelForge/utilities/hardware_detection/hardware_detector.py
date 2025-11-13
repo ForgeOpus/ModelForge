@@ -25,6 +25,18 @@ class HardwareDetector:
             self.hardware_profile = {}
             self.model_requirements = {}
             self.model_recommendation = ""
+
+            # Fields expected by HardwareService
+            self.gpu_count = 0
+            self.gpu_name = None
+            # GPU memory (bytes)
+            self.total_memory = 0
+            self.available_memory = 0
+            # Driver / CUDA details
+            self.driver_version = None
+            self.cuda_version = None
+            # Classified compute profile
+            self.compute_profile = None
             
             logging.info("HardwareDetector initialized successfully")
         except Exception as e:
@@ -49,12 +61,43 @@ class HardwareDetector:
             gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
             gpu_name = pynvml.nvmlDeviceGetName(gpu_handle)
             gpu_mem_info = pynvml.nvmlDeviceGetMemoryInfo(gpu_handle)
-            gpu_total_mem = gpu_mem_info.total / (1024 ** 3)
-            
+
+            # Populate fields expected by HardwareService
+            self.gpu_count = device_count
+            self.gpu_name = gpu_name
+            self.total_memory = gpu_mem_info.total  # bytes
+            self.available_memory = getattr(gpu_mem_info, 'free', 0)  # bytes
+
+            # Driver and CUDA versions (best effort)
+            try:
+                drv_ver = pynvml.nvmlSystemGetDriverVersion()
+                # nvml may return bytes or str depending on binding
+                self.driver_version = drv_ver.decode('utf-8') if hasattr(drv_ver, 'decode') else str(drv_ver)
+            except Exception:
+                self.driver_version = None
+            try:
+                # nvmlSystemGetCudaDriverVersion_v2 returns int like major*1000 + minor*10
+                if hasattr(pynvml, 'nvmlSystemGetCudaDriverVersion_v2'):
+                    cuda_int = pynvml.nvmlSystemGetCudaDriverVersion_v2()
+                    major = cuda_int // 1000
+                    minor = (cuda_int % 1000) // 10
+                    self.cuda_version = f"{major}.{minor}"
+                else:
+                    self.cuda_version = None
+            except Exception:
+                self.cuda_version = None
+
+            # Also keep existing hardware_profile entries in GB for prior consumers
+            # Guard against unexpected string types from bindings
+            try:
+                numeric_total = float(self.total_memory)
+            except (TypeError, ValueError):
+                numeric_total = 0.0
+            gpu_total_mem_gb = numeric_total / (1024 ** 3) if numeric_total else 0.0
             self.hardware_profile['gpu_name'] = gpu_name
-            self.hardware_profile['gpu_total_memory_gb'] = round(gpu_total_mem, 2)
+            self.hardware_profile['gpu_total_memory_gb'] = round(gpu_total_mem_gb, 2)
             
-            logging.info(f"GPU detected: {gpu_name} with {gpu_total_mem:.2f}GB memory")
+            logging.info(f"GPU detected: {gpu_name} with {gpu_total_mem_gb:.2f}GB memory; GPUs: {device_count}")
             
         except Exception as e:
             error_msg = f"GPU detection failed: {str(e)}"
@@ -63,7 +106,7 @@ class HardwareDetector:
         finally:
             try:
                 pynvml.nvmlShutdown()
-            except:
+            except Exception:
                 pass  # Ignore shutdown errors
 
     def get_computer_specs(self) -> None:
@@ -124,6 +167,8 @@ class HardwareDetector:
                 profile = 'mid_range' if ram_gb < low_end_ram_threshold else 'high_end'
             
             logging.info(f"Hardware classified as: {profile}")
+            # Expose for consumers like HardwareService
+            self.compute_profile = profile
             return profile
             
         except Exception as e:

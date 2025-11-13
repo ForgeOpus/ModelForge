@@ -24,6 +24,8 @@ from ..dependencies import (
     get_model_service,
     get_hardware_service,
     get_file_manager,
+    get_session_data,
+    update_session_data,
 )
 from ..exceptions import (
     ModelAccessError,
@@ -104,6 +106,243 @@ async def validate_custom_model(
 
     except Exception as e:
         logger.error(f"Model validation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/detect")
+async def detect_hardware(
+    data: TaskSelection,
+    hardware_service: HardwareService = Depends(get_hardware_service),
+):
+    """
+    Detect hardware and get model recommendations for a task.
+
+    This endpoint combines hardware detection with model recommendations,
+    providing a complete profile for the frontend.
+
+    Args:
+        data: Task selection data
+        hardware_service: Hardware service instance
+
+    Returns:
+        Combined hardware specs and model recommendations
+
+    Raises:
+        HTTPException: If detection fails
+    """
+    logger.info(f"Detecting hardware for task: {data.task}")
+
+    try:
+        # Store task in session for later use
+        update_session_data("task", data.task)
+
+        # Get hardware specifications
+        hardware_specs = hardware_service.get_hardware_specs()
+
+        # Get compute profile
+        compute_profile = hardware_service.get_compute_profile()
+
+        # Get model recommendations for the task
+        recommendations = hardware_service.get_recommended_models(data.task)
+
+        # Extract the recommended model and possible options
+        model_recommendation = recommendations.get("recommended_model", "")
+        possible_options = recommendations.get("possible_models", [])
+
+        # Build response matching frontend expectations
+        response = {
+            "status_code": 200,
+            "profile": compute_profile,
+            "task": data.task,
+            "gpu_name": hardware_specs.get("gpu_name", "Unknown"),
+            "gpu_total_memory_gb": hardware_specs.get("gpu_memory_gb", 0),
+            "ram_total_gb": hardware_specs.get("ram_gb", 0),
+            "available_diskspace_gb": hardware_specs.get("disk_space_gb", 0),
+            "cpu_cores": hardware_specs.get("cpu_cores", 0),
+            "model_recommendation": model_recommendation,
+            "possible_options": possible_options,
+        }
+
+        logger.info(f"Hardware detection complete: {compute_profile} profile")
+        return JSONResponse(content=response)
+
+    except Exception as e:
+        logger.error(f"Error detecting hardware: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/set_model")
+async def set_model(data: ModelSelection):
+    """
+    Set the selected model for training.
+
+    This endpoint stores the user's model selection in the session cache
+    for use in subsequent training configuration steps.
+
+    Args:
+        data: Model selection data
+
+    Returns:
+        Success confirmation with selected model
+    """
+    logger.info(f"Setting selected model: {data.selected_model}")
+
+    try:
+        # Store model selection in session
+        update_session_data("selected_model", data.selected_model)
+
+        return {
+            "success": True,
+            "selected_model": data.selected_model,
+            "message": "Model selection saved successfully",
+        }
+
+    except Exception as e:
+        logger.error(f"Error setting model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/set_custom_model")
+async def set_custom_model(
+    data: ModelValidation,
+    model_service: ModelService = Depends(get_model_service),
+):
+    """
+    Set a custom model for training.
+
+    Validates the custom model repository and stores it in the session cache.
+
+    Args:
+        data: Model validation data with repo_name
+        model_service: Model service instance
+
+    Returns:
+        Validation result and success confirmation
+
+    Raises:
+        HTTPException: If model validation fails
+    """
+    logger.info(f"Setting custom model: {data.repo_name}")
+
+    try:
+        # Validate the custom model
+        result = model_service.validate_model_access(
+            repo_name=data.repo_name,
+            model_class="AutoModelForCausalLM",
+        )
+
+        if result.get("valid", False):
+            # Store custom model in session
+            update_session_data("selected_model", data.repo_name)
+            update_session_data("is_custom_model", True)
+
+            return {
+                "success": True,
+                "selected_model": data.repo_name,
+                "message": "Custom model validated and saved successfully",
+                **result,
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Model validation failed")
+
+    except ModelAccessError as e:
+        logger.error(f"Model access error: {e}")
+        raise HTTPException(status_code=403, detail=str(e))
+
+    except Exception as e:
+        logger.error(f"Error setting custom model: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/load_settings")
+async def get_default_settings(
+    hardware_service: HardwareService = Depends(get_hardware_service),
+):
+    """
+    Get default training settings based on hardware profile.
+
+    Returns hardware-appropriate default training configuration including
+    batch size, learning rate, sequence length, and other training parameters.
+
+    Args:
+        hardware_service: Hardware service instance
+
+    Returns:
+        Default training settings dictionary
+
+    Raises:
+        HTTPException: If settings generation fails
+    """
+    logger.info("Getting default training settings")
+
+    try:
+        # Get hardware profile
+        compute_profile = hardware_service.get_compute_profile()
+
+        # Get session data
+        selected_model = get_session_data("selected_model")
+        selected_task = get_session_data("task")
+
+        # Define hardware-specific defaults
+        settings_by_profile = {
+            "low_end": {
+                "per_device_train_batch_size": 1,
+                "gradient_accumulation_steps": 8,
+                "num_train_epochs": 3,
+                "learning_rate": 2e-4,
+                "max_seq_length": 512,
+                "warmup_ratio": 0.1,
+                "logging_steps": 10,
+                "save_strategy": "epoch",
+                "optim": "adamw_torch",
+                "gradient_checkpointing": True,
+                "fp16": True,
+            },
+            "mid_range": {
+                "per_device_train_batch_size": 2,
+                "gradient_accumulation_steps": 4,
+                "num_train_epochs": 3,
+                "learning_rate": 2e-4,
+                "max_seq_length": 1024,
+                "warmup_ratio": 0.1,
+                "logging_steps": 10,
+                "save_strategy": "epoch",
+                "optim": "adamw_torch",
+                "gradient_checkpointing": True,
+                "fp16": True,
+            },
+            "high_end": {
+                "per_device_train_batch_size": 4,
+                "gradient_accumulation_steps": 2,
+                "num_train_epochs": 3,
+                "learning_rate": 2e-4,
+                "max_seq_length": 2048,
+                "warmup_ratio": 0.1,
+                "logging_steps": 10,
+                "save_strategy": "epoch",
+                "optim": "adamw_torch",
+                "gradient_checkpointing": True,
+                "fp16": True,
+            },
+        }
+
+        # Get settings for current profile (default to mid_range if not found)
+        settings = settings_by_profile.get(compute_profile, settings_by_profile["mid_range"])
+
+        # Add context information
+        response = {
+            "success": True,
+            "compute_profile": compute_profile,
+            "selected_model": selected_model,
+            "selected_task": selected_task,
+            "default_settings": settings,
+        }
+
+        logger.info(f"Returning default settings for {compute_profile} profile")
+        return response
+
+    except Exception as e:
+        logger.error(f"Error getting default settings: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

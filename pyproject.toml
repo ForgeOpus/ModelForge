@@ -27,6 +27,7 @@ dependencies = [
     "pynvml",
     "peft",
     "python-multipart",
+    "sqlalchemy>=2.0.44",
 ]
 
 [tool.setuptools.packages.find]
