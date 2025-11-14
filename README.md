@@ -1,5 +1,7 @@
 # ModelForge 🔧⚡
 
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/modelforge-finetuning?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/modelforge-finetuning)
+
 **Finetune LLMs on your laptop’s GPU—no code, no PhD, no hassle.**  
 
 ![logo](https://github.com/user-attachments/assets/12b3545d-0e8b-4460-9291-d0786c9cb0fa)
@@ -12,9 +14,9 @@
 - **React UI**: No CLI or notebooks—just a friendly interface.  
 
 ## 📖 Supported Tasks
-- **Text-Generation**: Generates answers in the form of text based on prior and fine-tuned knowledge. Ideal for use cases like customer support chatbots, story generators, social media script writers, code generators, and general-purpose chatbots.
+- **Text-Generation**: Generates answers in the form of text based on prior and fine-tuned knowledge. Ideal for use cases like customer support chatbots, story generators, social media script writers,[...]
 - **Summarization**: Generates summaries for long articles and texts. Ideal for use cases like news article summarization, law document summarization, and medical article summarization.
-- **Extractive Question Answering**: Finds the answers relevant to a query from a given context. Best for use cases like Retrieval Augmented Generation (RAG), and enterprise document search (for example, searching for information in internal documentation).
+- **Extractive Question Answering**: Finds the answers relevant to a query from a given context. Best for use cases like Retrieval Augmented Generation (RAG), and enterprise document search (for examp[...]
 
 ## Installation
 ### Prerequisites
@@ -80,7 +82,7 @@ To stop the application and free up resources, press `Ctrl+C` in the terminal ru
 ```
 
 ## 🤝 **Contributing Model Recommendations**
-ModelForge uses a modular configuration system for model recommendations. Contributors can easily add new recommended models by adding configuration files to the `model_configs/` directory. Each hardware profile (low_end, mid_range, high_end) has its own configuration file where you can specify primary and alternative models for different tasks.
+ModelForge uses a modular configuration system for model recommendations. Contributors can easily add new recommended models by adding configuration files to the `model_configs/` directory. Each hardw[...]
 
 See the [Model Configuration Guide](ModelForge/model_configs/README.md) for detailed instructions on how to add new model recommendations.
 
