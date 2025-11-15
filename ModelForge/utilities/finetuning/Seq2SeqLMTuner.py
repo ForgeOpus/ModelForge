@@ -1,6 +1,14 @@
 from typing import Dict
 import torch
 from datasets import load_dataset
+
+# Import unsloth first to prevent EOS token corruption
+# This must come before TRL imports to ensure proper tokenizer initialization
+try:
+    import unsloth
+except ImportError:
+    pass
+
 from trl import SFTTrainer, SFTConfig
 from .Finetuner import Finetuner, ProgressCallback
 from peft import LoraConfig, TaskType, get_peft_model

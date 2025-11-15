@@ -180,6 +180,9 @@ class TrainingService:
                     quantization_config=quant_config,
                     max_seq_length=config.get("max_seq_length", 2048),
                 )
+                tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
+                # Store eos_token in config for use by training strategies
+                config["eos_token"] = tokenizer.eos_token
             else:
                 model = provider.load_model(
                     model_id=config["model_name"],
@@ -187,6 +190,12 @@ class TrainingService:
                     quantization_config=quant_config,
                 )
                 tokenizer = provider.load_tokenizer(config["model_name"])
+                tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
+                # Store eos_token in config for use by training strategies
+                config["eos_token"] = tokenizer.eos_token
+
+            # Auto-detect and correct precision settings to prevent Unsloth errors
+            config = self._auto_detect_precision_settings(model, config)
 
             # Load and prepare dataset
             self.training_status["message"] = "Loading dataset..."
@@ -259,15 +268,20 @@ class TrainingService:
                 config["max_steps"] = total_steps
                 logger.info(f"Calculated max_steps: {total_steps} (epochs={num_epochs}, examples={num_examples}, effective_batch={effective_batch_size})")
 
+            tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
+            # Store eos_token in config for use by training strategies
+            config["eos_token"] = tokenizer.eos_token
+
             # Get metrics function
             metrics_fn = MetricsCalculator.get_metrics_fn_for_task(
                 config["task"],
                 tokenizer
             )
 
-            # Create trainer with progress callback
+            # Create trainer with progress callback and precision failsafe
             self.training_status["message"] = "Creating trainer..."
-            trainer = strategy.create_trainer(
+            trainer = self._create_trainer_with_failsafe(
+                strategy=strategy,
                 model=model,
                 train_dataset=train_dataset,
                 eval_dataset=eval_dataset,
@@ -335,30 +349,244 @@ class TrainingService:
             }
 
     def _format_dataset(self, dataset, task: str, compute_specs: str):
-        """Format dataset based on task type."""
+        """
+        Format dataset based on task type.
+
+        This method only renames columns to match expected field names.
+        Text formatting (prefixes, EOS tokens) is handled by task-specific
+        formatting_func in the training strategies.
+        """
         if task == "text-generation":
-            # Rename columns
+            # Rename columns to expected names (formatting_func will add prefixes/EOS)
             dataset = dataset.rename_column("input", "prompt")
             dataset = dataset.rename_column("output", "completion")
-            # Apply formatting
-            def format_fn(example):
-                return {
-                    "prompt": "USER: " + example.get("prompt", ""),
-                    "completion": "ASSISTANT: " + example.get("completion", "") + "<|endoftext|>",
-                }
-            dataset = dataset.map(format_fn)
 
         elif task == "summarization":
-            # Rename columns
+            # Rename columns to expected names
             dataset = dataset.rename_column("document", "input")
             dataset = dataset.rename_column("summary", "output")
 
         elif task == "extractive-question-answering":
-            # QA datasets need special tokenization
-            # This is handled by the strategy
+            # QA datasets are already in correct format (context, question, answers)
+            # No renaming needed
             pass
 
         return dataset
+
+    def _auto_detect_precision_settings(self, model: Any, config: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Auto-detect model precision and correct fp16/bf16 config settings.
+
+        Detects model dtype and auto-corrects precision settings to prevent
+        trainer errors when config doesn't match model dtype.
+
+        Args:
+            model: Loaded model instance (before PEFT wrapping)
+            config: Training configuration dictionary
+
+        Returns:
+            Updated config dictionary with corrected precision settings
+
+        Note:
+            Mutates config in-place and returns it for convenience.
+            Should be called after model loading, before PEFT preparation.
+        """
+        try:
+            # Import torch locally to avoid adding dependency to module level
+            import torch
+
+            # Try to get model dtype - handle PEFT-wrapped models
+            model_dtype = None
+
+            # Try direct access first
+            if hasattr(model, 'dtype'):
+                model_dtype = model.dtype
+            # Try base_model for PEFT models (shouldn't be wrapped yet, but defensive)
+            elif hasattr(model, 'base_model') and hasattr(model.base_model, 'dtype'):
+                model_dtype = model.base_model.dtype
+            # Try config.torch_dtype as fallback
+            elif hasattr(model, 'config') and hasattr(model.config, 'torch_dtype'):
+                model_dtype = model.config.torch_dtype
+
+            if model_dtype is None:
+                logger.warning(
+                    "Could not determine model dtype for precision auto-detection. "
+                    "Using config values as-is."
+                )
+                return config
+
+            # Map torch dtypes to config flags
+            # Note: Precision flags must match model dtype even for quantized models
+            dtype_to_config = {
+                torch.float16: ("fp16", True, "bf16", False),
+                torch.bfloat16: ("bf16", True, "fp16", False),
+                torch.float32: ("fp16", False, "bf16", False),
+            }
+
+            if model_dtype not in dtype_to_config:
+                logger.warning(
+                    f"Unknown model dtype: {model_dtype}. "
+                    f"Expected float16, bfloat16, or float32. "
+                    f"Using config values as-is."
+                )
+                return config
+
+            # Get expected config values for this dtype
+            enable_flag, enable_value, disable_flag, disable_value = dtype_to_config[model_dtype]
+
+            # Get current config values
+            current_enable = config.get(enable_flag, False)
+            current_disable = config.get(disable_flag, False)
+
+            # Check if correction is needed
+            needs_correction = (current_enable != enable_value) or (current_disable != disable_value)
+
+            if needs_correction:
+                logger.warning(
+                    f"Model dtype mismatch detected! "
+                    f"Model dtype: {model_dtype}, "
+                    f"Config: {enable_flag}={current_enable}, {disable_flag}={current_disable}. "
+                    f"Auto-correcting to: {enable_flag}={enable_value}, {disable_flag}={disable_value}"
+                )
+
+                # Apply corrections
+                config[enable_flag] = enable_value
+                config[disable_flag] = disable_value
+
+                logger.info(
+                    f"Precision settings corrected: {enable_flag}={enable_value}, "
+                    f"{disable_flag}={disable_value}"
+                )
+            else:
+                logger.info(
+                    f"Precision settings validated: Model dtype {model_dtype} matches "
+                    f"config ({enable_flag}={enable_value}, {disable_flag}={disable_value})"
+                )
+
+            return config
+
+        except ImportError as e:
+            logger.error(f"Failed to import torch for precision detection: {e}")
+            return config
+        except Exception as e:
+            # Defensive: never crash training due to auto-detection
+            logger.warning(
+                f"Error during precision auto-detection: {e}. "
+                f"Using config values as-is.",
+                exc_info=True
+            )
+            return config
+
+    def _create_trainer_with_failsafe(
+        self,
+        strategy: Any,
+        model: Any,
+        train_dataset: Any,
+        eval_dataset: Any,
+        tokenizer: Any,
+        config: Dict,
+        callbacks: list = None,
+    ) -> Any:
+        """
+        Create trainer with automatic precision mismatch recovery.
+
+        This is a failsafe wrapper that catches Unsloth precision errors
+        and automatically corrects the config to match the model's actual dtype.
+
+        Args:
+            strategy: Training strategy instance
+            model: Prepared model
+            train_dataset: Training dataset
+            eval_dataset: Evaluation dataset
+            tokenizer: Tokenizer instance
+            config: Training configuration
+            callbacks: Training callbacks
+
+        Returns:
+            Trainer instance
+
+        Note:
+            This is a last-resort failsafe. The primary auto-detection should
+            prevent these errors, but this ensures we NEVER fail with precision
+            mismatches regardless of what went wrong upstream.
+        """
+        try:
+            # Attempt to create trainer
+            return strategy.create_trainer(
+                model=model,
+                train_dataset=train_dataset,
+                eval_dataset=eval_dataset,
+                tokenizer=tokenizer,
+                config=config,
+                callbacks=callbacks,
+            )
+
+        except TypeError as e:
+            # Check if this is an Unsloth precision mismatch error
+            error_msg = str(e)
+
+            if "Unsloth:" in error_msg and ("bfloat16" in error_msg or "float16" in error_msg):
+                logger.warning(
+                    f"Unsloth precision mismatch detected: {error_msg}. "
+                    f"Auto-correcting config and retrying..."
+                )
+
+                # Parse error message to determine correct precision
+                # Error format: "Unsloth: Model is in X precision but you want to use Y precision"
+                model_is_bfloat16 = "Model is in bfloat16" in error_msg
+                model_is_float16 = "Model is in float16" in error_msg or "Model is in fp16" in error_msg
+
+                if model_is_bfloat16:
+                    logger.info("Correcting config to bf16=True, fp16=False")
+                    config["bf16"] = True
+                    config["fp16"] = False
+                elif model_is_float16:
+                    logger.info("Correcting config to fp16=True, bf16=False")
+                    config["fp16"] = True
+                    config["bf16"] = False
+                else:
+                    # Couldn't parse - try to detect from model directly
+                    logger.warning("Could not parse error message, attempting direct model dtype detection")
+                    import torch
+
+                    model_dtype = None
+                    if hasattr(model, 'dtype'):
+                        model_dtype = model.dtype
+                    elif hasattr(model, 'base_model') and hasattr(model.base_model, 'dtype'):
+                        model_dtype = model.base_model.dtype
+                    elif hasattr(model, 'config') and hasattr(model.config, 'torch_dtype'):
+                        model_dtype = model.config.torch_dtype
+
+                    if model_dtype == torch.bfloat16:
+                        logger.info("Detected model dtype: bfloat16, setting bf16=True, fp16=False")
+                        config["bf16"] = True
+                        config["fp16"] = False
+                    elif model_dtype == torch.float16:
+                        logger.info("Detected model dtype: float16, setting fp16=True, bf16=False")
+                        config["fp16"] = True
+                        config["bf16"] = False
+                    else:
+                        # Last resort: default to bf16 (safer for modern GPUs)
+                        logger.warning(
+                            f"Could not determine model dtype (got {model_dtype}). "
+                            f"Defaulting to bf16=True, fp16=False"
+                        )
+                        config["bf16"] = True
+                        config["fp16"] = False
+
+                # Retry with corrected config
+                logger.info("Retrying trainer creation with corrected precision settings...")
+                return strategy.create_trainer(
+                    model=model,
+                    train_dataset=train_dataset,
+                    eval_dataset=eval_dataset,
+                    tokenizer=tokenizer,
+                    config=config,
+                    callbacks=callbacks,
+                )
+            else:
+                # Not an Unsloth precision error, re-raise
+                raise
 
     def _create_model_config(self, config_dir: str, pipeline_task: str, model_class: str):
         """Create modelforge config file for playground compatibility."""

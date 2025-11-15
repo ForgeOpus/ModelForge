@@ -1,5 +1,13 @@
 import torch
 from datasets import load_dataset
+
+# Import unsloth first to prevent EOS token corruption
+# This must come before TRL imports to ensure proper tokenizer initialization
+try:
+    import unsloth
+except ImportError:
+    pass
+
 from trl import SFTTrainer, SFTConfig
 from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig

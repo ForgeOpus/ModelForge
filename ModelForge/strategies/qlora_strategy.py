@@ -4,6 +4,14 @@ QLoRA combines 4-bit quantization with LoRA for memory-efficient fine-tuning.
 """
 from typing import Any, Dict
 from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
+
+# Import unsloth first to prevent EOS token corruption
+# This must come before TRL imports to ensure proper tokenizer initialization
+try:
+    import unsloth
+except ImportError:
+    pass
+
 from trl import SFTTrainer, SFTConfig
 
 from ..logging_config import logger
@@ -79,17 +87,62 @@ class QLoRAStrategy:
 
     def prepare_dataset(self, dataset: Any, tokenizer: Any, config: Dict) -> Any:
         """
-        Prepare dataset for QLoRA (same as SFT).
+        Prepare dataset for QLoRA by consolidating all fields into a single 'text' field.
 
         Args:
-            dataset: Pre-formatted dataset
-            tokenizer: Tokenizer instance
-            config: Configuration dictionary
+            dataset: Pre-formatted dataset with task-specific fields
+            tokenizer: Tokenizer instance (for EOS token)
+            config: Configuration dictionary (contains task type)
 
         Returns:
-            Dataset
+            Dataset with consolidated 'text' field
         """
-        logger.info(f"Dataset prepared for QLoRA: {len(dataset)} examples")
+        logger.info(f"Preparing dataset for QLoRA: {len(dataset)} examples")
+
+        # Get EOS token with SEP fallback
+        eos_token = tokenizer.eos_token or tokenizer.sep_token or ""
+        task = config.get("task", "text-generation")
+
+        def create_text_field(example):
+            """Consolidate all fields into a single 'text' field with EOS token."""
+            if task == "text-generation":
+                # Fields: prompt, completion (renamed in training_service._format_dataset)
+                prompt = example.get('prompt', '')
+                completion = example.get('completion', '')
+                text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
+
+            elif task == "summarization":
+                # Fields: input, output (renamed in training_service._format_dataset)
+                input_text = example.get('input', '')
+                output_text = example.get('output', '')
+                text = f"Summarize the following document:\n{input_text}\n\nSummary:\n{output_text}{eos_token}"
+
+            elif task == "extractive-question-answering":
+                # Fields: context, question, answers
+                context = example.get('context', '')
+                question = example.get('question', '')
+                answers = example.get('answers', {})
+
+                # Extract answer text from answers dict
+                if isinstance(answers, dict):
+                    answer_text = answers.get("text", [""])[0] if "text" in answers else ""
+                else:
+                    answer_text = str(answers)
+
+                text = f"Context: {context}\n\nQuestion: {question}\n\nAnswer: {answer_text}{eos_token}"
+
+            else:
+                # Fallback: concatenate all string fields
+                logger.warning(f"Unknown task type: {task}, using raw field concatenation")
+                text = " ".join(str(v) for v in example.values() if isinstance(v, str))
+                text += eos_token
+
+            return {"text": text}
+
+        # Apply transformation and remove original columns
+        dataset = dataset.map(create_text_field, remove_columns=dataset.column_names)
+
+        logger.info(f"Dataset prepared with consolidated 'text' field: {len(dataset)} examples")
         return dataset
 
     def create_trainer(
@@ -152,14 +205,19 @@ class QLoRAStrategy:
             save_strategy="steps",
             load_best_model_at_end=True if eval_dataset else False,
             metric_for_best_model="eval_loss" if eval_dataset else None,
+            # Use tokenizer's EOS token instead of corrupted placeholder
+            eos_token=config.get("eos_token"),
+            # Disable completion_only_loss to avoid conflicts
+            completion_only_loss=False,
         )
 
-        # Create trainer
+        # Create trainer (dataset has been formatted to 'text' field in prepare_dataset)
         trainer = SFTTrainer(
             model=model,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
             args=training_args,
+            processing_class=tokenizer,
             callbacks=callbacks or [],
         )
 
