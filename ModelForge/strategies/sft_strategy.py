@@ -145,10 +145,10 @@ class SFTStrategy:
             lr_scheduler_type=config.get("lr_scheduler_type", "cosine"),
             report_to="tensorboard",
             logging_dir=config.get("logging_dir", "./training_logs"),
-            max_seq_length=max_seq_length,
+            max_length=max_seq_length,
             packing=config.get("packing", False),
             # Evaluation settings
-            evaluation_strategy="steps" if eval_dataset else "no",
+            eval_strategy="steps" if eval_dataset else "no",
             eval_steps=config.get("eval_steps", 100),
             save_strategy="steps",
             load_best_model_at_end=True if eval_dataset else False,

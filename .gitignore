@@ -20,4 +20,4 @@ ModelForge.egg-info/*
 ModelForge.egg-info/
 *.egg-info
 *.lock
-ModelForge/unsloth_compiled_cache/*
+unsloth_compiled_cache/*
