@@ -82,6 +82,13 @@ class UnslothProvider:
                 load_in_4bit=load_in_4bit,
             )
 
+            # Remove hf_device_map attribute to prevent Accelerate device placement conflicts
+            # Unsloth sets device_map="sequential" by default, which causes None device_index errors
+            # Removing this attribute allows Accelerate to handle device placement correctly
+            if hasattr(model, 'hf_device_map'):
+                delattr(model, 'hf_device_map')
+                logger.debug("Removed hf_device_map attribute for Accelerate compatibility")
+
             logger.info(f"Successfully loaded model {model_id} with Unsloth")
             return model, tokenizer
 
