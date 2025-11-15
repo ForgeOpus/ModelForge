@@ -140,7 +140,7 @@ class QLoRAStrategy:
             return {"text": text}
 
         # Apply transformation and remove original columns
-        dataset = dataset.map(create_text_field, remove_columns=dataset.column_names)
+        dataset = dataset.map(create_text_field, remove_columns=dataset.column_names, num_proc=1)
 
         logger.info(f"Dataset prepared with consolidated 'text' field: {len(dataset)} examples")
         return dataset
