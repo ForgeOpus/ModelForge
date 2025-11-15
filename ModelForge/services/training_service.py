@@ -172,6 +172,7 @@ class TrainingService:
                 os.environ["WORLD_SIZE"] = "1"
                 os.environ["LOCAL_RANK"] = "-1"
                 os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+                os.environ["ACCELERATE_BYPASS_DEVICE_MAP"] = "true"  # Bypass device_map check in Accelerate
 
                 # Reset AcceleratorState if it was already initialized (defensive)
                 try:
