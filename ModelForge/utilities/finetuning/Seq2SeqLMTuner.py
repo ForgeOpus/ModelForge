@@ -74,12 +74,14 @@ class Seq2SeqFinetuner(Finetuner):
                     quantization_config=bits_n_bytes_config,
                     device_map=self.device_map,
                     use_cache=False,
+                    num_processes=1
                 )
             else:
                 model = AutoModelForSeq2SeqLM.from_pretrained(
                     self.model_name,
                     device_map=self.device_map,
                     use_cache=False,
+                    num_processes=1
                 )
             print(model.dtype)
             tokenizer = AutoTokenizer.from_pretrained(self.model_name)

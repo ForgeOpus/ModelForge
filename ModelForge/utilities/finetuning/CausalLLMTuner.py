@@ -75,12 +75,14 @@ class CausalLLMFinetuner(Finetuner):
                     quantization_config=bits_n_bytes_config,
                     device_map=self.device_map,
                     use_cache=False,
+                    num_processes=1
                 )
             else:
                 model = AutoModelForCausalLM.from_pretrained(
                     self.model_name,
                     device_map=self.device_map,
                     use_cache=False,
+                    num_processes=1
                 )
 
             tokenizer = AutoTokenizer.from_pretrained(self.model_name, trust_remote_code=True)
