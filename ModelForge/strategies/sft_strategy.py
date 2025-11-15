@@ -210,6 +210,8 @@ class SFTStrategy:
             eos_token=config.get("eos_token"),
             # Disable completion_only_loss to avoid conflicts
             completion_only_loss=False,
+            # Disable distributed training for Unsloth (required when using device_map='auto')
+            ddp_find_unused_parameters=False,
         )
 
         # Create trainer (dataset has been formatted to 'text' field in prepare_dataset)

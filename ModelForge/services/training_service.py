@@ -278,6 +278,13 @@ class TrainingService:
                 tokenizer
             )
 
+            # Disable distributed training for Unsloth to avoid device_map='auto' conflicts
+            if provider_name == "unsloth":
+                logger.info("Disabling distributed training for Unsloth compatibility")
+                os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+                os.environ["WORLD_SIZE"] = "1"
+                os.environ["LOCAL_RANK"] = "-1"
+
             # Create trainer with progress callback and precision failsafe
             self.training_status["message"] = "Creating trainer..."
             trainer = self._create_trainer_with_failsafe(

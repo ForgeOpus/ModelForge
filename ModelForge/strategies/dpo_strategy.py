@@ -140,6 +140,8 @@ class DPOStrategy:
             load_best_model_at_end=True if eval_dataset else False,
             report_to="tensorboard",
             logging_dir=config.get("logging_dir", "./training_logs"),
+            # Disable distributed training for Unsloth (required when using device_map='auto')
+            ddp_find_unused_parameters=False,
         )
 
         # Create trainer
