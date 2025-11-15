@@ -148,6 +148,42 @@ class TrainingService:
 
             # Create provider
             provider_name = config.get("provider", "huggingface")
+
+            # CRITICAL: Configure single-process mode for Unsloth BEFORE any initialization
+            # This must happen before creating provider, strategy, or loading model
+            # to ensure AcceleratorState initializes in non-distributed mode
+            if provider_name == "unsloth":
+                logger.info("Configuring single-process mode for Unsloth compatibility")
+
+                # Remove ALL distributed environment variables to prevent auto-detection
+                distributed_vars = [
+                    "RANK", "LOCAL_RANK", "WORLD_SIZE", "LOCAL_WORLD_SIZE",
+                    "MASTER_ADDR", "MASTER_PORT",
+                    "PMI_RANK", "PMI_SIZE",
+                    "OMPI_COMM_WORLD_RANK", "OMPI_COMM_WORLD_SIZE",
+                    "MV2_COMM_WORLD_RANK", "MV2_COMM_WORLD_SIZE"
+                ]
+                for var in distributed_vars:
+                    if var in os.environ:
+                        logger.debug(f"Removing distributed environment variable: {var}")
+                        del os.environ[var]
+
+                # Explicitly set single-process indicators
+                os.environ["WORLD_SIZE"] = "1"
+                os.environ["LOCAL_RANK"] = "-1"
+                os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
+
+                # Reset AcceleratorState if it was already initialized (defensive)
+                try:
+                    from accelerate.state import AcceleratorState, PartialState
+                    if AcceleratorState._shared_state or PartialState._shared_state:
+                        logger.warning("Resetting Accelerate state for Unsloth single-process mode")
+                        AcceleratorState._reset_state(reset_partial_state=True)
+                except Exception as e:
+                    logger.debug(f"Could not reset Accelerate state: {e}")
+
+                logger.info("Single-process mode configured successfully")
+
             provider = ProviderFactory.create_provider(provider_name)
 
             # Create strategy
@@ -278,13 +314,6 @@ class TrainingService:
                 tokenizer
             )
 
-            # Disable distributed training for Unsloth to avoid device_map='auto' conflicts
-            if provider_name == "unsloth":
-                logger.info("Disabling distributed training for Unsloth compatibility")
-                os.environ["CUDA_VISIBLE_DEVICES"] = os.environ.get("CUDA_VISIBLE_DEVICES", "0")
-                os.environ["WORLD_SIZE"] = "1"
-                os.environ["LOCAL_RANK"] = "-1"
-
             # Create trainer with progress callback and precision failsafe
             self.training_status["message"] = "Creating trainer..."
             trainer = self._create_trainer_with_failsafe(
@@ -296,6 +325,20 @@ class TrainingService:
                 config=config,
                 callbacks=[ProgressCallback(self.training_status)],
             )
+
+            # Verify single-process mode for Unsloth (debug logging)
+            if provider_name == "unsloth":
+                try:
+                    from accelerate.state import PartialState
+                    state = PartialState()
+                    logger.info(
+                        f"Accelerate state verified - "
+                        f"Distributed type: {state.distributed_type}, "
+                        f"Num processes: {state.num_processes}, "
+                        f"Use distributed: {state.use_distributed}"
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not verify Accelerate state: {e}")
 
             # Train
             self.training_status["message"] = "Training in progress..."
