@@ -1,6 +1,6 @@
 [project]
 name = "modelforge-finetuning"
-version = "2.0.7"
+version = "2.1.1"
 description = "ModelForge: A no-code toolkit for fine-tuning HuggingFace models"
 authors = [
     {name = "R3tr0 M1ll3r", email = "r3tr0.m1ll3r@gmail.com"},
