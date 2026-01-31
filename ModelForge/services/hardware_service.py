@@ -62,6 +62,7 @@ class HardwareService:
             "driver_version": self.hardware_detector.driver_version,
             "cuda_version": self.hardware_detector.cuda_version,
             "compute_profile": self.hardware_detector.compute_profile,
+            "device_type": hw_profile.get("device_type", "unknown"),
         }
 
         logger.info(f"Hardware specs: {specs}")
