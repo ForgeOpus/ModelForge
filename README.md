@@ -43,13 +43,15 @@ ModelForge v2.0 is a complete architectural overhaul bringing **2x faster traini
 ### Prerequisites
 
 - **Python 3.11.x** (Python 3.12 not yet supported)
-- **NVIDIA GPU** with 4GB+ VRAM (6GB+ recommended)
-- **CUDA** installed and configured
+- **GPU with 4GB+ VRAM**:
+  - **NVIDIA GPU** (6GB+ recommended) for CUDA-accelerated training with Unsloth support
+  - **OR Apple Silicon** (M1/M2/M3/M4) for MPS-accelerated training (HuggingFace provider only, experimental)
+- **CUDA** (for NVIDIA GPUs) - [Installation Guide](https://developer.nvidia.com/cuda-downloads)
 - **HuggingFace Account** with access token ([Get one here](https://huggingface.co/settings/tokens))
-- **Linux or Windows** operating system
+- **Linux, Windows, or macOS** operating system
 
-> **⚠️ macOS is NOT supported.** ModelForge requires NVIDIA CUDA which is not available on macOS. Use Linux or Windows with NVIDIA GPU.
-> 
+> **Apple Silicon Users**: ModelForge now has **experimental support** for Apple Silicon Macs with MPS (Metal Performance Shaders). See [macOS MPS Installation Guide](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/macos-mps.md) for setup instructions and limitations (HuggingFace provider only, no quantization support).
+>
 > **Windows Users**: See [Windows Installation Guide](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/windows.md) for platform-specific instructions, especially for Unsloth support.
 
 ### Installation
@@ -99,6 +101,7 @@ Open your browser to **http://localhost:8000** and start training!
 ### Installation
 - **[Windows Installation](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/windows.md)** - Complete Windows setup (including WSL and Docker)
 - **[Linux Installation](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/linux.md)** - Linux setup guide
+- **[macOS (Apple Silicon) Installation](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/macos-mps.md)** - Setup for M1/M2/M3 Macs with MPS support
 - **[Post-Installation](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/post-installation.md)** - Initial configuration
 
 ### Configuration & Usage
@@ -139,10 +142,11 @@ Open your browser to **http://localhost:8000** and start training!
 
 | Platform | HuggingFace Provider | Unsloth Provider | Notes |
 |----------|---------------------|------------------|-------|
-| **Linux** | ✅ Full support | ✅ Full support | Recommended |
+| **Linux (Native)** | ✅ Full support | ✅ Full support | Recommended for best performance |
 | **Windows (Native)** | ✅ Full support | ❌ Not supported | Use WSL or Docker for Unsloth |
 | **WSL 2** | ✅ Full support | ✅ Full support | Recommended for Windows users |
 | **Docker** | ✅ Full support | ✅ Full support | With NVIDIA runtime |
+| **macOS (Apple MPS)** | ✅ Experimental | ❌ Not supported | Requires PyTorch MPS; no bitsandbytes / Unsloth; smaller models recommended |
 
 **[Platform-Specific Installation Guides →](https://github.com/ForgeOpus/ModelForge/tree/main/docs/installation/)**
 

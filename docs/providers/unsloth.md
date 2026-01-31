@@ -25,7 +25,10 @@ The Unsloth provider enables **2x faster training** with **20% less memory** thr
 | Linux (Native) | ✅ | Recommended |
 | WSL 2 | ✅ | Full support |
 | Docker | ✅ | With NVIDIA runtime |
-| Windows (Native) | ❌ | Use WSL or Docker |
+| Windows (Native) | ❌ | Use WSL or Docker for Unsloth |
+| **macOS (Apple Silicon)** | ❌ | **Not supported - Unsloth requires NVIDIA CUDA GPUs. Use HuggingFace provider on macOS** |
+
+⚠️ **Important**: Unsloth is **NOT supported on Apple Silicon Macs**. The optimized CUDA kernels are not compatible with Apple's MPS backend. If you're on macOS with Apple Silicon, use the [HuggingFace provider](huggingface.md) instead.
 
 ## Installation
 
@@ -327,7 +330,7 @@ modelforge run
 |---------|-------------|---------|
 | Training Speed | 1x | 2x |
 | Memory Usage | Baseline | -20% |
-| Platform Support | All | Linux/WSL/Docker |
+| Platform Support | All (including macOS MPS) | Linux/WSL/Docker only (CUDA required) |
 | Model Support | All | Llama, Mistral, Qwen, Gemma, Phi |
 | Complexity | Simple | Simple |
 | Stability | Stable | Stable |
@@ -337,7 +340,7 @@ modelforge run
 
 ### ✅ Use Unsloth When:
 
-- Training on Linux or WSL
+- Training on Linux or WSL with **NVIDIA GPU**
 - Using supported models (Llama, Mistral, etc.)
 - Need faster training times
 - Have limited VRAM
@@ -346,6 +349,7 @@ modelforge run
 ### ❌ Don't Use Unsloth When:
 
 - Running on native Windows (use HuggingFace)
+- **Running on macOS with Apple Silicon (use HuggingFace)**
 - Using unsupported models (BART, T5)
 - Debugging issues (HuggingFace has better error messages)
 - Need maximum compatibility
