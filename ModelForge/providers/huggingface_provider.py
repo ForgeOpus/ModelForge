@@ -31,6 +31,7 @@ class HuggingFaceProvider:
         model_class: str,
         quantization_config: Optional[Any] = None,
         device_map: Optional[Dict] = None,
+        device_type: str = "cuda",
         **kwargs
     ) -> Any:
         """
@@ -41,6 +42,7 @@ class HuggingFaceProvider:
             model_class: Model class name
             quantization_config: Optional BitsAndBytesConfig
             device_map: Optional device mapping
+            device_type: Device type ("cuda", "mps", or "cpu")
             **kwargs: Additional arguments
 
         Returns:
@@ -50,7 +52,7 @@ class HuggingFaceProvider:
             ModelAccessError: If user doesn't have access to the model
             ProviderError: If model loading fails
         """
-        logger.info(f"Loading model {model_id} with class {model_class}")
+        logger.info(f"Loading model {model_id} with class {model_class} on {device_type}")
 
         if model_class not in self.model_class_mapping:
             raise ProviderError(
@@ -62,17 +64,39 @@ class HuggingFaceProvider:
 
         try:
             load_kwargs = {
-                "device_map": device_map or {"": 0},
                 "use_cache": False,
             }
+            
+            # Handle device_map based on device type
+            if device_type == "mps":
+                # MPS doesn't support device_map, use direct device placement
+                # Don't set device_map for MPS - let the model load on CPU first
+                # then we'll move it to MPS after loading
+                pass
+            elif device_type == "cpu":
+                # For CPU, use explicit device_map
+                load_kwargs["device_map"] = {"": "cpu"}
+            else:
+                # For CUDA, use provided device_map or default to GPU 0
+                load_kwargs["device_map"] = device_map or {"": 0}
 
-            if quantization_config is not None:
+            # Only use quantization_config if not MPS (bitsandbytes doesn't support MPS)
+            if quantization_config is not None and device_type != "mps":
                 load_kwargs["quantization_config"] = quantization_config
+            elif quantization_config is not None and device_type == "mps":
+                logger.warning("Quantization config ignored on MPS device (bitsandbytes not supported)")
 
             load_kwargs.update(kwargs)
 
             model = model_cls.from_pretrained(model_id, **load_kwargs)
-            logger.info(f"Successfully loaded model {model_id}")
+            
+            # For MPS, explicitly move model to MPS device after loading
+            if device_type == "mps":
+                import torch
+                logger.info("Moving model to MPS device...")
+                model = model.to(torch.device("mps"))
+            
+            logger.info(f"Successfully loaded model {model_id} on {device_type}")
             return model
 
         except hf_errors.GatedRepoError as e:
