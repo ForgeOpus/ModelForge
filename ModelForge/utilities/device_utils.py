@@ -3,7 +3,7 @@ Device utility module for managing device selection and resolution.
 Provides device-agnostic abstraction for CUDA, MPS, and CPU.
 """
 import torch
-from typing import Tuple
+from typing import Tuple, List
 from ..logging_config import logger
 from ..exceptions import ConfigurationError
 
@@ -127,7 +127,7 @@ def is_device_available(device_type: str) -> bool:
         return False
 
 
-def get_available_devices() -> list[str]:
+def get_available_devices() -> List[str]:
     """
     Get list of all available device types on this system.
     

@@ -69,9 +69,8 @@ class HuggingFaceProvider:
             
             # Handle device_map based on device type
             if device_type == "mps":
-                # MPS doesn't support device_map, use direct device placement
-                # Don't set device_map for MPS - let the model load on CPU first
-                # then we'll move it to MPS after loading
+                # MPS doesn't support device_map parameter in HuggingFace
+                # Don't set device_map - will load to CPU by default, then move to MPS after
                 pass
             elif device_type == "cpu":
                 # For CPU, use explicit device_map

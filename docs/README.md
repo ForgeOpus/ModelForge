@@ -14,6 +14,7 @@ Welcome to the comprehensive documentation for **ModelForge v2.0** - A no-code t
   - WSL setup for full feature support
   - Docker with NVIDIA Container Toolkit
 - [Linux Installation](installation/linux.md) - Setup guide for Linux
+- [macOS (Apple Silicon) Installation](installation/macos-mps.md) - Setup for M1/M2/M3/M4 Macs with MPS support
 - [Post-Installation Setup](installation/post-installation.md) - Initial configuration steps
 
 ### Configuration & Usage
