@@ -6,7 +6,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const navigate = useNavigate();
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [datasetPath, setDatasetPath] = useState('');
-  const [datasetValidated, setDatasetValidated] = useState(false);
   const [formState, setFormState] = useState({});
   const [settingsUpdated, setSettingsUpdated] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState(null);
@@ -68,7 +67,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         };
 
         console.log("Merged form state:", mergedState);
-        defaultValues = mergedState;
         setFormState(mergedState);
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -98,7 +96,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
 
   const handleDatasetPathChange = (e) => {
     setDatasetPath(e.target.value);
-    setDatasetValidated(false);
   };
 
   const handleInputChange = (e) => {
@@ -153,7 +150,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
 
         // Update form state with the validated file path
         formState.dataset = validateResponse.file_path;
-        setDatasetValidated(true);
       } else {
         throw new Error("Please enter the path to your dataset file");
       }
