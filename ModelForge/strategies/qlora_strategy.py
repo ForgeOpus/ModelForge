@@ -1,9 +1,10 @@
 """
 QLoRA (Quantized Low-Rank Adaptation) strategy implementation.
 QLoRA combines 4-bit quantization with LoRA for memory-efficient fine-tuning.
+Uses TRL's SFTTrainer with QLoRA-optimized defaults.
 """
 from typing import Any, Dict
-from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, prepare_model_for_kbit_training
 
 # Import unsloth first to prevent EOS token corruption
 # This must come before transformers imports to ensure proper tokenizer initialization
@@ -12,7 +13,7 @@ try:
 except ImportError:
     pass
 
-from transformers import Trainer, TrainingArguments, DataCollatorForLanguageModeling
+from trl import SFTTrainer, SFTConfig
 
 from ..logging_config import logger
 
@@ -26,6 +27,7 @@ class QLoRAStrategy:
     - Double quantization
     - Gradient checkpointing
     - Paged optimizers
+    - Higher LoRA rank to compensate for quantization
     """
 
     def get_strategy_name(self) -> str:
@@ -41,7 +43,7 @@ class QLoRAStrategy:
             config: Configuration with LoRA settings
 
         Returns:
-            Model with QLoRA adapters
+            Model prepared for QLoRA training
         """
         logger.info("Preparing model for QLoRA")
 
@@ -51,7 +53,26 @@ class QLoRAStrategy:
             use_gradient_checkpointing=config.get("gradient_checkpointing", True)
         )
 
-        # Get task type
+        # Enable gradient checkpointing for memory efficiency
+        if config.get("gradient_checkpointing", True):
+            if hasattr(model, 'gradient_checkpointing_enable'):
+                model.gradient_checkpointing_enable()
+
+        logger.info("Model prepared for QLoRA")
+        return model
+
+    def get_peft_config(self, config: Dict) -> LoraConfig:
+        """
+        Create the LoRA PEFT config with QLoRA-specific defaults.
+
+        QLoRA typically uses higher rank to compensate for quantization.
+
+        Args:
+            config: Configuration dictionary
+
+        Returns:
+            LoraConfig instance
+        """
         task_type_map = {
             "text-generation": TaskType.CAUSAL_LM,
             "summarization": TaskType.SEQ_2_SEQ_LM,
@@ -59,76 +80,57 @@ class QLoRAStrategy:
         }
         task_type = task_type_map.get(config.get("task"), TaskType.CAUSAL_LM)
 
-        # QLoRA-specific LoRA config
+        # QLoRA-specific LoRA config with higher rank
         peft_config = LoraConfig(
-            r=config.get("lora_r", 64),  # QLoRA often uses higher rank
-            lora_alpha=config.get("lora_alpha", 16),  # Lower alpha for QLoRA
+            r=config.get("lora_r", 64),
+            lora_alpha=config.get("lora_alpha", 16),
             lora_dropout=config.get("lora_dropout", 0.1),
             bias="none",
             task_type=task_type,
             target_modules=config.get("target_modules", "all-linear"),
-            # QLoRA-specific settings
-            use_rslora=config.get("use_rslora", False),
-            use_dora=config.get("use_dora", False),
         )
-
-        # Apply PEFT
-        model = get_peft_model(model, peft_config)
-
-        # Enable gradient checkpointing for memory efficiency
-        if config.get("gradient_checkpointing", True):
-            model.gradient_checkpointing_enable()
 
         logger.info(
-            f"Model prepared with QLoRA: r={peft_config.r}, "
+            f"QLoRA LoRA config: r={peft_config.r}, "
             f"alpha={peft_config.lora_alpha}"
         )
-        return model
+        return peft_config
 
     def prepare_dataset(self, dataset: Any, tokenizer: Any, config: Dict) -> Any:
         """
-        Prepare dataset for QLoRA by tokenizing text and creating labels.
+        Prepare dataset for QLoRA. SFTTrainer handles tokenization automatically,
+        so we just need to format the data into the expected structure.
 
         Args:
             dataset: Pre-formatted dataset with task-specific fields
             tokenizer: Tokenizer instance
-            config: Configuration dictionary (contains task type, max_seq_length)
+            config: Configuration dictionary
 
         Returns:
-            Dataset with tokenized fields: input_ids, attention_mask, labels
+            Dataset formatted for SFTTrainer (with 'text' field)
         """
         logger.info(f"Preparing dataset for QLoRA: {len(dataset)} examples")
 
-        # Get EOS token with SEP fallback
-        eos_token = tokenizer.eos_token or tokenizer.sep_token or ""
         task = config.get("task", "text-generation")
-        max_seq_length = config.get("max_seq_length", 2048)
+        eos_token = tokenizer.eos_token or tokenizer.sep_token or ""
 
-        # Handle max_seq_length = -1 (use model's maximum)
-        if max_seq_length == -1:
-            max_seq_length = 2048  # Fallback default
-
-        def create_text_field(example):
-            """Consolidate all fields into a single 'text' field with EOS token."""
+        def format_to_text(example):
+            """Format each example into a single text field for SFTTrainer."""
             if task == "text-generation":
-                # Fields: prompt, completion (renamed in training_service._format_dataset)
                 prompt = example.get('prompt', '')
                 completion = example.get('completion', '')
                 text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
 
             elif task == "summarization":
-                # Fields: input, output (renamed in training_service._format_dataset)
                 input_text = example.get('input', '')
                 output_text = example.get('output', '')
                 text = f"Summarize the following document:\n{input_text}\n\nSummary:\n{output_text}{eos_token}"
 
             elif task == "extractive-question-answering":
-                # Fields: context, question, answers
                 context = example.get('context', '')
                 question = example.get('question', '')
                 answers = example.get('answers', {})
 
-                # Extract answer text from answers dict
                 if isinstance(answers, dict):
                     answer_text = answers.get("text", [""])[0] if "text" in answers else ""
                 else:
@@ -137,47 +139,20 @@ class QLoRAStrategy:
                 text = f"Context: {context}\n\nQuestion: {question}\n\nAnswer: {answer_text}{eos_token}"
 
             else:
-                # Fallback: concatenate all string fields
                 logger.warning(f"Unknown task type: {task}, using raw field concatenation")
                 text = " ".join(str(v) for v in example.values() if isinstance(v, str))
                 text += eos_token
 
             return {"text": text}
 
-        # Step 1: Create text field
+        # Format dataset - SFTTrainer will handle tokenization
         dataset = dataset.map(
-            create_text_field,
+            format_to_text,
             remove_columns=dataset.column_names,
             num_proc=1
         )
 
-        # Step 2: Tokenize text
-        def tokenize_function(examples):
-            """Tokenize text and create labels for causal LM."""
-            # Tokenize with truncation and padding
-            tokenized = tokenizer(
-                examples["text"],
-                truncation=True,
-                max_length=max_seq_length,
-                padding="max_length",  # Pad to max_length for consistency
-                return_tensors=None,  # Return lists, not tensors (datasets handles this)
-            )
-
-            # For causal LM: labels = input_ids
-            # The model will shift internally for next-token prediction
-            tokenized["labels"] = tokenized["input_ids"].copy()
-
-            return tokenized
-
-        # Apply tokenization
-        dataset = dataset.map(
-            tokenize_function,
-            batched=True,
-            remove_columns=["text"],  # Remove text field, keep only tokenized
-            num_proc=1,
-        )
-
-        logger.info(f"Dataset tokenized: {len(dataset)} examples with max_length={max_seq_length}")
+        logger.info(f"Dataset formatted for QLoRA: {len(dataset)} examples")
         return dataset
 
     def create_trainer(
@@ -190,26 +165,29 @@ class QLoRAStrategy:
         callbacks: list = None,
     ) -> Any:
         """
-        Create Trainer with QLoRA-specific optimizations.
+        Create SFTTrainer with QLoRA-specific optimizations.
 
         Args:
             model: Prepared model with QLoRA
-            train_dataset: Tokenized training dataset
-            eval_dataset: Tokenized evaluation dataset
+            train_dataset: Formatted training dataset (with 'text' field)
+            eval_dataset: Formatted evaluation dataset
             tokenizer: Tokenizer instance
             config: Training configuration
             callbacks: Training callbacks
 
         Returns:
-            Trainer instance
+            SFTTrainer instance configured for QLoRA
         """
-        logger.info("Creating Trainer with QLoRA optimizations")
+        logger.info("Creating SFTTrainer with QLoRA optimizations")
+
+        max_seq_length = config.get("max_seq_length", 2048)
+        if max_seq_length == -1:
+            max_seq_length = 2048
 
         # QLoRA-optimized training arguments
-        training_args = TrainingArguments(
+        training_args = SFTConfig(
             output_dir=config.get("output_dir", "./checkpoints"),
             num_train_epochs=config.get("num_train_epochs", 1),
-            # QLoRA can use larger batch sizes due to memory efficiency
             per_device_train_batch_size=config.get("per_device_train_batch_size", 4),
             per_device_eval_batch_size=config.get("per_device_eval_batch_size", 4),
             gradient_accumulation_steps=config.get("gradient_accumulation_steps", 4),
@@ -217,7 +195,6 @@ class QLoRAStrategy:
             optim=config.get("optim", "paged_adamw_32bit"),
             save_steps=config.get("save_steps", 0),
             logging_steps=config.get("logging_steps", 25),
-            # QLoRA can often use higher learning rates
             learning_rate=config.get("learning_rate", 2e-4),
             warmup_ratio=config.get("warmup_ratio", 0.03),
             weight_decay=config.get("weight_decay", 0.001),
@@ -232,34 +209,34 @@ class QLoRAStrategy:
             # Gradient checkpointing for memory efficiency
             gradient_checkpointing=config.get("gradient_checkpointing", True),
             gradient_checkpointing_kwargs={"use_reentrant": False},
+            # SFT-specific settings
+            max_seq_length=max_seq_length,
+            packing=config.get("packing", False),
+            dataset_text_field="text",
             # Evaluation settings
             eval_strategy="steps" if eval_dataset else "no",
             eval_steps=config.get("eval_steps", 100),
             save_strategy="steps",
             load_best_model_at_end=True if eval_dataset else False,
             metric_for_best_model="eval_loss" if eval_dataset else None,
-            # Disable distributed training for Unsloth (required when using device_map='auto')
             ddp_find_unused_parameters=False,
-            use_cache=False,
         )
 
-        # Create data collator for causal language modeling
-        data_collator = DataCollatorForLanguageModeling(
-            tokenizer=tokenizer,
-            mlm=False,  # Causal LM
-        )
+        # Build the PEFT config for SFTTrainer to apply LoRA
+        peft_config = self.get_peft_config(config)
 
-        # Create standard Trainer
-        trainer = Trainer(
+        # Create SFTTrainer - it handles tokenization and data collation
+        trainer = SFTTrainer(
             model=model,
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            data_collator=data_collator,
+            processing_class=tokenizer,
+            peft_config=peft_config,
             callbacks=callbacks or [],
         )
 
-        logger.info("QLoRA trainer created successfully")
+        logger.info("QLoRA SFTTrainer created successfully")
         return trainer
 
     def get_required_dataset_fields(self) -> list:
