@@ -3,8 +3,7 @@ Refactored fine-tuning router.
 Slim router that delegates to services for business logic.
 """
 import os
-import uuid
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
 from starlette.responses import JSONResponse
 
 from ..schemas.training_schemas import (
@@ -18,12 +17,10 @@ from ..schemas.training_schemas import (
 from ..services.training_service import TrainingService
 from ..services.model_service import ModelService
 from ..services.hardware_service import HardwareService
-from ..utilities.settings_managers.FileManager import FileManager
 from ..dependencies import (
     get_training_service,
     get_model_service,
     get_hardware_service,
-    get_file_manager,
     get_session_data,
     update_session_data,
 )
@@ -367,59 +364,67 @@ async def get_default_settings(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/load_settings")
-async def load_settings(
-    json_file: UploadFile = File(...),
-    settings: str = Form(...),
-    file_manager: FileManager = Depends(get_file_manager),
+@router.post("/validate_dataset_path")
+async def validate_dataset_path(
+    data: dict,
 ):
     """
-    Upload dataset file.
+    Validate a local dataset file path.
+
+    Since ModelForge runs locally, users provide a path to their
+    dataset file on disk rather than uploading it.
 
     Args:
-        json_file: Dataset file (JSON/JSONL)
-        settings: JSON string with settings
-        file_manager: File manager instance
+        data: Dictionary with 'dataset_path' key
 
     Returns:
-        Upload result with file path
+        Validation result with file info
 
     Raises:
-        HTTPException: If file upload fails
+        HTTPException: If path is invalid or file doesn't exist
     """
-    logger.info(f"Uploading dataset: {json_file.filename}")
+    dataset_path = data.get("dataset_path", "").strip()
+    logger.info(f"Validating dataset path: {dataset_path}")
+
+    if not dataset_path:
+        raise HTTPException(status_code=400, detail="Dataset path cannot be empty.")
 
     try:
-        # Validate file type
-        if not json_file.filename.endswith(('.json', '.jsonl')):
+        # Normalize the path
+        dataset_path = os.path.abspath(dataset_path)
+
+        # Check file exists
+        if not os.path.isfile(dataset_path):
             raise HTTPException(
                 status_code=400,
-                detail="Invalid file type. Only JSON and JSONL files are allowed."
+                detail=f"File not found: {dataset_path}"
             )
 
-        # Read file content
-        file_content = await json_file.read()
+        # Validate file type
+        if not dataset_path.endswith(('.json', '.jsonl')):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid file type. Only .json and .jsonl files are supported."
+            )
 
-        # Generate unique filename
-        file_id = str(uuid.uuid4())
-        filename = f"{file_id}_{json_file.filename}"
+        # Get file size
+        file_size = os.path.getsize(dataset_path)
+        filename = os.path.basename(dataset_path)
 
-        # Save file
-        default_dirs = file_manager.return_default_dirs()
-        file_path = os.path.join(default_dirs["datasets"], filename)
-        file_manager.save_file(file_path, file_content)
-
-        logger.info(f"Dataset uploaded successfully: {file_path}")
+        logger.info(f"Dataset path validated: {dataset_path} ({file_size} bytes)")
 
         return {
             "success": True,
-            "file_path": file_path,
+            "file_path": dataset_path,
             "filename": filename,
-            "message": "Dataset uploaded successfully",
+            "file_size": file_size,
+            "message": "Dataset path is valid",
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Error uploading dataset: {e}")
+        logger.error(f"Error validating dataset path: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
