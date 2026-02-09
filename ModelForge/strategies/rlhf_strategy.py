@@ -168,7 +168,8 @@ class RLHFStrategy:
         )
 
         # Build the PEFT config
-        peft_config = self.get_peft_config(config)
+        # Skip if PEFT was already applied (e.g. by Unsloth provider)
+        peft_config = None if config.get("_peft_already_applied") else self.get_peft_config(config)
 
         # Create DPOTrainer
         trainer = DPOTrainer(
