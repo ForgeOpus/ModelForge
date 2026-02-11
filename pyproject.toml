@@ -50,6 +50,8 @@ include-package-data = true
     "**/*.yaml",
     "**/*.yml",
     "**/*.json",
+    # Include the entire Frontend/build directory and all its contents
+    "Frontend/build/**",
 ]
 
 [tool.setuptools.exclude-package-data]
