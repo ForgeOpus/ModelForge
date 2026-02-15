@@ -3,7 +3,7 @@
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/modelforge-finetuning?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/modelforge-finetuning)
 [![License: BSD](https://img.shields.io/badge/License-BSD-yellow.svg)](https://opensource.org/licenses/BSD)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.0.1-blue)](https://github.com/ForgeOpus/ModelForge)
+[![Version](https://img.shields.io/badge/version-2.0.2-blue)](https://github.com/ForgeOpus/ModelForge)
 
 **Fine-tune LLMs on your laptop's GPU—no code, no PhD, no hassle.**
 
