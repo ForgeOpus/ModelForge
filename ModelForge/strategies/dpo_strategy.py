@@ -3,7 +3,7 @@ Direct Preference Optimization (DPO) strategy implementation.
 DPO is a simpler alternative to RLHF that doesn't require a reward model.
 """
 from typing import Any, Dict
-from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
+from peft import LoraConfig, TaskType, prepare_model_for_kbit_training
 
 from ..logging_config import logger
 from ..exceptions import TrainingError
@@ -18,7 +18,9 @@ class DPOStrategy:
 
     def prepare_model(self, model: Any, config: Dict) -> Any:
         """
-        Prepare model for DPO training.
+        Prepare model for DPO training. DPOTrainer can accept a peft_config
+        and handle LoRA wrapping automatically, so we only prepare for
+        kbit training if quantized.
 
         Args:
             model: Base model instance
@@ -33,20 +35,30 @@ class DPOStrategy:
         if config.get("use_4bit") or config.get("use_8bit"):
             model = prepare_model_for_kbit_training(model)
 
-        # Apply LoRA
-        if config.get("use_lora", True):
-            peft_config = LoraConfig(
-                r=config.get("lora_r", 16),
-                lora_alpha=config.get("lora_alpha", 32),
-                lora_dropout=config.get("lora_dropout", 0.1),
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-                target_modules=config.get("target_modules", "all-linear"),
-            )
-            model = get_peft_model(model, peft_config)
-
-        logger.info("Model prepared for DPO with LoRA")
+        logger.info("Model prepared for DPO")
         return model
+
+    def get_peft_config(self, config: Dict) -> LoraConfig:
+        """
+        Create the LoRA PEFT config for DPOTrainer.
+
+        Args:
+            config: Configuration dictionary
+
+        Returns:
+            LoraConfig instance
+        """
+        peft_config = LoraConfig(
+            r=config.get("lora_r", 16),
+            lora_alpha=config.get("lora_alpha", 32),
+            lora_dropout=config.get("lora_dropout", 0.1),
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+            target_modules=config.get("target_modules", "all-linear"),
+        )
+
+        logger.info(f"DPO LoRA config: r={peft_config.r}, alpha={peft_config.lora_alpha}")
+        return peft_config
 
     def prepare_dataset(self, dataset: Any, tokenizer: Any, config: Dict) -> Any:
         """
@@ -57,13 +69,15 @@ class DPOStrategy:
         - chosen: Preferred response
         - rejected: Non-preferred response
 
+        DPOTrainer handles tokenization automatically.
+
         Args:
             dataset: Raw dataset with DPO fields
             tokenizer: Tokenizer instance
             config: Configuration dictionary
 
         Returns:
-            Prepared dataset
+            Prepared dataset (validated, not tokenized - DPOTrainer handles that)
         """
         logger.info("Preparing dataset for DPO")
 
@@ -94,7 +108,7 @@ class DPOStrategy:
 
         Args:
             model: Prepared model
-            train_dataset: Training dataset
+            train_dataset: Training dataset with prompt/chosen/rejected
             eval_dataset: Evaluation dataset
             tokenizer: Tokenizer instance
             config: Training configuration
@@ -129,31 +143,33 @@ class DPOStrategy:
             logging_steps=config.get("logging_steps", 10),
             save_steps=config.get("save_steps", 100),
             # DPO-specific settings
-            beta=config.get("beta", 0.1),  # DPO temperature parameter
-            loss_type=config.get("loss_type", "sigmoid"),  # sigmoid or hinge
+            beta=config.get("beta", 0.1),
+            loss_type=config.get("loss_type", "sigmoid"),
             max_length=config.get("max_seq_length", 512),
             max_prompt_length=config.get("max_prompt_length", 128),
             # Evaluation settings
-            evaluation_strategy="steps" if eval_dataset else "no",
+            eval_strategy="steps" if eval_dataset else "no",
             eval_steps=config.get("eval_steps", 100),
             save_strategy="steps",
             load_best_model_at_end=True if eval_dataset else False,
             report_to="tensorboard",
             logging_dir=config.get("logging_dir", "./training_logs"),
-            # Disable distributed training for Unsloth (required when using device_map='auto')
             ddp_find_unused_parameters=False,
         )
 
-        # Create trainer
-        # Note: DPOTrainer needs a reference model for computing KL divergence
-        # We'll use the same model as reference (it will be frozen internally)
+        # Build the PEFT config for DPOTrainer to apply LoRA
+        # Skip if PEFT was already applied (e.g. by Unsloth provider)
+        peft_config = None if config.get("_peft_already_applied") else self.get_peft_config(config)
+
+        # Create DPOTrainer with modern API
         trainer = DPOTrainer(
             model=model,
-            ref_model=None,  # DPOTrainer will create a copy
+            ref_model=None,  # DPOTrainer will create a reference copy
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
-            tokenizer=tokenizer,
+            processing_class=tokenizer,
+            peft_config=peft_config,
             callbacks=callbacks or [],
         )
 

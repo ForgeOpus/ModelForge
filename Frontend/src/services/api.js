@@ -30,30 +30,26 @@ export const getSystemInfo = async () => {
 };
 
 /**
- * Upload dataset file
- * @param {File} file - Dataset file (JSON/JSONL)
- * @param {Object} settings - Training settings
- * @returns {Promise<Object>} Upload response
+ * Validate a local dataset file path
+ * @param {string} datasetPath - Local file path to the dataset
+ * @returns {Promise<Object>} Validation response with file_path
  */
-export const uploadDataset = async (file, settings) => {
+export const validateDatasetPath = async (datasetPath) => {
     try {
-        const formData = new FormData();
-        formData.append('json_file', file, file.name);
-        formData.append('settings', JSON.stringify(settings));
-
-        const response = await fetch(`${config.baseURL}/finetune/load_settings`, {
+        const response = await fetch(`${config.baseURL}/finetune/validate_dataset_path`, {
             method: 'POST',
-            body: formData,
+            headers: config.headers,
+            body: JSON.stringify({ dataset_path: datasetPath }),
         });
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            throw new Error(errorData.detail || `Upload failed: ${response.status}`);
+            throw new Error(errorData.detail || `Validation failed: ${response.status}`);
         }
 
         return await response.json();
     } catch (error) {
-        console.error('Error uploading dataset:', error);
+        console.error('Error validating dataset path:', error);
         throw error;
     }
 };

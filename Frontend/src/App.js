@@ -1,13 +1,12 @@
 // src/App.jsx
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import Navbar from './components/Navbar';
 import LandingPage from './pages/AppLanding';
 import DetectHardwarePage from './pages/DetectHardwarePage';
 import FinetuneSettings from './pages/FinetuningSettingsPage';
 import Loading from './pages/Loading';
 import TechnicalDetailsPage from './pages/TechnicalDetailsPage';
-import ListModels from './pages/ListModels';
 import './index.css';
 import ListAllModels from "./pages/ListAllModels";
 

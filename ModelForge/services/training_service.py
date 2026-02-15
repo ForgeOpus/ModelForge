@@ -267,6 +267,9 @@ class TrainingService:
                     lora_alpha=config.get("lora_alpha", 32),
                     lora_dropout=config.get("lora_dropout", 0.1),
                 )
+                # Signal to strategies that PEFT is already applied by Unsloth
+                # so they don't pass peft_config to the trainer (which would double-wrap)
+                config["_peft_already_applied"] = True
             else:
                 model = strategy.prepare_model(model, config)
 

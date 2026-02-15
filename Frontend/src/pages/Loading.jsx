@@ -21,16 +21,6 @@ const Loading = () => {
     "Starting training loop...",
     "Training in progress..."
   ];
-  
-  // Function to manually set idle status (for demo purposes)
-  const setTrainingComplete = () => {
-    setIsIdle(true);
-    setProgress(100);
-    setCurrentStep(steps.length - 1);
-    if (statusIntervalRef.current) {
-      clearInterval(statusIntervalRef.current);
-    }
-  };
 
   // Function to check backend status
   useEffect(() => {
@@ -112,19 +102,19 @@ const Loading = () => {
       const modelPathResponse = await fetch(`${config.baseURL}/playground/model_path`, {
         method: 'GET'
       });
-  
+
       if (!modelPathResponse.ok) {
         throw new Error('Failed to get model path');
       }
-  
+
       // Extract the model path from the response
       const modelPathData = await modelPathResponse.json();
       const modelPath = modelPathData.model_path;
-  
+
       console.log("Received model path:", modelPath);
-  
+
       // Now send POST request with the model path
-      const response = await fetch(`${config.baseURL}/playground/new`, {
+      await fetch(`${config.baseURL}/playground/new`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -133,10 +123,10 @@ const Loading = () => {
           model_path: modelPath
         })
       });
-  
+
       // After successful POST request, redirect to homepage
       navigate('/');
-      
+
     } catch (error) {
       console.error('Error starting AI chat:', error);
       // Show an error message to the user

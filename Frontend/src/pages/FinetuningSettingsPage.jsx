@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { config, getSystemInfo, uploadDataset, startTraining } from '../services/api';
+import { config, getSystemInfo, validateDatasetPath, startTraining } from '../services/api';
 
 const FinetuneSettings = ({ defaultValues, updateSettings }) => {
   const navigate = useNavigate();
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [datasetPath, setDatasetPath] = useState('');
   const [formState, setFormState] = useState({});
   const [settingsUpdated, setSettingsUpdated] = useState(false);
   const [activeTooltip, setActiveTooltip] = useState(null);
@@ -67,7 +67,6 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         };
 
         console.log("Merged form state:", mergedState);
-        defaultValues = mergedState;
         setFormState(mergedState);
       } catch (err) {
         console.error("Error fetching settings:", err);
@@ -95,9 +94,8 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     }
   }, [defaultValues]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    setSelectedFile(file);
+  const handleDatasetPathChange = (e) => {
+    setDatasetPath(e.target.value);
   };
 
   const handleInputChange = (e) => {
@@ -144,16 +142,16 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
         return;
       }
       
-      // Step 1: Upload dataset if provided
-      if (selectedFile) {
-        console.log("Uploading dataset...");
-        const uploadResponse = await uploadDataset(selectedFile, formState);
-        console.log("Dataset uploaded:", uploadResponse);
-        
-        // Update form state with the uploaded file path
-        formState.dataset = uploadResponse.file_path;
+      // Step 1: Validate dataset path
+      if (datasetPath.trim()) {
+        console.log("Validating dataset path...");
+        const validateResponse = await validateDatasetPath(datasetPath.trim());
+        console.log("Dataset validated:", validateResponse);
+
+        // Update form state with the validated file path
+        formState.dataset = validateResponse.file_path;
       } else {
-        throw new Error("Please select a dataset file");
+        throw new Error("Please enter the path to your dataset file");
       }
 
       // Step 2: Prepare training configuration
@@ -240,7 +238,7 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
     learning_rate: "How quickly the model adapts to new information",
     per_device_train_batch_size: "How many examples are processed at once",
     max_seq_length: "Maximum text length the model can handle",
-    dataset_file: "Your training examples in JSON format",
+    dataset_file: "Path to your local training data file (JSON or JSONL format)",
     lora_r: "Controls model capacity and training speed",
     lora_alpha: "Controls how much the model changes during training",
     quantization: "Reduces model size to fit in memory",
@@ -496,39 +494,21 @@ const FinetuneSettings = ({ defaultValues, updateSettings }) => {
 
             <div className="col-span-full">
               <Tooltip id="dataset_file">
-                <label htmlFor="dataset_file" className="block text-sm font-medium text-gray-400 mb-1">
-                  Dataset File
+                <label htmlFor="dataset_path" className="block text-sm font-medium text-gray-400 mb-1">
+                  Dataset File Path
                 </label>
               </Tooltip>
-              <div className="flex items-center">
-                <label className="w-full flex items-center justify-center px-4 py-2 border border-gray-700 rounded-lg cursor-pointer bg-gray-900 hover:bg-gray-800 transition">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-5 w-5 mr-2 text-gray-400"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
-                    />
-                  </svg>
-                  <span className="text-white">Upload Dataset</span>
-                  <input
-                    type="file"
-                    id="dataset_file"
-                    name="dataset_file"
-                    accept=".json,.jsonl"
-                    className="hidden"
-                    onChange={handleFileChange}
-                  />
-                </label>
-              </div>
+              <input
+                type="text"
+                id="dataset_path"
+                name="dataset_path"
+                placeholder="C:\path\to\your\dataset.json"
+                value={datasetPath}
+                onChange={handleDatasetPathChange}
+                className="bg-gray-900 border border-gray-700 rounded-lg p-3 w-full text-white focus:border-orange-500 focus:outline-none"
+              />
               <p className="mt-2 text-sm text-gray-400">
-                {selectedFile ? selectedFile.name : 'No file selected'}
+                Enter the full path to your local JSON or JSONL dataset file
               </p>
             </div>
           </div>
