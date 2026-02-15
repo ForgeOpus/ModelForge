@@ -10,7 +10,7 @@ on:
 
 env:
   PACKAGE_NAME: "modelforge-finetuning"
-  OWNER: "RETR0-OS"
+  OWNER: "ForgeOpus"
   TAP_NAME: "ModelForge"
 
 jobs:
