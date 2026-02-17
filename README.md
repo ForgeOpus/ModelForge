@@ -5,6 +5,8 @@
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-2.0.3-blue)](https://github.com/ForgeOpus/ModelForge)
 
+<a href="https://www.producthunt.com/products/forgeopus?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-forgeopus" target="_blank" rel="noopener noreferrer"><img alt="ForgeOpus - Where AI masterpieces are forged. Your work, your opus. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1080450&amp;theme=light&amp;t=1771311433851"></a>
+
 **Fine-tune LLMs on your laptop's GPU—no code, no PhD, no hassle.**
 
 ModelForge v2.0 is a complete architectural overhaul bringing **2x faster training**, modular providers, advanced strategies, and production-ready code quality.
