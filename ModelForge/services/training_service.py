@@ -12,11 +12,12 @@ from transformers import TrainerCallback
 from ..providers.provider_factory import ProviderFactory
 from ..strategies.strategy_factory import StrategyFactory
 from ..utilities.finetuning.quantization import QuantizationFactory
+from ..utilities.device_utils import resolve_device, clear_device_cache
 from ..evaluation.dataset_validator import DatasetValidator
 from ..evaluation.metrics import MetricsCalculator
 from ..database.database_manager import DatabaseManager
 from ..utilities.settings_managers.FileManager import FileManager
-from ..exceptions import TrainingError, DatasetValidationError
+from ..exceptions import TrainingError, DatasetValidationError, ConfigurationError
 from ..logging_config import logger
 
 
@@ -146,8 +147,40 @@ class TrainingService:
             self.training_status["progress"] = 0
             self.training_status["message"] = "Initializing training..."
 
+            # Get or default device setting
+            device_str = config.get("device", "auto")
+            
+            # Resolve device early
+            device_obj, device_type = resolve_device(device_str)
+            logger.info(f"Resolved device: {device_type} ({device_obj})")
+            
+            # Store device info in config for downstream use
+            config["device_type"] = device_type
+            config["device_obj"] = device_obj
+
             # Create provider
             provider_name = config.get("provider", "huggingface")
+            
+            # Validate Unsloth + MPS combination BEFORE any initialization
+            if provider_name == "unsloth" and device_type == "mps":
+                raise ConfigurationError(
+                    "Unsloth provider is not supported on Apple MPS devices. "
+                    "Unsloth requires NVIDIA CUDA GPUs for its optimized kernels. "
+                    "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
+                )
+            
+            # Validate and adjust quantization for MPS
+            if device_type == "mps":
+                if config.get("use_4bit", False) or config.get("use_8bit", False):
+                    logger.warning(
+                        "4-bit/8-bit quantization via bitsandbytes is not supported on MPS. "
+                        "Disabling quantization and using fp16 precision instead."
+                    )
+                    config["use_4bit"] = False
+                    config["use_8bit"] = False
+                    # Enable fp16 as fallback for MPS
+                    if not config.get("bf16", False):
+                        config["fp16"] = True
 
             # CRITICAL: Configure single-process mode for Unsloth BEFORE any initialization
             # This must happen before creating provider, strategy, or loading model
@@ -223,6 +256,7 @@ class TrainingService:
                     model_id=config["model_name"],
                     model_class=model_class,
                     quantization_config=quant_config,
+                    device_type=device_type,
                 )
                 tokenizer = provider.load_tokenizer(config["model_name"])
                 tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token

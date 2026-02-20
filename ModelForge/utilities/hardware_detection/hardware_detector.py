@@ -1,5 +1,6 @@
 import psutil
 import pynvml
+import torch
 import logging
 from typing import Dict, List, Tuple, Union
 from .config_manager import ConfigurationManager
@@ -47,67 +48,102 @@ class HardwareDetector:
     def get_gpu_specs(self) -> None:
         """
         Get GPU specifications with enhanced error handling.
+        Supports both NVIDIA CUDA and Apple MPS devices.
         
         Raises:
             RuntimeError: If GPU detection fails
         """
+        # First, try to detect NVIDIA CUDA GPU
+        cuda_available = False
         try:
             pynvml.nvmlInit()
             device_count = pynvml.nvmlDeviceGetCount()
             
-            if device_count == 0:
-                raise RuntimeError("No CUDA-enabled GPU detected. Please ensure that your system has a CUDA-enabled GPU and that you have the correct drivers installed.")
-            
-            gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
-            gpu_name = pynvml.nvmlDeviceGetName(gpu_handle)
-            gpu_mem_info = pynvml.nvmlDeviceGetMemoryInfo(gpu_handle)
+            if device_count > 0:
+                cuda_available = True
+                gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
+                gpu_name = pynvml.nvmlDeviceGetName(gpu_handle)
+                gpu_mem_info = pynvml.nvmlDeviceGetMemoryInfo(gpu_handle)
 
-            # Populate fields expected by HardwareService
-            self.gpu_count = device_count
-            self.gpu_name = gpu_name
-            self.total_memory = gpu_mem_info.total  # bytes
-            self.available_memory = getattr(gpu_mem_info, 'free', 0)  # bytes
+                # Populate fields expected by HardwareService
+                self.gpu_count = device_count
+                self.gpu_name = gpu_name
+                self.total_memory = gpu_mem_info.total  # bytes
+                self.available_memory = getattr(gpu_mem_info, 'free', 0)  # bytes
 
-            # Driver and CUDA versions (best effort)
-            try:
-                drv_ver = pynvml.nvmlSystemGetDriverVersion()
-                # nvml may return bytes or str depending on binding
-                self.driver_version = drv_ver.decode('utf-8') if hasattr(drv_ver, 'decode') else str(drv_ver)
-            except Exception:
-                self.driver_version = None
-            try:
-                # nvmlSystemGetCudaDriverVersion_v2 returns int like major*1000 + minor*10
-                if hasattr(pynvml, 'nvmlSystemGetCudaDriverVersion_v2'):
-                    cuda_int = pynvml.nvmlSystemGetCudaDriverVersion_v2()
-                    major = cuda_int // 1000
-                    minor = (cuda_int % 1000) // 10
-                    self.cuda_version = f"{major}.{minor}"
-                else:
+                # Driver and CUDA versions (best effort)
+                try:
+                    drv_ver = pynvml.nvmlSystemGetDriverVersion()
+                    # nvml may return bytes or str depending on binding
+                    self.driver_version = drv_ver.decode('utf-8') if hasattr(drv_ver, 'decode') else str(drv_ver)
+                except Exception:
+                    self.driver_version = None
+                try:
+                    # nvmlSystemGetCudaDriverVersion_v2 returns int like major*1000 + minor*10
+                    if hasattr(pynvml, 'nvmlSystemGetCudaDriverVersion_v2'):
+                        cuda_int = pynvml.nvmlSystemGetCudaDriverVersion_v2()
+                        major = cuda_int // 1000
+                        minor = (cuda_int % 1000) // 10
+                        self.cuda_version = f"{major}.{minor}"
+                    else:
+                        self.cuda_version = None
+                except Exception:
                     self.cuda_version = None
-            except Exception:
-                self.cuda_version = None
 
-            # Also keep existing hardware_profile entries in GB for prior consumers
-            # Guard against unexpected string types from bindings
-            try:
-                numeric_total = float(self.total_memory)
-            except (TypeError, ValueError):
-                numeric_total = 0.0
-            gpu_total_mem_gb = numeric_total / (1024 ** 3) if numeric_total else 0.0
-            self.hardware_profile['gpu_name'] = gpu_name
-            self.hardware_profile['gpu_total_memory_gb'] = round(gpu_total_mem_gb, 2)
-            
-            logging.info(f"GPU detected: {gpu_name} with {gpu_total_mem_gb:.2f}GB memory; GPUs: {device_count}")
+                # Also keep existing hardware_profile entries in GB for prior consumers
+                # Guard against unexpected string types from bindings
+                try:
+                    numeric_total = float(self.total_memory)
+                except (TypeError, ValueError):
+                    numeric_total = 0.0
+                gpu_total_mem_gb = numeric_total / (1024 ** 3) if numeric_total else 0.0
+                self.hardware_profile['gpu_name'] = gpu_name
+                self.hardware_profile['gpu_total_memory_gb'] = round(gpu_total_mem_gb, 2)
+                self.hardware_profile['device_type'] = 'cuda'
+                
+                logging.info(f"CUDA GPU detected: {gpu_name} with {gpu_total_mem_gb:.2f}GB memory; GPUs: {device_count}")
             
         except Exception as e:
-            error_msg = f"GPU detection failed: {str(e)}"
-            logging.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            logging.debug(f"CUDA GPU detection failed (this is normal on non-NVIDIA systems): {str(e)}")
         finally:
             try:
                 pynvml.nvmlShutdown()
             except Exception:
                 pass  # Ignore shutdown errors
+        
+        # If no CUDA GPU, try to detect Apple MPS
+        if not cuda_available:
+            try:
+                import torch
+                if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    # MPS is available
+                    memory = psutil.virtual_memory()
+                    unified_memory_gb = memory.total / (1024 ** 3)
+                    
+                    self.gpu_count = 1
+                    self.gpu_name = "Apple M-series (MPS)"
+                    # MPS uses unified memory - use system RAM as approximation
+                    self.total_memory = memory.total
+                    self.available_memory = memory.available
+                    self.driver_version = None
+                    self.cuda_version = None
+                    
+                    self.hardware_profile['gpu_name'] = "Apple M-series (MPS)"
+                    self.hardware_profile['gpu_total_memory_gb'] = round(unified_memory_gb, 2)
+                    self.hardware_profile['device_type'] = 'mps'
+                    
+                    logging.info(f"Apple MPS detected with {unified_memory_gb:.2f}GB unified memory")
+                    return
+            except Exception as e:
+                logging.debug(f"MPS detection failed: {str(e)}")
+        
+        # If neither CUDA nor MPS available, raise error
+        if not cuda_available and not (hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+            raise RuntimeError(
+                "No GPU detected. ModelForge requires either an NVIDIA GPU with CUDA "
+                "or Apple Silicon with MPS support. If you have a GPU, please ensure "
+                "you have the correct drivers installed."
+            )
 
     def get_computer_specs(self) -> None:
         """
@@ -237,21 +273,39 @@ class HardwareDetector:
         system_info = {
             "gpu_available": False,
             "cuda_available": False,
+            "mps_available": False,
+            "device_type": None,
             "error": None
         }
         
         try:
-            # Try to get basic GPU info
+            # Try to get basic GPU info (NVIDIA CUDA)
             pynvml.nvmlInit()
             device_count = pynvml.nvmlDeviceGetCount()
             if device_count > 0:
                 system_info["gpu_available"] = True
                 system_info["cuda_available"] = True
+                system_info["device_type"] = "cuda"
                 gpu_handle = pynvml.nvmlDeviceGetHandleByIndex(0)
                 system_info["gpu_name"] = pynvml.nvmlDeviceGetName(gpu_handle)
             pynvml.nvmlShutdown()
         except Exception as e:
-            system_info["error"] = f"GPU detection failed: {str(e)}"
+            system_info["error"] = f"CUDA GPU detection failed: {str(e)}"
+        
+        # Try to detect MPS if CUDA not available
+        if not system_info["cuda_available"]:
+            try:
+                import torch
+                if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    system_info["gpu_available"] = True
+                    system_info["mps_available"] = True
+                    system_info["device_type"] = "mps"
+                    system_info["gpu_name"] = "Apple M-series (MPS)"
+            except Exception as e:
+                if system_info["error"]:
+                    system_info["error"] += f"; MPS detection failed: {str(e)}"
+                else:
+                    system_info["error"] = f"MPS detection failed: {str(e)}"
         
         try:
             # Get basic system info

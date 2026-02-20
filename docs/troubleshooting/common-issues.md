@@ -182,4 +182,116 @@ pip install unsloth
 
 ---
 
+## Apple Silicon (MPS) Issues
+
+### MPS Not Available
+
+**Symptom**: `torch.backends.mps.is_available()` returns `False`
+
+**Solutions**:
+1. Verify you're on macOS 12.3 or later
+2. Verify you have Apple Silicon (M1/M2/M3/M4)
+3. Update PyTorch to latest version:
+   ```bash
+   pip install --upgrade torch
+   ```
+4. Check MPS build:
+   ```python
+   import torch
+   print(f"MPS built: {torch.backends.mps.is_built()}")
+   ```
+
+### "Unsloth provider is not supported on Apple MPS"
+
+**Symptom**: Error when trying to use Unsloth on macOS
+
+**Solution**: Unsloth requires NVIDIA CUDA and is not compatible with Apple MPS. Use HuggingFace provider instead:
+```json
+{
+  "provider": "huggingface",
+  "device": "mps"
+}
+```
+
+### "4-bit quantization via bitsandbytes is not supported on MPS"
+
+**Symptom**: Error or warning about quantization on MPS
+
+**Solution**: bitsandbytes library doesn't support MPS. Disable quantization:
+```json
+{
+  "use_4bit": false,
+  "use_8bit": false,
+  "fp16": true
+}
+```
+
+**Note**: ModelForge automatically disables quantization on MPS, but you may still see this warning.
+
+### MPS Backend Out of Memory
+
+**Symptom**: "MPS backend out of memory" error during training
+
+**Solutions** (in order of preference):
+1. Use a smaller model (3B instead of 7B)
+2. Reduce `max_seq_length`:
+   ```json
+   {"max_seq_length": 512}
+   ```
+3. Reduce batch size:
+   ```json
+   {"per_device_train_batch_size": 1}
+   ```
+4. Enable gradient checkpointing:
+   ```json
+   {"gradient_checkpointing": true}
+   ```
+5. Close other applications to free unified memory
+
+### MPS Training Very Slow
+
+**Symptom**: Training takes much longer than expected
+
+**Expected Behavior**: MPS is 3-5x slower than high-end NVIDIA GPUs, but still much faster than CPU.
+
+**Tips to improve speed**:
+- Use smaller models (1-3B parameters)
+- Reduce `max_seq_length` to 512 or 1024
+- Disable gradient checkpointing if you have enough memory:
+  ```json
+  {"gradient_checkpointing": false}
+  ```
+- Close other applications to free resources
+
+### "RuntimeError: MPS does not support..."
+
+**Symptom**: Operation not supported on MPS backend
+
+**Cause**: Some PyTorch operations are not yet implemented for MPS.
+
+**Solutions**:
+1. Update to the latest PyTorch version:
+   ```bash
+   pip install --upgrade torch
+   ```
+2. Try a different model architecture
+3. Fall back to CPU or use an NVIDIA GPU if available
+
+**Note**: Report unsupported operations to PyTorch via their GitHub issues.
+
+### Model Loading Fails on MPS
+
+**Symptom**: Model fails to load or crashes on MPS
+
+**Solutions**:
+1. Ensure you're using HuggingFace provider (not Unsloth)
+2. Disable quantization:
+   ```json
+   {"use_4bit": false, "use_8bit": false}
+   ```
+3. Try loading a different model (some architectures have better MPS support)
+4. Check you have enough unified memory for the model
+
+---
+
 **Still having issues?** Create an issue on [GitHub](https://github.com/ForgeOpus/ModelForge/issues/new).

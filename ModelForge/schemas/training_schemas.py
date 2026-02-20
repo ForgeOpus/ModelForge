@@ -3,12 +3,13 @@ Training configuration schemas.
 Pydantic models for training request validation.
 """
 from pydantic import BaseModel, field_validator, Field
-from typing import Optional
+from typing import Optional, Literal
 
 
 VALID_TASKS = ["text-generation", "summarization", "extractive-question-answering"]
 VALID_STRATEGIES = ["sft", "rlhf", "dpo", "qlora"]
 VALID_PROVIDERS = ["huggingface", "unsloth"]
+VALID_DEVICES = ["auto", "cuda", "mps", "cpu"]
 
 
 class TrainingConfig(BaseModel):
@@ -21,6 +22,7 @@ class TrainingConfig(BaseModel):
     strategy: str = "sft"
     dataset: str
     compute_specs: str
+    device: Literal["auto", "cuda", "mps", "cpu"] = "auto"
 
     # LoRA settings
     lora_r: int = 16
@@ -85,6 +87,15 @@ class TrainingConfig(BaseModel):
         if v not in VALID_PROVIDERS:
             raise ValueError(
                 f"Invalid provider: {v}. Must be one of {VALID_PROVIDERS}"
+            )
+        return v
+
+    @field_validator("device")
+    @classmethod
+    def validate_device(cls, v):
+        if v not in VALID_DEVICES:
+            raise ValueError(
+                f"Invalid device: {v}. Must be one of {VALID_DEVICES}"
             )
         return v
 
