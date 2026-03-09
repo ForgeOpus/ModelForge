@@ -4,6 +4,7 @@ from peft import LoraConfig, get_peft_model, TaskType
 from transformers import AutoTokenizer, AutoModelForQuestionAnswering, Trainer, TrainingArguments
 try:
     from transformers import BitsAndBytesConfig
+    import bitsandbytes as _bnb  # noqa: F401
     _BNB_AVAILABLE = True
 except ImportError:
     _BNB_AVAILABLE = False

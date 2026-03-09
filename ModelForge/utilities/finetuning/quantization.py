@@ -11,10 +11,11 @@ from ...logging_config import logger
 # Conditional import: bitsandbytes is only available on CUDA platforms
 try:
     from transformers import BitsAndBytesConfig
+    import bitsandbytes as _bnb  # noqa: F401 — verify the actual backend is installed
     _BNB_AVAILABLE = True
 except ImportError:
     _BNB_AVAILABLE = False
-    logger.info("BitsAndBytesConfig not available (bitsandbytes not installed). "
+    logger.info("bitsandbytes not available. "
                 "Quantization features will be disabled.")
 
 

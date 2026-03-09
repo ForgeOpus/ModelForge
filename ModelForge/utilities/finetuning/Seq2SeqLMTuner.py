@@ -15,6 +15,7 @@ from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 try:
     from transformers import BitsAndBytesConfig
+    import bitsandbytes as _bnb  # noqa: F401
     _BNB_AVAILABLE = True
 except ImportError:
     _BNB_AVAILABLE = False
