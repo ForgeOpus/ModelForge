@@ -67,6 +67,10 @@ python -m venv venv
 
 ```powershell
 pip install modelforge-finetuning
+
+# Optional extras
+pip install modelforge-finetuning[cli]           # CLI wizard
+pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization
 ```
 
 #### 3. Install PyTorch with CUDA Support
@@ -120,7 +124,8 @@ echo HUGGINGFACE_TOKEN=your_token_here > .env
 #### 6. Run ModelForge
 
 ```powershell
-modelforge run
+modelforge          # Launch web UI
+modelforge cli      # Launch CLI wizard (headless/SSH alternative)
 ```
 
 Open browser to: `http://localhost:8000`
@@ -244,7 +249,7 @@ echo "HUGGINGFACE_TOKEN=your_token_here" > .env
 ### Step 7: Run ModelForge
 
 ```bash
-modelforge run
+modelforge
 ```
 
 Access from Windows browser: `http://localhost:8000`
@@ -347,7 +352,7 @@ WORKDIR /workspace
 EXPOSE 8000
 
 # Run ModelForge
-CMD ["modelforge", "run", "--host", "0.0.0.0"]
+CMD ["modelforge", "--host", "0.0.0.0"]
 ```
 
 ### Step 5: Build and Run

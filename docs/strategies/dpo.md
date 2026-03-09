@@ -331,7 +331,7 @@ DPO models are evaluated using:
 | **Memory** | Low | Medium | High |
 | **Setup** | Easy | Easy | Complex |
 | **Preference Learning** | No | Yes | Yes |
-| **Reward Model** | No | No | Yes |
+| **Reward Model** | No | No | Not required (DPO-based in ModelForge) |
 
 ### When to Use Each
 
@@ -342,12 +342,14 @@ Need basic fine-tuning?
 Have preference data + want simplicity?
     → DPO
 
-Have reward model + need maximum control?
+Have preference data + want conservative defaults?
     → RLHF
 
 Limited VRAM?
     → QLoRA (with any strategy)
 ```
+
+> **Note**: In ModelForge, both RLHF and DPO strategies use TRL's `DPOTrainer`. RLHF uses more conservative hyperparameter defaults (lr=1.41e-5, 1 epoch, warmup=0.1) compared to DPO (lr=5e-7, 3 epochs).
 
 ## Example: Training a Helpful Assistant
 

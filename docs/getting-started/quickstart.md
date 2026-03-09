@@ -19,6 +19,10 @@ Before you begin, ensure you have:
 
 ```bash
 pip install modelforge-finetuning
+
+# Optional extras
+pip install modelforge-finetuning[cli]           # CLI wizard (required for `modelforge cli`)
+pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization support
 ```
 
 ### 2. Install PyTorch with CUDA Support
@@ -60,7 +64,7 @@ echo "HUGGINGFACE_TOKEN=your_huggingface_token" > .env
 ## Launch ModelForge
 
 ```bash
-modelforge run
+modelforge
 ```
 
 Open your browser and navigate to:
@@ -69,6 +73,29 @@ http://localhost:8000
 ```
 
 That's it! You should see the ModelForge web interface.
+
+## Using the CLI Wizard
+
+ModelForge also offers a terminal-based interactive wizard — useful for headless servers or SSH sessions where a browser isn't available:
+
+```bash
+pip install modelforge-finetuning[cli]   # Install CLI dependencies first
+modelforge cli
+```
+
+This launches a step-by-step prompt that guides you through dataset selection, model configuration, and training — no browser required.
+
+**In Jupyter notebooks**, you can also run the CLI wizard:
+
+```python
+from ModelForge.notebook_cli import run_cli
+run_cli()
+```
+
+| Interface | Command | Best for |
+|-----------|---------|----------|
+| Web UI | `modelforge` | Local machines with a browser |
+| CLI Wizard | `modelforge cli` | Headless servers, SSH, notebooks |
 
 ## Your First Fine-Tuning Job
 
@@ -141,7 +168,7 @@ To stop the application and free up resources:
 Simply run:
 
 ```bash
-modelforge run
+modelforge
 ```
 
 Your previous models and settings are preserved!
@@ -150,7 +177,7 @@ Your previous models and settings are preserved!
 
 - Check the [FAQ](../troubleshooting/faq.md) for common questions
 - See [Troubleshooting](../troubleshooting/common-issues.md) for common issues
-- Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)
+- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
 
 ---
 

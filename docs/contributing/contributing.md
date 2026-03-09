@@ -293,7 +293,7 @@ pytest --cov=ModelForge --cov-report=html
 
 ```bash
 # Start development server
-modelforge run --reload
+modelforge cli
 
 # Test in browser
 open http://localhost:8000
@@ -356,7 +356,7 @@ Contributors are recognized in:
 ## Questions?
 
 - Check [FAQ](../troubleshooting/faq.md)
-- Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)
+- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
 - Read [Architecture Guide](architecture.md)
 
 ---

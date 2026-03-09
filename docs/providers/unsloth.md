@@ -318,7 +318,7 @@ pip install unsloth
 **Solution**: Disable Flash Attention:
 ```bash
 export UNSLOTH_DISABLE_FLASH_ATTN=1
-modelforge run
+modelforge
 ```
 
 ## Comparison with HuggingFace

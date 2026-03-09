@@ -251,10 +251,43 @@ QLoRA uses 30-50% less memory with minimal quality loss.
 
 ### When should I use RLHF vs DPO?
 
-**RLHF**: When you have reward model or human feedback  
-**DPO**: Simpler alternative to RLHF, works well for preference learning  
+In ModelForge, both RLHF and DPO use TRL's `DPOTrainer` internally. The difference is in default hyperparameters:
 
-Both are advanced techniques. Start with SFT for most use cases.
+- **RLHF**: More conservative defaults (lr=1.41e-5, 1 epoch) — suited for careful alignment
+- **DPO**: Standard defaults (lr=5e-7, 3 epochs) — good general-purpose preference learning
+
+Both require preference data (prompt/chosen/rejected) and `"task": "text-generation"`. Start with SFT for most use cases.
+
+### What is `modelforge cli`?
+
+`modelforge cli` launches an 8-step interactive wizard in the terminal. It's ideal for headless servers, SSH sessions, or Jupyter notebooks where a browser isn't available. Install the CLI extra first:
+
+```bash
+pip install modelforge-finetuning[cli]
+```
+
+### Why do I get "bitsandbytes is required" error?
+
+bitsandbytes is now an optional dependency. Install it with:
+
+```bash
+pip install modelforge-finetuning[quantization]
+```
+
+### What happened to legacy tuners (CausalLLMTuner, Finetuner, etc.)?
+
+Legacy tuners were removed in v2.1. Use the provider/strategy pattern instead:
+
+```json
+{
+  "provider": "huggingface",
+  "strategy": "sft"
+}
+```
+
+### What's the difference between RLHF and DPO in ModelForge?
+
+Both use TRL's `DPOTrainer` internally — no PPO, no reward model needed. The only difference is default hyperparameters. RLHF uses more conservative settings (lower learning rate, fewer epochs) while DPO uses standard settings.
 
 ### Can I mix strategies?
 
@@ -383,10 +416,10 @@ Add JSON config file to `model_configs/`. See [Model Configurations](../contribu
 ## Still Have Questions?
 
 - Check [Troubleshooting Guide](common-issues.md)
-- Search [GitHub Issues](https://github.com/ForgeOpus/ModelForge/issues)
-- Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)
+- Search [GitHub Issues](https://github.com/forgeopus/modelforge/issues)
+- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
 - Create new issue if bug
 
 ---
 
-**Can't find your answer?** Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)!
+**Can't find your answer?** Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)!
