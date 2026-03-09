@@ -3,7 +3,6 @@ Quantization configuration factory.
 Consolidates quantization logic to eliminate code duplication.
 """
 import torch
-from transformers import BitsAndBytesConfig
 from typing import Optional
 
 from ...logging_config import logger
@@ -19,7 +18,7 @@ class QuantizationFactory:
         compute_dtype: str = "float16",
         quant_type: str = "nf4",
         use_double_quant: bool = False,
-    ) -> Optional[BitsAndBytesConfig]:
+    ):
         """
         Create a BitsAndBytes quantization configuration.
 
@@ -32,10 +31,21 @@ class QuantizationFactory:
 
         Returns:
             BitsAndBytesConfig if quantization is enabled, None otherwise
+
+        Raises:
+            ImportError: If quantization is requested but bitsandbytes is not installed
         """
         if not use_4bit and not use_8bit:
             logger.info("No quantization enabled")
             return None
+
+        try:
+            from transformers import BitsAndBytesConfig
+        except ImportError:
+            raise ImportError(
+                "bitsandbytes is required for quantization. "
+                "Install it with: pip install modelforge-finetuning[quantization]"
+            )
 
         # Convert compute dtype string to torch dtype
         dtype_map = {
