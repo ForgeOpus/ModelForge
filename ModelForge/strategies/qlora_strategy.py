@@ -240,6 +240,9 @@ class QLoRAStrategy:
             # Disable distributed training for Unsloth (required when using device_map='auto')
             ddp_find_unused_parameters=False,
             use_cache=False,
+            # Dataloader settings (MPS sets these to avoid multiprocessing issues)
+            dataloader_num_workers=config.get("dataloader_num_workers", 0),
+            dataloader_pin_memory=config.get("dataloader_pin_memory", True),
         )
 
         # Create data collator for causal language modeling

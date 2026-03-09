@@ -198,6 +198,11 @@ class TrainingService:
                     config["max_seq_length"] = 512
                     logger.info("MPS: Defaulting max_seq_length to 512 for memory efficiency")
 
+                # MPS: disable multiprocessing dataloaders and pin_memory
+                # (not applicable to unified memory, causes issues on macOS)
+                config["dataloader_num_workers"] = 0
+                config["dataloader_pin_memory"] = False
+
                 # Log MPS memory status
                 mem_info = get_mps_memory_info()
                 logger.info(

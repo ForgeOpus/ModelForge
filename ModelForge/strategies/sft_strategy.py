@@ -214,6 +214,9 @@ class SFTStrategy:
             metric_for_best_model="eval_loss" if eval_dataset else None,
             # Disable distributed training for Unsloth (required when using device_map='auto')
             ddp_find_unused_parameters=False,
+            # Dataloader settings (MPS sets these to avoid multiprocessing issues)
+            dataloader_num_workers=config.get("dataloader_num_workers", 0),
+            dataloader_pin_memory=config.get("dataloader_pin_memory", True),
         )
 
         # Create data collator for causal language modeling
