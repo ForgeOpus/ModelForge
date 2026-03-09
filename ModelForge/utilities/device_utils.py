@@ -111,7 +111,9 @@ def _configure_mps_memory() -> None:
         os.environ["PYTORCH_MPS_LOW_WATERMARK_RATIO"] = "0.0"
         logger.info("Set PYTORCH_MPS_LOW_WATERMARK_RATIO=0.0")
 
-    # Enable MPS fallback for any unsupported operations
+    # PYTORCH_ENABLE_MPS_FALLBACK is set in app.py/cli.py before torch is imported.
+    # Re-set here as a safety net (in case this module is used outside the app),
+    # though it only takes effect if torch hasn't been imported yet.
     if "PYTORCH_ENABLE_MPS_FALLBACK" not in os.environ:
         os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
         logger.info("Set PYTORCH_ENABLE_MPS_FALLBACK=1 (unsupported ops fall back to CPU)")
