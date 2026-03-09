@@ -58,7 +58,14 @@ def main():
     if len(sys.argv) > 1:
         subcommand = sys.argv[1]
         if subcommand == "cli":
-            from .notebook_cli.wizard import main as cli_main
+            try:
+                from .notebook_cli.wizard import main as cli_main
+            except ImportError as e:
+                logger.error(f"Failed to import CLI wizard or its dependencies: {e}")
+                print("\nThe interactive CLI requires optional dependencies that are not installed.")
+                print("Please install the CLI extras and try again, for example:")
+                print("  pip install \"modelforge-finetuning[cli]\"")
+                sys.exit(1)
             cli_main()
             return
         else:
