@@ -322,6 +322,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=[ProgressCallback(self.training_status)],
+                compute_metrics=metrics_fn,
             )
 
             # Verify single-process mode for Unsloth (debug logging)
@@ -534,6 +535,7 @@ class TrainingService:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create trainer with automatic precision mismatch recovery.
@@ -567,6 +569,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=callbacks,
+                compute_metrics=compute_metrics,
             )
 
         except TypeError as e:
@@ -631,6 +634,7 @@ class TrainingService:
                     tokenizer=tokenizer,
                     config=config,
                     callbacks=callbacks,
+                    compute_metrics=compute_metrics,
                 )
             else:
                 # Not an Unsloth precision error, re-raise
