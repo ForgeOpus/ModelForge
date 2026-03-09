@@ -5,6 +5,10 @@ Coordinates providers, strategies, and training execution.
 import os
 import json
 import uuid
+import subprocess
+import threading
+import time
+import webbrowser
 from typing import Dict, Any, Optional
 from datasets import load_dataset
 from transformers import TrainerCallback
@@ -66,6 +70,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
         logger.info("Training service initialized")
@@ -80,6 +85,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
     def validate_and_prepare_dataset(
@@ -339,6 +345,9 @@ class TrainingService:
                 except Exception as e:
                     logger.debug(f"Could not verify Accelerate state: {e}")
 
+            # Launch TensorBoard for real-time monitoring
+            self._launch_tensorboard(config["logging_dir"])
+
             # Train
             self.training_status["message"] = "Training in progress..."
             trainer.train()
@@ -374,6 +383,7 @@ class TrainingService:
             self.training_status["status"] = "completed"
             self.training_status["progress"] = 100
             self.training_status["message"] = "Training completed successfully!"
+            self.training_status["model_path"] = model_output_path
 
             logger.info(f"Training completed successfully: {model_id}")
 
@@ -639,6 +649,27 @@ class TrainingService:
             else:
                 # Not an Unsloth precision error, re-raise
                 raise
+
+    def _launch_tensorboard(self, logdir: str):
+        """Launch TensorBoard and open browser tab after a short delay."""
+        try:
+            os.makedirs(logdir, exist_ok=True)
+            subprocess.Popen(
+                ["tensorboard", "--logdir", logdir, "--port", "6006"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info(f"TensorBoard launched at http://localhost:6006 (logdir: {logdir})")
+
+            def open_browser():
+                time.sleep(3)
+                webbrowser.open("http://localhost:6006")
+
+            threading.Thread(target=open_browser, daemon=True).start()
+        except FileNotFoundError:
+            logger.warning("TensorBoard not found. Install with: pip install tensorboard")
+        except Exception as e:
+            logger.warning(f"Failed to launch TensorBoard: {e}")
 
     def _create_model_config(self, config_dir: str, pipeline_task: str, model_class: str):
         """Create modelforge config file for playground compatibility."""
