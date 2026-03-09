@@ -13,25 +13,6 @@ from __future__ import annotations
 import threading
 import time
 
-from rich.console import Console
-from rich.panel import Panel
-from rich.text import Text
-
-from ..dependencies import get_hardware_service, get_training_service
-from ..schemas.training_schemas import TrainingConfig
-from ..utilities.finetuning.quantization import QuantizationFactory
-from .progress import ProgressDisplay
-from .prompts import (
-    console,
-    prompt_confirm_config,
-    prompt_dataset,
-    prompt_hyperparams,
-    prompt_model,
-    prompt_provider,
-    prompt_strategy,
-    prompt_task,
-)
-
 _BANNER = r"""
  __  __           _      _  _____
 |  \/  | ___   __| | ___| ||  ___|__  _ __ __ _  ___
@@ -50,21 +31,26 @@ class ModelForgeWizard:
     """
 
     def __init__(self):
+        from rich.console import Console
+
         self.console = Console()
 
     # ── Public ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
         """Execute the full wizard flow."""
+        from pydantic import ValidationError
+
+        from ..schemas.training_schemas import TrainingConfig
+        from .prompts import prompt_confirm_config
+
         try:
             self._print_banner()
             hardware_info = self._detect_hardware()
             task = self._select_task()
             model_name = self._select_model(task, hardware_info)
             provider = self._select_provider()
-            self._warn_provider_task_compat(task, provider)
             strategy = self._select_strategy()
-            self._warn_strategy_task_compat(task, strategy)
             dataset_path = self._select_dataset(task, strategy)
             hyperparams = self._configure_hyperparams(hardware_info, strategy)
             config = self._build_config(
@@ -76,6 +62,14 @@ class ModelForgeWizard:
                 compute_specs=hardware_info.get("compute_profile", "low_end"),
                 hyperparams=hyperparams,
             )
+            try:
+                TrainingConfig(**config)
+            except ValidationError as exc:
+                errors = "; ".join(e["msg"] for e in exc.errors())
+                self.console.print(
+                    f"\n[red bold]Invalid configuration:[/red bold] {errors}"
+                )
+                return
             confirmed = prompt_confirm_config(config)
             if not confirmed:
                 self.console.print("\n[yellow]Training cancelled.[/yellow]")
@@ -90,6 +84,9 @@ class ModelForgeWizard:
     # ── Steps ───────────────────────────────────────────────────────────────
 
     def _print_banner(self) -> None:
+        from rich.panel import Panel
+        from rich.text import Text
+
         banner_text = Text(_BANNER, style="bold cyan")
         self.console.print(banner_text)
         self.console.print(
@@ -102,6 +99,8 @@ class ModelForgeWizard:
         )
 
     def _detect_hardware(self) -> dict:
+        from ..dependencies import get_hardware_service
+
         self.console.print("\n[bold]Step 1/8 — Hardware Detection[/bold]")
         self.console.print("  [dim]Detecting GPU and system specs…[/dim]")
         try:
@@ -129,10 +128,15 @@ class ModelForgeWizard:
             return {"compute_profile": "low_end"}
 
     def _select_task(self) -> str:
+        from .prompts import prompt_task
+
         self.console.print("\n[bold]Step 2/8 — Task Selection[/bold]")
         return prompt_task()
 
     def _select_model(self, task: str, hardware_info: dict) -> str:
+        from ..dependencies import get_hardware_service
+        from .prompts import prompt_model
+
         self.console.print("\n[bold]Step 3/8 — Model Selection[/bold]")
         recommended = "gpt2"
         alternatives: list[str] = []
@@ -145,40 +149,31 @@ class ModelForgeWizard:
             self.console.print(f"  [dim]Could not fetch recommendations: {exc}[/dim]")
         return prompt_model(recommended, alternatives)
 
-    def _warn_strategy_task_compat(self, task: str, strategy: str) -> None:
-        if strategy in {"dpo", "rlhf"} and task != "text-generation":
-            self.console.print(
-                "\n[yellow bold]Warning:[/yellow bold] "
-                f"[bold]{strategy.upper()}[/bold] requires a causal LM and "
-                f"prompt/chosen/rejected data, but task is [bold]{task}[/bold]. "
-                "The PEFT config will use TaskType.CAUSAL_LM regardless. "
-                "Make sure your model is a causal LM (e.g. GPT-2, LLaMA)."
-            )
-
-    def _warn_provider_task_compat(self, task: str, provider: str) -> None:
-        if provider == "unsloth" and task != "text-generation":
-            self.console.print(
-                "\n[yellow bold]Warning:[/yellow bold] "
-                "Unsloth's [bold]FastLanguageModel[/bold] only supports causal LM "
-                f"models, but task is [bold]{task}[/bold]. "
-                "Switch to [bold]huggingface[/bold] provider for summarization/QA, "
-                "or change task to [bold]text-generation[/bold]."
-            )
-
     def _select_provider(self) -> str:
+        from .prompts import prompt_provider
+
         self.console.print("\n[bold]Step 4/8 — Provider Selection[/bold]")
         return prompt_provider()
 
     def _select_strategy(self) -> str:
+        from .prompts import prompt_strategy
+
         self.console.print("\n[bold]Step 5/8 — Strategy Selection[/bold]")
         return prompt_strategy()
 
     def _select_dataset(self, task: str, strategy: str) -> str:
+        from ..dependencies import get_training_service
+        from .prompts import prompt_dataset
+
         self.console.print("\n[bold]Step 6/8 — Dataset[/bold]")
         training_service = get_training_service()
         return prompt_dataset(task, strategy, training_service)
 
     def _configure_hyperparams(self, hardware_info: dict, strategy: str) -> dict:
+        from ..schemas.training_schemas import TrainingConfig
+        from ..utilities.finetuning.quantization import QuantizationFactory
+        from .prompts import prompt_hyperparams
+
         self.console.print("\n[bold]Step 7/8 — Hyperparameters[/bold]")
         compute_profile = hardware_info.get("compute_profile", "low_end")
         quant_defaults = QuantizationFactory.get_recommended_config(compute_profile)
@@ -210,6 +205,8 @@ class ModelForgeWizard:
         hyperparams: dict,
     ) -> dict:
         """Merge all selections into a TrainingConfig-compatible dict."""
+        from ..schemas.training_schemas import TrainingConfig
+
         config = {
             "task": task,
             "model_name": model_name,
@@ -253,6 +250,11 @@ class ModelForgeWizard:
 
     def _run_training(self, config: dict) -> None:
         """Run training in a background thread, displaying live progress."""
+        from rich.panel import Panel
+
+        from ..dependencies import get_training_service
+        from .progress import ProgressDisplay
+
         self.console.print("\n[bold]Step 8/8 — Training[/bold]")
 
         training_service = get_training_service()
@@ -314,7 +316,19 @@ class ModelForgeWizard:
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
-    """Entry point for the `modelforge-nb` console script."""
+    """Entry point for the ``modelforge-nb`` console script."""
+    try:
+        import questionary  # noqa: F401
+        import rich  # noqa: F401
+    except ImportError:
+        import sys
+
+        print(
+            "modelforge-nb requires extra dependencies that are not installed.\n"
+            "Install them with:\n\n"
+            '    pip install "modelforge-finetuning[cli]"\n'
+        )
+        sys.exit(1)
     ModelForgeWizard().run()
 
 
