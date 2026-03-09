@@ -129,6 +129,8 @@ VRAM ≈ (Model Size × Precision Factor) + (Batch Size × Sequence Length × Hi
 
 **Savings**: ~75% model memory
 
+> **Note**: Quantization requires the `[quantization]` extra: `pip install modelforge-finetuning[quantization]`
+
 ```json
 {
   "use_4bit": true,
@@ -509,7 +511,7 @@ model = torch.compile(model, mode="max-autotune")
 For multiple GPUs, ModelForge automatically uses DataParallel.
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 modelforge run
+CUDA_VISIBLE_DEVICES=0,1 modelforge
 ```
 
 ---

@@ -1,29 +1,29 @@
 # RLHF Strategy (Reinforcement Learning from Human Feedback)
 
-Advanced fine-tuning using human preference learning with PPO (Proximal Policy Optimization).
+Advanced fine-tuning using human preference learning, powered by DPO (Direct Preference Optimization) internally.
 
 ## Overview
 
-RLHF is an advanced training strategy that aligns language models with human preferences through reinforcement learning. It's the strategy behind models like ChatGPT and Claude.
+RLHF is an advanced training strategy that aligns language models with human preferences. In ModelForge, RLHF uses DPO (Direct Preference Optimization) as its underlying implementation — no reward model is needed.
 
-## What is RLHF?
+## What is RLHF in ModelForge?
 
-**RLHF** trains models to maximize reward signals based on human feedback:
+ModelForge's **RLHF** strategy uses DPO internally, which is the modern approach to preference learning:
 
-1. **Supervised Fine-Tuning (SFT)**: Train base model on demonstrations
-2. **Reward Model Training**: Train model to predict human preferences
-3. **RL Optimization**: Use PPO to optimize for high reward
+- **No reward model needed** — preferences are learned directly from chosen/rejected pairs
+- **No reinforcement learning loop** — uses standard supervised optimization
+- **Conservative defaults** — lower learning rate and fewer epochs than DPO for stability
 
-ModelForge focuses on the **RL Optimization** phase, assuming you have a reward model or preference data.
+> **Note**: Both the RLHF and DPO strategies in ModelForge use TRL's `DPOTrainer` internally. RLHF uses more conservative hyperparameter defaults suited for alignment tasks.
 
 ## Features
 
-✅ **State-of-the-art alignment** - Best quality for human-aligned outputs  
-✅ **Preference learning** - Learn from human feedback  
-✅ **Iterative improvement** - Continuously improve model behavior  
-⚠️ **Complex setup** - Requires reward model or preference data  
-⚠️ **Computationally expensive** - Slower than SFT/QLoRA  
-⚠️ **Advanced technique** - Recommended for experienced users  
+✅ **Human-aligned outputs** - Learn from human preferences
+✅ **No reward model needed** - Direct optimization on preference pairs
+✅ **Stable training** - DPO-based, no RL instability
+✅ **Conservative defaults** - Tuned for alignment tasks
+⚠️ **Requires preference data** - Needs prompt/chosen/rejected format
+⚠️ **Text-generation only** - Schema validation enforces `"task": "text-generation"`
 
 ## When to Use RLHF
 
@@ -31,17 +31,15 @@ ModelForge focuses on the **RL Optimization** phase, assuming you have a reward 
 
 - Aligning model outputs with human preferences
 - Training conversational AI or assistants
-- Need highest quality, human-like responses
-- Have preference pairs or reward model
+- Have preference pairs (prompt/chosen/rejected)
+- Want conservative, stability-focused defaults
 - Quality matters more than speed
-- Have sufficient computational resources (high-end hardware)
 
 ### ❌ Don't Use RLHF When:
 
 - First time fine-tuning (start with SFT)
 - Limited VRAM (< 12GB)
 - Simple supervised learning task
-- Need fast training
 - Don't have preference data
 
 ## Dataset Format
@@ -95,12 +93,12 @@ for item in ratings:
   "model_name": "meta-llama/Llama-3.1-8B-Instruct",
   "dataset": "/path/to/preference-data.jsonl",
   "provider": "huggingface",
-  
+
   "num_train_epochs": 1,
   "per_device_train_batch_size": 1,
   "gradient_accumulation_steps": 8,
   "learning_rate": 1.41e-5,
-  
+
   "lora_r": 16,
   "lora_alpha": 32,
   "use_4bit": true,
@@ -117,17 +115,17 @@ for item in ratings:
   "model_name": "meta-llama/Llama-3.1-8B-Instruct",
   "dataset": "/path/to/preference-data.jsonl",
   "provider": "unsloth",
-  
+
   "num_train_epochs": 1,
   "per_device_train_batch_size": 2,
   "gradient_accumulation_steps": 4,
   "learning_rate": 1.41e-5,
-  
+
   "lora_r": 64,
   "lora_alpha": 16,
   "use_4bit": true,
   "bf16": true,
-  
+
   "max_seq_length": 2048,
   "warmup_ratio": 0.1,
   "eval_split": 0.1
@@ -143,28 +141,26 @@ for item in ratings:
         ↓
 2. Apply LoRA Adapters
         ↓
-3. Add Value Head (for reward prediction)
+3. Load Preference Dataset
         ↓
-4. Load Preference Dataset
+4. DPO Optimization:
+   - Process prompt
+   - Score chosen response
+   - Score rejected response
+   - Optimize to prefer chosen
         ↓
-5. PPO Training Loop:
-   - Generate responses
-   - Calculate rewards
-   - Update policy
-   - Clip gradients
-        ↓
-6. Save Fine-tuned Model
+5. Save Fine-tuned Model
 ```
 
 ### Key Differences from SFT
 
 | Aspect | SFT | RLHF |
 |--------|-----|------|
-| **Objective** | Minimize loss on examples | Maximize reward |
-| **Training** | Supervised learning | Reinforcement learning |
+| **Objective** | Minimize loss on examples | Maximize preference margin |
+| **Training** | Supervised learning | Direct preference optimization |
 | **Dataset** | Input-output pairs | Preference pairs |
-| **Complexity** | Simple | Complex |
-| **Speed** | Fast | Slow |
+| **Complexity** | Simple | Medium |
+| **Speed** | Fast | Medium |
 | **Quality** | High | Very High |
 
 ## Hardware Requirements
@@ -174,18 +170,15 @@ for item in ratings:
 - **GPU**: 12GB+ VRAM
 - **RAM**: 16GB+ system RAM
 - **Recommended**: Mid-range to high-end profile
-- **Provider**: HuggingFace (Unsloth experimental)
+- **Provider**: HuggingFace or Unsloth
 
 ### Memory Usage
 
-RLHF requires more memory than SFT due to:
-- Value head network
-- PPO buffers
-- Advantage estimation
+RLHF memory usage is similar to DPO since both use the DPOTrainer internally.
 
 **Example** (7B model):
 - SFT with 4-bit: ~6-8 GB VRAM
-- RLHF with 4-bit: ~10-12 GB VRAM
+- RLHF with 4-bit: ~8-10 GB VRAM
 
 ## Recommended Settings by Hardware
 
@@ -221,10 +214,11 @@ RLHF requires more memory than SFT due to:
 
 ### Learning Rate
 
-RLHF typically uses **lower learning rates** than SFT:
+RLHF uses a **conservative learning rate** by default:
 
 - **SFT**: 2e-4
-- **RLHF**: 1.41e-5 (recommended)
+- **RLHF**: 1.41e-5 (default)
+- **DPO**: 5e-7
 
 ### LoRA Configuration
 
@@ -238,30 +232,21 @@ RLHF typically uses **lower learning rates** than SFT:
 
 ### Training Epochs
 
-RLHF requires **fewer epochs** than SFT:
+RLHF defaults to **fewer epochs** than DPO:
 
 - **SFT**: 3-5 epochs
-- **RLHF**: 1-2 epochs (risk of reward hacking with more)
+- **DPO**: 3 epochs (default)
+- **RLHF**: 1 epoch (default)
 
 ## Evaluation
 
 RLHF models are evaluated using:
 
-1. **Reward Score**: Average predicted reward
-2. **KL Divergence**: Deviation from base model (prevents over-optimization)
+1. **Preference Accuracy**: How often model prefers chosen over rejected
+2. **Reward Margin**: Difference in scores between chosen and rejected
 3. **Human Evaluation**: Manual quality assessment
 
 ## Common Issues
-
-### Reward Hacking
-
-**Problem**: Model learns to game the reward without improving quality
-
-**Solutions**:
-- Use KL penalty to stay close to base model
-- Limit training to 1-2 epochs
-- Monitor KL divergence
-- Use diverse preference data
 
 ### High Memory Usage
 
@@ -284,40 +269,18 @@ RLHF models are evaluated using:
 - Use gradient clipping
 - Check dataset quality
 
-## Advanced Topics
-
-### Custom Reward Models
-
-You can use custom reward models:
-
-```python
-from transformers import AutoModelForSequenceClassification
-
-reward_model = AutoModelForSequenceClassification.from_pretrained(
-    "your-reward-model"
-)
-```
-
-### Multi-Objective RLHF
-
-Optimize for multiple objectives:
-
-```python
-reward = 0.7 * quality_score + 0.3 * safety_score
-```
-
 ## Comparison with DPO
 
-| Feature | RLHF | DPO |
-|---------|------|-----|
-| **Complexity** | High | Lower |
-| **Reward Model** | Required | Not required |
-| **Stability** | Less stable | More stable |
-| **Performance** | Excellent | Excellent |
-| **Speed** | Slower | Faster |
-| **Memory** | Higher | Lower |
+Both RLHF and DPO use TRL's `DPOTrainer` internally. The difference is in default hyperparameters:
 
-**Recommendation**: Try DPO first - it's simpler and often performs similarly.
+| Setting | RLHF Default | DPO Default |
+|---------|-------------|-------------|
+| **Learning Rate** | 1.41e-5 | 5e-7 |
+| **Epochs** | 1 | 3 |
+| **Warmup Ratio** | 0.1 | 0.1 |
+| **Batch Size** | 1 | 2 |
+
+**Recommendation**: Try DPO first for most use cases. Use RLHF when you want more conservative training defaults.
 
 ## Example: Training a Helpful Assistant
 
@@ -328,18 +291,18 @@ reward = 0.7 * quality_score + 0.3 * safety_score
   "model_name": "meta-llama/Llama-3.1-8B-Instruct",
   "dataset": "/data/helpful-assistant-preferences.jsonl",
   "provider": "unsloth",
-  
+
   "num_train_epochs": 1,
   "per_device_train_batch_size": 2,
   "gradient_accumulation_steps": 4,
   "learning_rate": 1.41e-5,
   "warmup_ratio": 0.1,
-  
+
   "lora_r": 64,
   "lora_alpha": 128,
   "use_4bit": true,
   "bf16": true,
-  
+
   "max_seq_length": 2048,
   "eval_split": 0.1
 }
@@ -349,19 +312,19 @@ reward = 0.7 * quality_score + 0.3 * safety_score
 
 1. ✅ Start with SFT before RLHF
 2. ✅ Use high-quality preference data
-3. ✅ Monitor KL divergence to prevent over-optimization
-4. ✅ Use lower learning rates than SFT
-5. ✅ Limit to 1-2 epochs
-6. ✅ Include diverse prompts in dataset
-7. ✅ Evaluate with human feedback
+3. ✅ Use lower learning rates than SFT
+4. ✅ Limit to 1-2 epochs
+5. ✅ Include diverse prompts in dataset
+6. ✅ Evaluate with human feedback
+7. ✅ Both RLHF and DPO use DPOTrainer internally — choose based on desired defaults
 
 ## Next Steps
 
-- **[DPO Strategy](dpo.md)** - Simpler alternative to RLHF
+- **[DPO Strategy](dpo.md)** - Same underlying trainer, different defaults
 - **[SFT Strategy](sft.md)** - Start here before RLHF
 - **[QLoRA Strategy](qlora.md)** - Memory-efficient training
 - **[Strategy Overview](overview.md)** - Compare all strategies
 
 ---
 
-**RLHF: The gold standard for human-aligned AI!** ⭐ Complex but powerful.
+**RLHF: Human-aligned AI made simple with DPO under the hood!**

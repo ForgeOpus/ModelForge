@@ -52,6 +52,14 @@ See [Provider Documentation](../providers/overview.md) for details.
 
 See [Strategy Documentation](../strategies/overview.md) for details.
 
+### Schema Validation Rules
+
+ModelForge validates configuration combinations at startup:
+
+- **DPO/RLHF** strategies require `"task": "text-generation"` — using them with summarization or QA tasks will raise a validation error
+- **Unsloth** provider requires `"task": "text-generation"` — encoder-decoder models are not supported
+- **Unsloth** provider requires a fixed `max_seq_length` (cannot be `-1`)
+
 ## Training Parameters
 
 ### Epoch and Batch Settings
@@ -102,6 +110,8 @@ See [Strategy Documentation](../strategies/overview.md) for details.
 - **target_modules**: Modules to apply LoRA
 
 ## Quantization
+
+> **Note**: Quantization requires the `[quantization]` extra: `pip install modelforge-finetuning[quantization]`
 
 ```json
 {

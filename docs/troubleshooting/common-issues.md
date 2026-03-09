@@ -145,7 +145,7 @@ pip install unsloth
 1. Find process: `lsof -i :8000`
 2. Kill process or use different port:
    ```bash
-   modelforge run --port 8080
+   modelforge --port 8080
    ```
 
 ### Connection Refused
@@ -173,13 +173,50 @@ pip install unsloth
 3. Use quantization
 4. Batch requests
 
+## Strategy-Task Incompatibility
+
+### DPO/RLHF with Non-Text-Generation Task
+
+**Symptom**: Validation error when starting training with DPO or RLHF strategy
+
+**Solution**: DPO and RLHF strategies only support `"task": "text-generation"`. Change your task:
+```json
+{"strategy": "dpo", "task": "text-generation"}
+```
+
+### Unsloth with Non-Text-Generation Task
+
+**Symptom**: Validation error when using Unsloth provider with summarization or QA
+
+**Solution**: Unsloth only supports `"task": "text-generation"`. Use `"provider": "huggingface"` for other tasks.
+
+## Missing Optional Dependencies
+
+### bitsandbytes Not Installed
+
+**Symptom**: `ImportError: bitsandbytes is required for quantization`
+
+**Solution**: Install the quantization extra:
+```bash
+pip install modelforge-finetuning[quantization]
+```
+
+### CLI Wizard Not Starting
+
+**Symptom**: `ImportError` for `questionary` or `rich` when running `modelforge cli`
+
+**Solution**: Install the CLI extra:
+```bash
+pip install modelforge-finetuning[cli]
+```
+
 ## More Help
 
 - [Windows-Specific Issues](windows-issues.md)
 - [FAQ](faq.md)
-- [GitHub Issues](https://github.com/ForgeOpus/ModelForge/issues)
-- [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)
+- [GitHub Issues](https://github.com/forgeopus/modelforge/issues)
+- [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
 
 ---
 
-**Still having issues?** Create an issue on [GitHub](https://github.com/ForgeOpus/ModelForge/issues/new).
+**Still having issues?** Create an issue on [GitHub](https://github.com/forgeopus/modelforge/issues/new).

@@ -3,8 +3,8 @@ site_description: Complete documentation for ModelForge - A no-code toolkit for 
 site_author: R3tr0 M1ll3r
 site_url: https://modelforge.readthedocs.io
 
-repo_name: RETR0-OS/ModelForge
-repo_url: https://github.com/ForgeOpus/ModelForge
+repo_name: forgeopus/modelforge
+repo_url: https://github.com/forgeopus/modelforge
 
 theme:
   name: material
@@ -48,7 +48,7 @@ nav:
   
   - Getting Started:
     - Quick Start Guide: getting-started/quickstart.md
-    - What's New in v2.0: getting-started/whats-new.md
+    - What's New in v2.1: getting-started/whats-new.md
   
   - Installation:
     - Windows Installation: installation/windows.md
@@ -99,6 +99,6 @@ plugins:
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/ForgeOpus/ModelForge
+      link: https://github.com/forgeopus/modelforge
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/modelforge-finetuning/

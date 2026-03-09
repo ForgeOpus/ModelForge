@@ -113,6 +113,7 @@ class RLHFStrategy:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create DPOTrainer for RLHF-style preference learning.
@@ -181,6 +182,7 @@ class RLHFStrategy:
             processing_class=tokenizer,
             peft_config=peft_config,
             callbacks=callbacks or [],
+            compute_metrics=compute_metrics,
         )
 
         logger.info("DPOTrainer created successfully for RLHF")

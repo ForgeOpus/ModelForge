@@ -102,6 +102,7 @@ class DPOStrategy:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create DPOTrainer.
@@ -171,6 +172,7 @@ class DPOStrategy:
             processing_class=tokenizer,
             peft_config=peft_config,
             callbacks=callbacks or [],
+            compute_metrics=compute_metrics,
         )
 
         logger.info("DPOTrainer created successfully")

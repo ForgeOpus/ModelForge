@@ -142,6 +142,7 @@ class SFTStrategy:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create SFTTrainer instance.
@@ -213,16 +214,22 @@ class SFTStrategy:
             processing_class=tokenizer,
             peft_config=peft_config,
             callbacks=callbacks or [],
+            compute_metrics=compute_metrics,
         )
 
         logger.info("SFTTrainer created successfully")
         return trainer
 
-    def get_required_dataset_fields(self) -> list:
+    def get_required_dataset_fields(self, task: str = "text-generation") -> list:
         """
         Get required dataset fields for SFT.
 
         Returns:
             List of required fields (varies by task)
         """
-        return ["input", "output"]
+        task_field_map = {
+            "text-generation": ["prompt", "completion"],
+            "summarization": ["input", "output"],
+            "extractive-question-answering": ["context", "question", "answers"],
+        }
+        return task_field_map.get(task, ["input", "output"])

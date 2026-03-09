@@ -1,6 +1,6 @@
 # Strategy Overview
 
-Understanding training strategies in ModelForge v2.0.
+Understanding training strategies in ModelForge.
 
 ## What Are Strategies?
 
@@ -18,7 +18,7 @@ Different strategies offer different trade-offs in terms of memory, speed, and q
 |----------|--------|-------|---------|----------|
 | **[SFT](sft.md)** | Baseline | 1x | High | General-purpose fine-tuning |
 | **[QLoRA](qlora.md)** | -30-50% | 0.9x | High | Limited VRAM |
-| **[RLHF](rlhf.md)** | High | Slow | Very High | Alignment with human preferences |
+| **[RLHF](rlhf.md)** | Medium | Medium | Very High | Alignment with human preferences |
 | **[DPO](dpo.md)** | Medium | Medium | Very High | Simpler alternative to RLHF |
 
 ## Choosing a Strategy
@@ -39,10 +39,10 @@ Different strategies offer different trade-offs in terms of memory, speed, and q
 
 ### Use RLHF When:
 
-✅ Aligning model with human preferences  
-✅ Have reward model or feedback data  
-✅ Quality is critical  
-✅ Have computational resources  
+✅ Aligning model with human preferences
+✅ Have preference pairs (prompt/chosen/rejected)
+✅ Quality is critical
+✅ Want conservative training defaults
 
 ### Use DPO When:
 
@@ -60,6 +60,8 @@ Specify strategy in training config:
   "strategy": "sft"  // or "qlora", "rlhf", "dpo"
 }
 ```
+
+> **Note**: DPO and RLHF strategies require `"task": "text-generation"`. This is enforced by schema validation.
 
 ## Next Steps
 

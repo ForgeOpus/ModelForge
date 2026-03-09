@@ -1,3 +1,60 @@
+# What's New in ModelForge
+
+## What's New in v2.1.3
+
+### Interactive CLI Wizard
+
+ModelForge now ships with a terminal-based interactive wizard for users who prefer a headless or SSH workflow:
+
+- **`modelforge cli`** — launches the step-by-step interactive wizard in the terminal
+- **`modelforge-nb`** — notebook-friendly entry point for Jupyter environments
+- **`modelforge`** (no args) — still starts the web UI as before
+
+### Optional Quantization
+
+bitsandbytes has been moved to an optional `[quantization]` extra. Install it with:
+
+```bash
+pip install modelforge-finetuning[quantization]
+```
+
+If not installed, ModelForge will gracefully fall back and disable quantization features. This makes the base install lighter and avoids build issues on systems where bitsandbytes is hard to compile.
+
+### Schema Validation
+
+New `@model_validator` rules enforce valid configuration combinations at startup:
+
+- **DPO/RLHF** strategies require `"task": "text-generation"` — using them with summarization or QA tasks will raise a clear validation error
+- **Unsloth** provider requires `"task": "text-generation"` — encoder-decoder models are not supported
+
+This prevents cryptic training errors by catching incompatible configurations early.
+
+### Legacy Tuner Removal
+
+The following legacy tuners have been removed in v2.1:
+
+- `CausalLLMTuner`
+- `Finetuner`
+- `QuestionAnsweringTuner`
+- `Seq2SeqLMTuner`
+
+Use the provider/strategy pattern instead (e.g., `"provider": "huggingface"`, `"strategy": "sft"`).
+
+### RLHF Clarification
+
+The RLHF strategy now clearly uses **DPO (Direct Preference Optimization)** internally — no PPO, no reward model needed. Both RLHF and DPO strategies use TRL's `DPOTrainer` with different default hyperparameters.
+
+### Bug Fixes
+
+- Fixed memory management and model offload directory handling
+- Fixed TensorBoard auto-open on training start
+- Fixed perplexity evaluation for text generation tasks
+- Fixed dataset format validation errors
+- Fixed incompatible wizard selections being passed to the trainer
+- CLI subcommand handling improved with clearer usage instructions when invoked incorrectly
+
+---
+
 # What's New in ModelForge v2.0
 
 ModelForge v2.0 represents a complete architectural overhaul that maintains 100% backward compatibility while introducing powerful new features and improvements.
