@@ -62,7 +62,9 @@ class ModelForgeWizard:
             task = self._select_task()
             model_name = self._select_model(task, hardware_info)
             provider = self._select_provider()
+            self._warn_provider_task_compat(task, provider)
             strategy = self._select_strategy()
+            self._warn_strategy_task_compat(task, strategy)
             dataset_path = self._select_dataset(task, strategy)
             hyperparams = self._configure_hyperparams(hardware_info, strategy)
             config = self._build_config(
@@ -142,6 +144,26 @@ class ModelForgeWizard:
         except Exception as exc:
             self.console.print(f"  [dim]Could not fetch recommendations: {exc}[/dim]")
         return prompt_model(recommended, alternatives)
+
+    def _warn_strategy_task_compat(self, task: str, strategy: str) -> None:
+        if strategy in {"dpo", "rlhf"} and task != "text-generation":
+            self.console.print(
+                "\n[yellow bold]Warning:[/yellow bold] "
+                f"[bold]{strategy.upper()}[/bold] requires a causal LM and "
+                f"prompt/chosen/rejected data, but task is [bold]{task}[/bold]. "
+                "The PEFT config will use TaskType.CAUSAL_LM regardless. "
+                "Make sure your model is a causal LM (e.g. GPT-2, LLaMA)."
+            )
+
+    def _warn_provider_task_compat(self, task: str, provider: str) -> None:
+        if provider == "unsloth" and task != "text-generation":
+            self.console.print(
+                "\n[yellow bold]Warning:[/yellow bold] "
+                "Unsloth's [bold]FastLanguageModel[/bold] only supports causal LM "
+                f"models, but task is [bold]{task}[/bold]. "
+                "Switch to [bold]huggingface[/bold] provider for summarization/QA, "
+                "or change task to [bold]text-generation[/bold]."
+            )
 
     def _select_provider(self) -> str:
         self.console.print("\n[bold]Step 4/8 — Provider Selection[/bold]")

@@ -39,13 +39,18 @@ _STRATEGY_CHOICES = [
     questionary.Choice("SFT    – Supervised Fine-Tuning (recommended for most tasks)", value="sft"),
     questionary.Choice("QLoRA  – Quantised LoRA (memory-efficient fine-tuning)", value="qlora"),
     questionary.Choice("DPO    – Direct Preference Optimisation", value="dpo"),
-    questionary.Choice("RLHF   – Reinforcement Learning from Human Feedback", value="rlhf"),
+    questionary.Choice("RLHF   – Preference alignment (DPO-based, no reward model needed)", value="rlhf"),
 ]
 
-_DATASET_FORMAT_HELP = {
+_TASK_FORMAT_HELP = {
     "text-generation": 'JSON Lines with "input" and "output" fields.',
     "summarization": 'JSON Lines with "document" and "summary" fields.',
     "extractive-question-answering": 'JSON Lines with "context", "question", and "answers" fields.',
+}
+
+_STRATEGY_FORMAT_HELP = {
+    "dpo":  'JSON Lines with "prompt", "chosen", and "rejected" fields.',
+    "rlhf": 'JSON Lines with "prompt", "chosen", and "rejected" fields.',
 }
 
 
@@ -103,7 +108,7 @@ def prompt_dataset(task: str, strategy: str, training_service: "TrainingService"
     Returns:
         Validated dataset path string.
     """
-    fmt = _DATASET_FORMAT_HELP.get(task, "JSON Lines file.")
+    fmt = _STRATEGY_FORMAT_HELP.get(strategy) or _TASK_FORMAT_HELP.get(task, "JSON Lines file.")
     console.print(f"\n[dim]Expected format:[/dim] {fmt}")
 
     while True:
