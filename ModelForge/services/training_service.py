@@ -345,8 +345,17 @@ class TrainingService:
                 except Exception as e:
                     logger.debug(f"Could not verify Accelerate state: {e}")
 
-            # Launch TensorBoard for real-time monitoring
-            self._launch_tensorboard(config["logging_dir"])
+            # Launch TensorBoard for real-time monitoring (config/env gated)
+            enable_tensorboard = config.get("enable_tensorboard", True)
+            tensorboard_env = os.getenv("MODELFORGE_ENABLE_TENSORBOARD", "1")
+            if enable_tensorboard and tensorboard_env == "1":
+                self._launch_tensorboard(config["logging_dir"])
+            else:
+                logger.info(
+                    "TensorBoard launch skipped: "
+                    f"enable_tensorboard={enable_tensorboard}, "
+                    f"MODELFORGE_ENABLE_TENSORBOARD={tensorboard_env}"
+                )
 
             # Train
             self.training_status["message"] = "Training in progress..."

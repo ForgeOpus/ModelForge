@@ -41,12 +41,18 @@ class QuantizationFactory:
 
         try:
             from transformers import BitsAndBytesConfig
+            from transformers.utils import is_bitsandbytes_available
         except ImportError:
             raise ImportError(
                 "bitsandbytes is required for quantization. "
                 "Install it with: pip install modelforge-finetuning[quantization]"
             )
 
+        if not is_bitsandbytes_available():
+            raise ImportError(
+                "bitsandbytes is required for quantization. "
+                "Install it with: pip install modelforge-finetuning[quantization]"
+            )
         # Convert compute dtype string to torch dtype
         dtype_map = {
             "float16": torch.float16,
