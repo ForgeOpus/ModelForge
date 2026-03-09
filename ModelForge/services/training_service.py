@@ -177,10 +177,12 @@ class TrainingService:
                         "4-bit/8-bit quantization via bitsandbytes is not supported on MPS. "
                         "Disabling quantization and using fp16 precision instead."
                     )
-                    config["use_4bit"] = False
-                    config["use_8bit"] = False
 
-                # MPS: force fp16 precision (bf16 is unreliable on MPS)
+                # MPS: always disable quantization (bitsandbytes is CUDA-only)
+                config["use_4bit"] = False
+                config["use_8bit"] = False
+
+                # MPS: force fp16 precision (bf16 is not supported on MPS)
                 config["fp16"] = True
                 config["bf16"] = False
 
@@ -253,9 +255,10 @@ class TrainingService:
             strategy_name = config.get("strategy", "sft")
             strategy = StrategyFactory.create_strategy(strategy_name)
 
-            # Create quantization config
+            # Create quantization config (default False — schema provides True for CUDA;
+            # MPS override above already forces False)
             quant_config = QuantizationFactory.create_config(
-                use_4bit=config.get("use_4bit", True),
+                use_4bit=config.get("use_4bit", False),
                 use_8bit=config.get("use_8bit", False),
                 compute_dtype=config.get("bnb_4bit_compute_dtype", "float16"),
                 quant_type=config.get("bnb_4bit_quant_type", "nf4"),
