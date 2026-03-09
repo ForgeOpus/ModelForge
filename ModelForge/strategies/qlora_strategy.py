@@ -213,8 +213,7 @@ class QLoRAStrategy:
             per_device_train_batch_size=config.get("per_device_train_batch_size", 4),
             per_device_eval_batch_size=config.get("per_device_eval_batch_size", 4),
             gradient_accumulation_steps=config.get("gradient_accumulation_steps", 4),
-            # QLoRA uses paged optimizers for memory efficiency
-            optim=config.get("optim", "paged_adamw_32bit"),
+            optim=config.get("optim", "adamw_torch"),
             save_steps=config.get("save_steps", 0),
             logging_steps=config.get("logging_steps", 25),
             # QLoRA can often use higher learning rates
@@ -222,7 +221,7 @@ class QLoRAStrategy:
             warmup_ratio=config.get("warmup_ratio", 0.03),
             weight_decay=config.get("weight_decay", 0.001),
             fp16=config.get("fp16", False),
-            bf16=config.get("bf16", True),  # BF16 recommended for QLoRA
+            bf16=config.get("bf16", False),
             max_grad_norm=config.get("max_grad_norm", 0.3),
             max_steps=config.get("max_steps", -1),
             group_by_length=config.get("group_by_length", True),

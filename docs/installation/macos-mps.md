@@ -41,14 +41,14 @@ source modelforge-env/bin/activate
 ### 3. Install ModelForge
 
 ```bash
-# Install ModelForge
+# Install ModelForge (without bitsandbytes - not needed on MPS)
 pip install modelforge-finetuning
 
 # Install PyTorch with MPS support (no CUDA needed)
 pip install torch torchvision torchaudio
 ```
 
-**Note**: The standard PyTorch installation includes MPS support on macOS. No special CUDA installation needed.
+**Note**: The standard PyTorch installation includes MPS support on macOS. No special CUDA installation needed. The `bitsandbytes` library is **not required** for MPS - it is only needed for NVIDIA CUDA quantization. Install it separately with `pip install 'modelforge-finetuning[cuda]'` if you need CUDA support.
 
 ### 4. Set HuggingFace Token
 
@@ -83,17 +83,18 @@ When training on Apple Silicon with MPS:
   "model_name": "qwen/Qwen2.5-3B",
   "task": "text-generation",
   "strategy": "sft",
-  
+
   "use_4bit": false,
   "use_8bit": false,
   "fp16": true,
   "bf16": false,
-  
+
+  "optim": "adamw_torch",
   "per_device_train_batch_size": 1,
   "gradient_accumulation_steps": 8,
   "gradient_checkpointing": true,
-  "max_seq_length": 1024,
-  
+  "max_seq_length": 512,
+
   "num_train_epochs": 3,
   "learning_rate": 2e-4,
   "dataset": "/path/to/dataset.jsonl"
@@ -198,7 +199,9 @@ Apple Silicon uses **unified memory** (shared between CPU and GPU):
 2. Reduce `max_seq_length` (512 instead of 2048)
 3. Reduce `per_device_train_batch_size` to 1
 4. Enable `gradient_checkpointing: true`
-5. Close other applications to free memory
+5. Close other applications to free memory (browsers, IDEs)
+6. ModelForge automatically sets `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0` to let macOS manage memory pressure
+7. Models are loaded in float16 with `low_cpu_mem_usage=True` to minimize peak memory
 
 ### "Unsloth provider is not supported on Apple MPS"
 

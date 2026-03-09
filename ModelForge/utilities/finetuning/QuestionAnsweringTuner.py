@@ -1,7 +1,12 @@
 import torch
 from datasets import load_dataset
 from peft import LoraConfig, get_peft_model, TaskType
-from transformers import AutoTokenizer, BitsAndBytesConfig, AutoModelForQuestionAnswering, Trainer, TrainingArguments
+from transformers import AutoTokenizer, AutoModelForQuestionAnswering, Trainer, TrainingArguments
+try:
+    from transformers import BitsAndBytesConfig
+    _BNB_AVAILABLE = True
+except ImportError:
+    _BNB_AVAILABLE = False
 from typing import Dict
 from .Finetuner import Finetuner, ProgressCallback
 import os

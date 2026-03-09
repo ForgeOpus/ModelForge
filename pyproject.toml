@@ -9,7 +9,6 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "accelerate==1.5.2",
-    "bitsandbytes==0.45.3",
     "datasets==3.5.0",
     "dotenv>=0.9.9",
     "fastapi==0.115.12",
@@ -28,6 +27,11 @@ dependencies = [
     "peft",
     "python-multipart",
     "sqlalchemy>=2.0.44",
+]
+
+[project.optional-dependencies]
+cuda = [
+    "bitsandbytes==0.45.3",
 ]
 
 [tool.setuptools.packages.find]

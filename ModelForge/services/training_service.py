@@ -2,6 +2,7 @@
 Training service for orchestrating model fine-tuning.
 Coordinates providers, strategies, and training execution.
 """
+import gc
 import os
 import json
 import uuid
@@ -12,7 +13,7 @@ from transformers import TrainerCallback
 from ..providers.provider_factory import ProviderFactory
 from ..strategies.strategy_factory import StrategyFactory
 from ..utilities.finetuning.quantization import QuantizationFactory
-from ..utilities.device_utils import resolve_device, clear_device_cache
+from ..utilities.device_utils import resolve_device, clear_device_cache, get_mps_memory_info
 from ..evaluation.dataset_validator import DatasetValidator
 from ..evaluation.metrics import MetricsCalculator
 from ..database.database_manager import DatabaseManager
@@ -169,7 +170,7 @@ class TrainingService:
                     "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
                 )
             
-            # Validate and adjust quantization for MPS
+            # Validate and adjust settings for MPS
             if device_type == "mps":
                 if config.get("use_4bit", False) or config.get("use_8bit", False):
                     logger.warning(
@@ -178,9 +179,32 @@ class TrainingService:
                     )
                     config["use_4bit"] = False
                     config["use_8bit"] = False
-                    # Enable fp16 as fallback for MPS
-                    if not config.get("bf16", False):
-                        config["fp16"] = True
+
+                # MPS: force fp16 precision (bf16 is unreliable on MPS)
+                config["fp16"] = True
+                config["bf16"] = False
+
+                # MPS: paged_adamw_32bit requires bitsandbytes, switch to adamw_torch
+                current_optim = config.get("optim", "paged_adamw_32bit")
+                if "paged_adamw" in current_optim:
+                    logger.warning(
+                        f"Optimizer '{current_optim}' requires bitsandbytes (not available on MPS). "
+                        f"Switching to 'adamw_torch'."
+                    )
+                    config["optim"] = "adamw_torch"
+
+                # MPS: reduce max_seq_length if not explicitly set to save memory
+                if config.get("max_seq_length") is None:
+                    config["max_seq_length"] = 512
+                    logger.info("MPS: Defaulting max_seq_length to 512 for memory efficiency")
+
+                # Log MPS memory status
+                mem_info = get_mps_memory_info()
+                logger.info(
+                    f"MPS memory status: "
+                    f"system_available={mem_info['system_available_mb']:.0f}MB, "
+                    f"system_total={mem_info['system_total_mb']:.0f}MB"
+                )
 
             # CRITICAL: Configure single-process mode for Unsloth BEFORE any initialization
             # This must happen before creating provider, strategy, or loading model
@@ -369,6 +393,9 @@ class TrainingService:
                 except Exception as e:
                     logger.debug(f"Could not verify Accelerate state: {e}")
 
+            # Clear device cache before training to maximize available memory
+            clear_device_cache(device_type)
+
             # Train
             self.training_status["message"] = "Training in progress..."
             trainer.train()
@@ -399,6 +426,9 @@ class TrainingService:
                 compute_profile=config.get("compute_specs"),
                 config=json.dumps(config),
             )
+
+            # Clean up memory after training
+            clear_device_cache(device_type)
 
             # Update status
             self.training_status["status"] = "completed"

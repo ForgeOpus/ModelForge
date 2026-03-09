@@ -39,7 +39,7 @@ class SettingsBuilder:
         self.max_grad_norm = 0.3
         self.learning_rate = 2e-4
         self.weight_decay = 0.001
-        self.optim = "paged_adamw_32bit"
+        self.optim = "adamw_torch"
         self.lr_scheduler_type = "cosine"
         self.max_steps = -1
         self.warmup_ratio = 0.03

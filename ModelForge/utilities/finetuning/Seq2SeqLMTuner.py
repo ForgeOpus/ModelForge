@@ -12,7 +12,12 @@ except ImportError:
 from trl import SFTTrainer, SFTConfig
 from .Finetuner import Finetuner, ProgressCallback
 from peft import LoraConfig, TaskType, get_peft_model
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer, BitsAndBytesConfig
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+try:
+    from transformers import BitsAndBytesConfig
+    _BNB_AVAILABLE = True
+except ImportError:
+    _BNB_AVAILABLE = False
 import os
 from huggingface_hub import errors as hf_errors
 import traceback

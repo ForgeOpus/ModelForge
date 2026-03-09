@@ -49,7 +49,7 @@ class TrainingConfig(BaseModel):
     max_grad_norm: float = 0.3
     learning_rate: float = 2e-4
     weight_decay: float = 0.001
-    optim: str = "paged_adamw_32bit"
+    optim: str = "adamw_torch"
     lr_scheduler_type: str = "cosine"
     max_steps: int = -1
     warmup_ratio: float = 0.03

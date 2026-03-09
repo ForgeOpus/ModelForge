@@ -1,7 +1,9 @@
 """
 HuggingFace provider implementation.
-Handles model loading from HuggingFace Hub.
+Handles model loading from HuggingFace Hub with device-optimized memory management.
 """
+import gc
+import torch
 from typing import Any, Dict, Optional
 from transformers import (
     AutoModelForCausalLM,
@@ -66,20 +68,23 @@ class HuggingFaceProvider:
             load_kwargs = {
                 "use_cache": False,
             }
-            
-            # Handle device_map based on device type
+
             if device_type == "mps":
-                # MPS doesn't support device_map parameter in HuggingFace
-                # Don't set device_map - will load to CPU by default, then move to MPS after
-                pass
+                # MPS optimization: Load directly in float16 to halve peak memory.
+                # Without this, models load at fp32 (double the size) then get cast.
+                load_kwargs["torch_dtype"] = torch.float16
+                # Reduce peak CPU memory by loading weights shard-by-shard
+                # instead of materializing the entire model in memory at once
+                load_kwargs["low_cpu_mem_usage"] = True
+                # MPS doesn't support device_map via HuggingFace accelerate
+                logger.info("MPS: Loading with torch_dtype=float16, low_cpu_mem_usage=True")
             elif device_type == "cpu":
-                # For CPU, use explicit device_map
                 load_kwargs["device_map"] = {"": "cpu"}
             else:
-                # For CUDA, use provided device_map or default to GPU 0
+                # CUDA: use provided device_map or default to GPU 0
                 load_kwargs["device_map"] = device_map or {"": 0}
 
-            # Only use quantization_config if not MPS (bitsandbytes doesn't support MPS)
+            # Only apply quantization for CUDA (bitsandbytes is CUDA-only)
             if quantization_config is not None and device_type != "mps":
                 load_kwargs["quantization_config"] = quantization_config
             elif quantization_config is not None and device_type == "mps":
@@ -88,12 +93,17 @@ class HuggingFaceProvider:
             load_kwargs.update(kwargs)
 
             model = model_cls.from_pretrained(model_id, **load_kwargs)
-            
-            # For MPS, explicitly move model to MPS device after loading
+
+            # For MPS, move model and clear CPU-side memory
             if device_type == "mps":
-                import torch
+                gc.collect()
                 logger.info("Moving model to MPS device...")
                 model = model.to(torch.device("mps"))
+                # Free CPU-side copies of weights from unified memory
+                gc.collect()
+                if hasattr(torch.mps, "empty_cache"):
+                    torch.mps.empty_cache()
+                logger.info("Model moved to MPS successfully")
             
             logger.info(f"Successfully loaded model {model_id} on {device_type}")
             return model

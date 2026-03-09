@@ -12,11 +12,15 @@ from peft import LoraConfig, get_peft_model, TaskType
 from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
-    BitsAndBytesConfig,
     Trainer,
     TrainingArguments,
     DataCollatorForLanguageModeling,
 )
+try:
+    from transformers import BitsAndBytesConfig
+    _BNB_AVAILABLE = True
+except ImportError:
+    _BNB_AVAILABLE = False
 from typing import Dict, Optional
 from .Finetuner import Finetuner, ProgressCallback
 import os
