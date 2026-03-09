@@ -50,7 +50,24 @@ def check_huggingface_login():
 def main():
     """
     Main entry point for ModelForge CLI.
+
+    Subcommands:
+        modelforge        — start the web server
+        modelforge cli    — launch the interactive CLI wizard
     """
+    if len(sys.argv) > 1:
+        subcommand = sys.argv[1]
+        if subcommand == "cli":
+            from .notebook_cli.wizard import main as cli_main
+            cli_main()
+            return
+        else:
+            print(f"Unknown subcommand: '{subcommand}'")
+            print("Usage:")
+            print("  modelforge        Start the web server")
+            print("  modelforge cli    Launch the interactive CLI wizard")
+            sys.exit(1)
+
     print("\n" + "=" * 80)
     print("  __  __           _      _ _____                     ")
     print(" |  \\/  |         | |    | |  ___|                    ")
