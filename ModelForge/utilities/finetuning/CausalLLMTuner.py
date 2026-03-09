@@ -117,6 +117,11 @@ class CausalLLMFinetuner(Finetuner):
         try:
             compute_dtype = getattr(torch, self.bnb_4bit_compute_dtype)
             bits_n_bytes_config = None
+            if (self.use_4bit or self.use_8bit) and not _BNB_AVAILABLE:
+                raise ImportError(
+                    "bitsandbytes is required for quantization but not installed. "
+                    "Install with: pip install 'modelforge-finetuning[cuda]'"
+                )
             if self.use_4bit:
                 bits_n_bytes_config = BitsAndBytesConfig(
                     load_in_4bit=self.use_4bit,

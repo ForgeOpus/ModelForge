@@ -221,7 +221,7 @@ class QLoRAStrategy:
             warmup_ratio=config.get("warmup_ratio", 0.03),
             weight_decay=config.get("weight_decay", 0.001),
             fp16=config.get("fp16", False),
-            bf16=config.get("bf16", False),
+            bf16=config.get("bf16", True),  # Default True for CUDA; MPS overrides to False in training_service
             max_grad_norm=config.get("max_grad_norm", 0.3),
             max_steps=config.get("max_steps", -1),
             group_by_length=config.get("group_by_length", True),

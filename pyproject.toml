@@ -23,6 +23,7 @@ dependencies = [
     "trl==0.16.0",
     "uvicorn",
     "platformdirs",
+    "psutil",
     "pynvml",
     "peft",
     "python-multipart",
