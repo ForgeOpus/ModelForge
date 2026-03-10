@@ -113,20 +113,3 @@ jobs:
             --generate-notes
         env:
           GH_TOKEN: ${{ github.token }}
-
-  bump_homebrew_formula:
-    needs: [ pypi_publish, github_release, details ]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dispatch Homebrew Tap Update
-        uses: peter-evans/repository-dispatch@v2
-        with:
-          token: ${{ secrets.BREW_TAP_TOKEN }}
-          repository: ${{ env.OWNER }}/${{ env.TAP_NAME }}
-          event-type: update-formula
-          client-payload: |
-            {
-              "formula_version": "${{ needs.details.outputs.new_version }}",
-              "formula_url": "https://github.com/${{ env.OWNER }}/${{ env.PACKAGE_NAME }}/releases/download/${{ needs.details.outputs.new_version }}/${{ env.PACKAGE_NAME }}-${{ needs.details.outputs.new_version }}.tar.gz",
-              "formula_name": "${{ env.PACKAGE_NAME }}"
-            }
