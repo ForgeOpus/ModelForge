@@ -264,10 +264,10 @@ class TrainingService:
             strategy_name = config.get("strategy", "sft")
             strategy = StrategyFactory.create_strategy(strategy_name)
 
-            # Create quantization config (default False — schema provides True for CUDA;
+            # Create quantization config (default True for CUDA;
             # MPS override above already forces False)
             quant_config = QuantizationFactory.create_config(
-                use_4bit=config.get("use_4bit", False),
+                use_4bit=config.get("use_4bit", True),
                 use_8bit=config.get("use_8bit", False),
                 compute_dtype=config.get("bnb_4bit_compute_dtype", "float16"),
                 quant_type=config.get("bnb_4bit_quant_type", "nf4"),
