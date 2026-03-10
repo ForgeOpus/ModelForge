@@ -1,12 +1,12 @@
 # ModelForge Documentation
 
-Welcome to the comprehensive documentation for **ModelForge v2.1** - A no-code toolkit for fine-tuning Large Language Models on your local GPU.
+Welcome to the comprehensive documentation for **ModelForge v3.0.0** - A no-code toolkit for fine-tuning Large Language Models on your local GPU.
 
 ## 📚 Documentation Index
 
 ### Getting Started
 - [Quick Start Guide](getting-started/quickstart.md) - Get up and running in 5 minutes
-- [What's New in v2.1](getting-started/whats-new.md) - Major features and improvements
+- [What's New in v3.0.0](getting-started/whats-new.md) - Major features and improvements
 
 ### Installation & Setup
 - [Windows Installation](installation/windows.md) - Complete setup guide for Windows users

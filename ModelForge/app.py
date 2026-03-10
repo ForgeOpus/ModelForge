@@ -173,7 +173,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "version": "2.0.1",
+        "version": "3.0.0",
         "message": "ModelForge is running",
     }
 
@@ -187,7 +187,7 @@ async def get_info():
 
     return {
         "name": "ModelForge",
-        "version": "2.0.1",
+        "version": "3.0.0",
         "description": "No-code fine-tuning platform",
         "available_providers": ProviderFactory.get_available_providers(),
         "available_strategies": StrategyFactory.get_available_strategies(),
