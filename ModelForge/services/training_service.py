@@ -2,9 +2,14 @@
 Training service for orchestrating model fine-tuning.
 Coordinates providers, strategies, and training execution.
 """
+import gc
 import os
 import json
 import uuid
+import subprocess
+import threading
+import time
+import webbrowser
 from typing import Dict, Any, Optional
 from datasets import load_dataset
 from transformers import TrainerCallback
@@ -12,7 +17,7 @@ from transformers import TrainerCallback
 from ..providers.provider_factory import ProviderFactory
 from ..strategies.strategy_factory import StrategyFactory
 from ..utilities.finetuning.quantization import QuantizationFactory
-from ..utilities.device_utils import resolve_device, clear_device_cache
+from ..utilities.device_utils import resolve_device, clear_device_cache, get_mps_memory_info
 from ..evaluation.dataset_validator import DatasetValidator
 from ..evaluation.metrics import MetricsCalculator
 from ..database.database_manager import DatabaseManager
@@ -67,6 +72,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
         logger.info("Training service initialized")
@@ -81,6 +87,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
     def validate_and_prepare_dataset(
@@ -169,18 +176,51 @@ class TrainingService:
                     "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
                 )
             
-            # Validate and adjust quantization for MPS
+            # Validate and adjust settings for MPS
             if device_type == "mps":
                 if config.get("use_4bit", False) or config.get("use_8bit", False):
                     logger.warning(
                         "4-bit/8-bit quantization via bitsandbytes is not supported on MPS. "
                         "Disabling quantization and using fp16 precision instead."
                     )
-                    config["use_4bit"] = False
-                    config["use_8bit"] = False
-                    # Enable fp16 as fallback for MPS
-                    if not config.get("bf16", False):
-                        config["fp16"] = True
+
+                # MPS: always disable quantization (bitsandbytes is CUDA-only)
+                config["use_4bit"] = False
+                config["use_8bit"] = False
+
+                # MPS: disable Accelerate mixed precision flags entirely.
+                # fp16=True triggers Accelerate's mixed-precision mode which is CUDA-only.
+                # The model is already loaded with torch_dtype=float16 natively on MPS,
+                # so no TrainingArguments precision flag is needed.
+                config["fp16"] = False
+                config["bf16"] = False
+
+                # MPS: paged_adamw_32bit requires bitsandbytes, switch to adamw_torch
+                current_optim = config.get("optim", "paged_adamw_32bit")
+                if "paged_adamw" in current_optim:
+                    logger.warning(
+                        f"Optimizer '{current_optim}' requires bitsandbytes (not available on MPS). "
+                        f"Switching to 'adamw_torch'."
+                    )
+                    config["optim"] = "adamw_torch"
+
+                # MPS: reduce max_seq_length if not explicitly set to save memory
+                if config.get("max_seq_length") is None:
+                    config["max_seq_length"] = 512
+                    logger.info("MPS: Defaulting max_seq_length to 512 for memory efficiency")
+
+                # MPS: disable multiprocessing dataloaders and pin_memory
+                # (not applicable to unified memory, causes issues on macOS)
+                config["dataloader_num_workers"] = 0
+                config["dataloader_pin_memory"] = False
+
+                # Log MPS memory status
+                mem_info = get_mps_memory_info()
+                logger.info(
+                    f"MPS memory status: "
+                    f"system_available={mem_info['system_available_mb']:.0f}MB, "
+                    f"system_total={mem_info['system_total_mb']:.0f}MB"
+                )
 
             # CRITICAL: Configure single-process mode for Unsloth BEFORE any initialization
             # This must happen before creating provider, strategy, or loading model
@@ -224,9 +264,10 @@ class TrainingService:
             strategy_name = config.get("strategy", "sft")
             strategy = StrategyFactory.create_strategy(strategy_name)
 
-            # Create quantization config
+            # Create quantization config (default False — schema provides True for CUDA;
+            # MPS override above already forces False)
             quant_config = QuantizationFactory.create_config(
-                use_4bit=config.get("use_4bit", True),
+                use_4bit=config.get("use_4bit", False),
                 use_8bit=config.get("use_8bit", False),
                 compute_dtype=config.get("bnb_4bit_compute_dtype", "float16"),
                 quant_type=config.get("bnb_4bit_quant_type", "nf4"),
@@ -301,6 +342,9 @@ class TrainingService:
                     lora_alpha=config.get("lora_alpha", 32),
                     lora_dropout=config.get("lora_dropout", 0.1),
                 )
+                # Signal to strategies that PEFT is already applied by Unsloth
+                # so they don't pass peft_config to the trainer (which would double-wrap)
+                config["_peft_already_applied"] = True
             else:
                 model = strategy.prepare_model(model, config)
 
@@ -353,6 +397,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=[ProgressCallback(self.training_status)],
+                compute_metrics=metrics_fn,
             )
 
             # Verify single-process mode for Unsloth (debug logging)
@@ -368,6 +413,21 @@ class TrainingService:
                     )
                 except Exception as e:
                     logger.debug(f"Could not verify Accelerate state: {e}")
+
+            # Clear device cache before training to maximize available memory
+            clear_device_cache(device_type)
+
+            # Launch TensorBoard for real-time monitoring (config/env gated)
+            enable_tensorboard = config.get("enable_tensorboard", True)
+            tensorboard_env = os.getenv("MODELFORGE_ENABLE_TENSORBOARD", "1")
+            if enable_tensorboard and tensorboard_env == "1":
+                self._launch_tensorboard(config["logging_dir"])
+            else:
+                logger.info(
+                    "TensorBoard launch skipped: "
+                    f"enable_tensorboard={enable_tensorboard}, "
+                    f"MODELFORGE_ENABLE_TENSORBOARD={tensorboard_env}"
+                )
 
             # Train
             self.training_status["message"] = "Training in progress..."
@@ -397,13 +457,17 @@ class TrainingService:
                 strategy=strategy_name,
                 provider=provider_name,
                 compute_profile=config.get("compute_specs"),
-                config=json.dumps(config),
+                config=json.dumps({k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in config.items()}),
             )
+
+            # Clean up memory after training
+            clear_device_cache(device_type)
 
             # Update status
             self.training_status["status"] = "completed"
             self.training_status["progress"] = 100
             self.training_status["message"] = "Training completed successfully!"
+            self.training_status["model_path"] = model_output_path
 
             logger.info(f"Training completed successfully: {model_id}")
 
@@ -473,6 +537,14 @@ class TrainingService:
         try:
             # Import torch locally to avoid adding dependency to module level
             import torch
+
+            # On MPS, fp16/bf16 TrainingArguments flags must always be False —
+            # Accelerate's mixed-precision mode is CUDA-only. The model dtype is set
+            # natively at load time (torch_dtype=float16), so no flag is needed here.
+            if config.get("device_type") == "mps":
+                config["fp16"] = False
+                config["bf16"] = False
+                return config
 
             # Try to get model dtype - handle PEFT-wrapped models
             model_dtype = None
@@ -565,6 +637,7 @@ class TrainingService:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create trainer with automatic precision mismatch recovery.
@@ -598,6 +671,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=callbacks,
+                compute_metrics=compute_metrics,
             )
 
         except TypeError as e:
@@ -662,10 +736,32 @@ class TrainingService:
                     tokenizer=tokenizer,
                     config=config,
                     callbacks=callbacks,
+                    compute_metrics=compute_metrics,
                 )
             else:
                 # Not an Unsloth precision error, re-raise
                 raise
+
+    def _launch_tensorboard(self, logdir: str):
+        """Launch TensorBoard and open browser tab after a short delay."""
+        try:
+            os.makedirs(logdir, exist_ok=True)
+            subprocess.Popen(
+                ["tensorboard", "--logdir", logdir, "--port", "6006"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info(f"TensorBoard launched at http://localhost:6006 (logdir: {logdir})")
+
+            def open_browser():
+                time.sleep(3)
+                webbrowser.open("http://localhost:6006")
+
+            threading.Thread(target=open_browser, daemon=True).start()
+        except FileNotFoundError:
+            logger.warning("TensorBoard not found. Install with: pip install tensorboard")
+        except Exception as e:
+            logger.warning(f"Failed to launch TensorBoard: {e}")
 
     def _create_model_config(self, config_dir: str, pipeline_task: str, model_class: str):
         """Create modelforge config file for playground compatibility."""

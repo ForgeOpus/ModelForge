@@ -80,6 +80,23 @@ ModelForge uses **JSONL** (JSON Lines) format for training datasets. Each line i
 {"context": "To install ModelForge, you need Python 3.11, an NVIDIA GPU with at least 4GB VRAM, CUDA installed, and a HuggingFace account. The installation process involves running 'pip install modelforge-finetuning' and then setting up your HuggingFace token.", "question": "What are the prerequisites for ModelForge?", "answer": "Python 3.11, NVIDIA GPU with 4GB+ VRAM, CUDA, HuggingFace account"}
 ```
 
+## Preference Data (DPO/RLHF)
+
+**Use Case**: Aligning model with human preferences (DPO or RLHF strategy)
+
+**Format**:
+```jsonl
+{"prompt": "What is the capital of France?", "chosen": "The capital of France is Paris.", "rejected": "I don't know."}
+{"prompt": "Explain quantum computing", "chosen": "Quantum computing uses quantum bits...", "rejected": "It's complicated."}
+```
+
+**Required Fields**:
+- `prompt` (string): The input prompt or question
+- `chosen` (string): The preferred/better response
+- `rejected` (string): The non-preferred/worse response
+
+> **Note**: When using DPO or RLHF strategy, this format is required instead of the task-specific format above. Both strategies also require `"task": "text-generation"`.
+
 ## Dataset Size Recommendations
 
 | Model Size | Min Examples | Recommended | Optimal |
@@ -243,7 +260,7 @@ low_qa_train_set.jsonl             # QA examples
 
 Download from repository:
 ```bash
-curl -O https://raw.githubusercontent.com/RETR0-OS/ModelForge/main/ModelForge/test_datasets/low_text_generation.jsonl
+curl -O https://raw.githubusercontent.com/forgeopus/modelforge/main/ModelForge/test_datasets/low_text_generation.jsonl
 ```
 
 ## Best Practices

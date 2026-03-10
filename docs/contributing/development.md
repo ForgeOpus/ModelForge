@@ -36,7 +36,7 @@ git clone https://github.com/YOUR-USERNAME/ModelForge.git
 cd ModelForge
 
 # Add upstream remote
-git remote add upstream https://github.com/ForgeOpus/ModelForge.git
+git remote add upstream https://github.com/forgeopus/modelforge.git
 ```
 
 ### 2. Create Virtual Environment
@@ -59,8 +59,8 @@ venv\Scripts\activate
 # Upgrade pip
 pip install --upgrade pip
 
-# Install ModelForge in editable mode
-pip install -e .
+# Install ModelForge in editable mode with all extras
+pip install -e ".[cli,quantization]"
 
 # Install PyTorch with CUDA support
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
@@ -125,7 +125,8 @@ npm run build
 
 ```bash
 # From repository root
-modelforge run
+modelforge          # Launch web UI
+modelforge cli      # Launch CLI wizard (alternative)
 ```
 
 Or run directly with Python:
@@ -183,6 +184,7 @@ ModelForge/
 │   │   └── configs/
 │   ├── formatters/             # Dataset formatters
 │   ├── evaluation/             # Evaluation metrics
+│   ├── notebook_cli/           # Notebook/CLI wizard
 │   └── model_configs/          # Hardware profile configs
 ├── Frontend/                   # React frontend
 │   ├── src/

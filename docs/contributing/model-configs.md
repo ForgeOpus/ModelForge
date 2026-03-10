@@ -203,7 +203,7 @@ python -m json.tool mid_range.json
 
 ```bash
 # Run ModelForge
-modelforge run
+modelforge
 
 # Check that model appears in recommendations
 # Try training with the new model
@@ -415,7 +415,7 @@ Check:
 ## Questions?
 
 - See [Contributing Guide](contributing.md)
-- Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions)
+- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
 - Check [FAQ](../troubleshooting/faq.md)
 
 ---

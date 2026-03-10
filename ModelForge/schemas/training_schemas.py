@@ -2,7 +2,7 @@
 Training configuration schemas.
 Pydantic models for training request validation.
 """
-from pydantic import BaseModel, field_validator, Field
+from pydantic import BaseModel, field_validator, model_validator, Field
 from typing import Optional, Literal
 
 
@@ -49,7 +49,7 @@ class TrainingConfig(BaseModel):
     max_grad_norm: float = 0.3
     learning_rate: float = 2e-4
     weight_decay: float = 0.001
-    optim: str = "paged_adamw_32bit"
+    optim: str = "adamw_torch"
     lr_scheduler_type: str = "cosine"
     max_steps: int = -1
     warmup_ratio: float = 0.03
@@ -147,6 +147,20 @@ class TrainingConfig(BaseModel):
         if v < 0 or v >= 1:
             raise ValueError("Evaluation split must be between 0 and 1")
         return v
+
+    @model_validator(mode='after')
+    def validate_strategy_task_compat(self):
+        if self.strategy in ("dpo", "rlhf") and self.task != "text-generation":
+            raise ValueError(
+                f"Strategy '{self.strategy}' requires task 'text-generation' "
+                f"(causal LM), got '{self.task}'."
+            )
+        if self.provider == "unsloth" and self.task != "text-generation":
+            raise ValueError(
+                "Unsloth provider only supports task 'text-generation' "
+                f"(causal LM), got '{self.task}'."
+            )
+        return self
 
 
 class TaskSelection(BaseModel):

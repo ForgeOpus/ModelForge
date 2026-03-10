@@ -2,8 +2,14 @@
 Refactored CLI for ModelForge.
 Clean entry point with improved structure.
 """
+import os
 import sys
 import subprocess
+
+# MPS fallback must be set before importing torch (which happens transitively
+# via downstream imports). Once torch is imported, this env var is read and
+# cannot be changed.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 from huggingface_hub import login, whoami
 from .logging_config import logger
 
@@ -50,7 +56,31 @@ def check_huggingface_login():
 def main():
     """
     Main entry point for ModelForge CLI.
+
+    Subcommands:
+        modelforge        — start the web server
+        modelforge cli    — launch the interactive CLI wizard
     """
+    if len(sys.argv) > 1:
+        subcommand = sys.argv[1]
+        if subcommand == "cli":
+            try:
+                from .notebook_cli.wizard import main as cli_main
+            except ImportError as e:
+                logger.error(f"Failed to import CLI wizard or its dependencies: {e}")
+                print("\nThe interactive CLI requires optional dependencies that are not installed.")
+                print("Please install the CLI extras and try again, for example:")
+                print("  pip install \"modelforge-finetuning[cli]\"")
+                sys.exit(1)
+            cli_main()
+            return
+        else:
+            print(f"Unknown subcommand: '{subcommand}'")
+            print("Usage:")
+            print("  modelforge        Start the web server")
+            print("  modelforge cli    Launch the interactive CLI wizard")
+            sys.exit(1)
+
     print("\n" + "=" * 80)
     print("  __  __           _      _ _____                     ")
     print(" |  \\/  |         | |    | |  ___|                    ")

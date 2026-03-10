@@ -87,9 +87,10 @@ class DatasetValidator:
             if len(required_fields) > 0:
                 for i, example in enumerate(dataset.select(range(min(10, len(dataset))))):
                     for field in required_fields:
-                        if not example.get(field):
-                            logger.warning(
-                                f"Example {i} has empty field '{field}'"
+                        value = example.get(field)
+                        if value is None or (isinstance(value, str) and not value.strip()):
+                            raise DatasetValidationError(
+                                f"Example {i} has empty required field '{field}'."
                             )
 
             logger.info(

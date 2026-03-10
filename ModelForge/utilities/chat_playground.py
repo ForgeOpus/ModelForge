@@ -44,6 +44,7 @@ class PlaygroundModel:
         else:
             self.device = "cpu"
             print("No GPU available (CUDA or MPS). Playground requires a GPU. Exiting...")
+            input("\nPress Enter to exit...")
             exit(1)
 
         print("Loading model...")
@@ -57,7 +58,15 @@ class PlaygroundModel:
             streamer = TextStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
             tokenizer.pad_token = tokenizer.eos_token
             module = getattr(peft, self.modelforge_config["model_class"])
-            peft_model = module.from_pretrained(model_path, config=config, is_trainable=False)
+            peft_model = module.from_pretrained(
+                model_path,
+                config=config,
+                is_trainable=False,
+                low_cpu_mem_usage=True,
+                device_map="auto",
+                torch_dtype="auto",
+                offload_folder=os.path.join(model_path, "offload")
+            )
             self.generator = pipeline(
                 self.modelforge_config["pipeline_task"],
                 streamer=streamer,
@@ -66,12 +75,15 @@ class PlaygroundModel:
             )
         except AttributeError:
             print(f"Model class {self.modelforge_config['model_class']} not found in peft module.")
+            input("\nPress Enter to exit...")
             exit(1)
         except KeyError:
             print(f"Pipeline task {self.modelforge_config['pipeline_task']} not found in definitions for the pipeline object of transformers.")
+            input("\nPress Enter to exit...")
             exit(1)
         except Exception as e:
             print(traceback.format_exc())
+            input("\nPress Enter to exit...")
             exit(1)
 
     def generate_response(self, prompt: str, context=None, temperature=0.2, top_p=0.92, top_k=50,

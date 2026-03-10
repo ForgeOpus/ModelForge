@@ -1,11 +1,13 @@
 import os
 import subprocess
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi import Request
 from starlette.responses import JSONResponse
 
 from ..globals.globals_instance import global_manager
+from ..services.training_service import TrainingService
+from ..dependencies import get_training_service
 
 from pydantic import BaseModel, field_validator
 
@@ -23,10 +25,15 @@ class PlaygroundRequest(BaseModel):
         return model_path.strip()
 
 @router.get("/model_path")
-async def get_model_path(request: Request) -> JSONResponse:
+async def get_model_path(
+    request: Request,
+    training_service: TrainingService = Depends(get_training_service),
+) -> JSONResponse:
+    status = training_service.get_training_status()
+    model_path = status.get("model_path") or global_manager.model_path
     return JSONResponse({
         "app_name": global_manager.app_name,
-        "model_path": global_manager.model_path
+        "model_path": model_path,
     })
 
 

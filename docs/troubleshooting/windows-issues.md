@@ -16,6 +16,15 @@ Solutions for common Windows-specific issues with ModelForge.
 2. **Use Docker**: [Docker Installation Guide](../installation/windows.md#option-3-docker-installation)
 3. **Use HuggingFace Provider**: Works perfectly on native Windows
 
+### CLI Wizard on Native Windows
+
+The CLI wizard (`modelforge cli`) works on native Windows — no WSL needed. Only the Unsloth provider requires WSL or Docker.
+
+```powershell
+pip install modelforge-finetuning[cli]
+modelforge cli
+```
+
 ## WSL Issues
 
 ### WSL GPU Not Accessible
@@ -258,8 +267,8 @@ wsl --shutdown
 - [General Troubleshooting](common-issues.md)
 - [FAQ](faq.md)
 - [Windows Installation Guide](../installation/windows.md)
-- [GitHub Issues](https://github.com/ForgeOpus/ModelForge/issues)
+- [GitHub Issues](https://github.com/forgeopus/modelforge/issues)
 
 ---
 
-**Windows-specific issue not listed?** Ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions).
+**Windows-specific issue not listed?** Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions).

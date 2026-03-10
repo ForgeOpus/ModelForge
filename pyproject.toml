@@ -1,6 +1,6 @@
 [project]
 name = "modelforge-finetuning"
-version = "2.1.1"
+version = "2.2.0"
 description = "ModelForge: A no-code toolkit for fine-tuning HuggingFace models"
 authors = [
     {name = "R3tr0 M1ll3r", email = "r3tr0.m1ll3r@gmail.com"},
@@ -9,7 +9,6 @@ readme = "README.md"
 requires-python = ">=3.11,<3.12"
 dependencies = [
     "accelerate==1.5.2",
-    "bitsandbytes==0.45.3",
     "datasets==3.5.0",
     "dotenv>=0.9.9",
     "fastapi==0.115.12",
@@ -24,10 +23,22 @@ dependencies = [
     "trl==0.16.0",
     "uvicorn",
     "platformdirs",
+    "psutil",
     "pynvml",
     "peft",
     "python-multipart",
     "sqlalchemy>=2.0.44",
+]
+
+[project.optional-dependencies]
+quantization = [
+    "bitsandbytes==0.45.3",
+]
+cli = [
+    "questionary>=2.0.1",
+    "rich>=13.0.0",
+    "ipywidgets>=8.0.0",
+    "ipython>=8.0.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -36,6 +47,7 @@ include = ["ModelForge*"]
 
 [project.scripts]
 modelforge = "ModelForge.cli:main"
+modelforge-nb = "ModelForge.notebook_cli.wizard:main"
 
 [build-system]
 requires = ["setuptools"]
@@ -50,6 +62,8 @@ include-package-data = true
     "**/*.yaml",
     "**/*.yml",
     "**/*.json",
+    # Include the entire Frontend/build directory and all its contents
+    "Frontend/build/**",
 ]
 
 [tool.setuptools.exclude-package-data]
@@ -64,5 +78,5 @@ include-package-data = true
 
 [project.urls]
 Documentation = "https://modelforge-finetuning.readthedocs.io"
-Repository = "https://github.com/ForgeOpus/ModelForge"
-Organization = "https://github.com/ForgeOpus"
+Repository = "https://github.com/forgeopus/modelforge"
+Organization = "https://github.com/forgeopus"

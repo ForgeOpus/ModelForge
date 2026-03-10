@@ -1,16 +1,31 @@
 """
 Quantization configuration factory.
 Consolidates quantization logic to eliminate code duplication.
+Handles bitsandbytes being unavailable on non-CUDA platforms (e.g., Apple MPS).
 """
 import torch
-from transformers import BitsAndBytesConfig
 from typing import Optional
 
 from ...logging_config import logger
 
+# Conditional import: bitsandbytes is only available on CUDA platforms
+try:
+    from transformers import BitsAndBytesConfig
+    import bitsandbytes as _bnb  # noqa: F401 — verify the actual backend is installed
+    _BNB_AVAILABLE = True
+except ImportError:
+    _BNB_AVAILABLE = False
+    logger.info("bitsandbytes not available. "
+                "Quantization features will be disabled.")
+
 
 class QuantizationFactory:
     """Factory for creating quantization configurations."""
+
+    @staticmethod
+    def is_available() -> bool:
+        """Check if quantization via bitsandbytes is available."""
+        return _BNB_AVAILABLE
 
     @staticmethod
     def create_config(
@@ -19,7 +34,7 @@ class QuantizationFactory:
         compute_dtype: str = "float16",
         quant_type: str = "nf4",
         use_double_quant: bool = False,
-    ) -> Optional[BitsAndBytesConfig]:
+    ) -> Optional[object]:
         """
         Create a BitsAndBytes quantization configuration.
 
@@ -31,10 +46,18 @@ class QuantizationFactory:
             use_double_quant: Whether to use nested quantization
 
         Returns:
-            BitsAndBytesConfig if quantization is enabled, None otherwise
+            BitsAndBytesConfig if quantization is enabled and available, None otherwise
         """
         if not use_4bit and not use_8bit:
             logger.info("No quantization enabled")
+            return None
+
+        if not _BNB_AVAILABLE:
+            logger.warning(
+                "Quantization requested but bitsandbytes is not installed. "
+                "Install with: pip install 'modelforge-finetuning[quantization]'. "
+                "Proceeding without quantization."
+            )
             return None
 
         # Convert compute dtype string to torch dtype

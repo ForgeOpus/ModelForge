@@ -12,6 +12,7 @@ ModelForge/utilities/__pycache__/*
 ModelForge/utilities/tests/
 *.pyc
 .env
+.venv
 *.db
 *.sqlite
 dist/

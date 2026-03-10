@@ -10,7 +10,7 @@ Complete these steps after installing ModelForge to ensure everything is configu
 modelforge --version
 ```
 
-Should display: `ModelForge v2` (or current version)
+Should display: `ModelForge v2.1.3` (or current version)
 
 ### 2. Verify GPU Detection
 
@@ -29,6 +29,26 @@ GPU Name: NVIDIA GeForce RTX 3060
 
 ```bash
 python -c "from ModelForge import app; print('ModelForge imported successfully!')"
+```
+
+### 4. Verify CLI Wizard (Optional)
+
+If you installed the `[cli]` extra:
+
+```bash
+pip install modelforge-finetuning[cli]
+modelforge cli
+```
+
+This should launch the interactive CLI wizard.
+
+### 5. Verify Quantization (Optional)
+
+If you installed the `[quantization]` extra:
+
+```bash
+pip install modelforge-finetuning[quantization]
+python -c "import bitsandbytes; print('bitsandbytes installed successfully!')"
 ```
 
 ## Configure HuggingFace Token
@@ -67,7 +87,7 @@ echo "HUGGINGFACE_TOKEN=hf_xxxxxxxxxxxx" > .env
 ### Start ModelForge
 
 ```bash
-modelforge run
+modelforge
 ```
 
 You should see:
@@ -166,14 +186,14 @@ python -c "import unsloth; print('Unsloth installed successfully!')"
 
 Run on different port:
 ```bash
-modelforge run --port 8080
+modelforge --port 8080
 ```
 
 ### Bind to All Interfaces
 
 Allow remote access:
 ```bash
-modelforge run --host 0.0.0.0
+modelforge --host 0.0.0.0
 ```
 
 ### Configure Database Path
@@ -181,7 +201,7 @@ modelforge run --host 0.0.0.0
 Set custom database location:
 ```bash
 export MODELFORGE_DB_PATH="/path/to/database"
-modelforge run
+modelforge
 ```
 
 ## Performance Tuning
@@ -211,7 +231,7 @@ export MODELFORGE_DEFAULT_BATCH_SIZE=4
 
 ```bash
 cd ~/ModelForge
-curl -o test_dataset.jsonl https://raw.githubusercontent.com/RETR0-OS/ModelForge/main/ModelForge/test_datasets/low_text_generation.jsonl
+curl -o test_dataset.jsonl https://raw.githubusercontent.com/forgeopus/modelforge/main/ModelForge/test_datasets/low_text_generation.jsonl
 ```
 
 ### Upload via UI
@@ -240,7 +260,7 @@ pip install --upgrade modelforge-finetuning
 
 ```bash
 rm -rf ~/.local/share/modelforge/database
-modelforge run  # Will recreate database
+modelforge  # Will recreate database
 ```
 
 ### Clear Cache
@@ -253,7 +273,7 @@ rm -rf ~/.cache/huggingface
 
 ```bash
 # Real-time logs
-modelforge run --log-level debug
+modelforge --log-level debug
 
 # Or check specific log file
 cat ~/.local/share/modelforge/training_logs/latest.log
@@ -280,7 +300,7 @@ sudo ufw allow 8000/tcp
 
 **Expose only to localhost:**
 ```bash
-modelforge run --host 127.0.0.1
+modelforge --host 127.0.0.1
 ```
 
 ### HTTPS Setup (Production)
