@@ -57,12 +57,12 @@ const HardwareDetection = ({ currentSettings, updateSettings }) => {
 
       const result = await response.json();
       
-      if (response.ok && result.validation.valid) {
+      if (response.ok && result.valid) {
         setValidationStatus('valid');
-        setValidationResult(result.validation);
+        setValidationResult(result);
       } else {
         setValidationStatus('invalid');
-        setValidationResult(result.validation || { error: 'Validation failed' });
+        setValidationResult(result || { error: 'Validation failed' });
       }
     } catch (error) {
       console.error('Validation error:', error);
