@@ -48,7 +48,7 @@ def resolve_device(device: str) -> Tuple[torch.device, str]:
         if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
             raise ConfigurationError(
                 "MPS device requested but MPS is not available. "
-                "MPS is only available on macOS with Apple Silicon (M1/M2/M3/M4). "
+                "MPS is only available on macOS with Apple Silicon (M1/M2/M3/M4/M5). "
                 "Please use 'device: auto' to automatically select an available device, "
                 "or 'device: cuda' for NVIDIA GPUs, or 'device: cpu' for CPU-only training."
             )

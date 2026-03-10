@@ -227,7 +227,7 @@ pip install modelforge-finetuning[cli]
 
 **Solutions**:
 1. Verify you're on macOS 12.3 or later
-2. Verify you have Apple Silicon (M1/M2/M3/M4)
+2. Verify you have Apple Silicon (M1/M2/M3/M4/M5)
 3. Update PyTorch to latest version:
    ```bash
    pip install --upgrade torch

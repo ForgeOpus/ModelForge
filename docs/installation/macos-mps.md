@@ -1,6 +1,6 @@
 # macOS Installation Guide (Apple Silicon MPS)
 
-Install and run ModelForge on Apple Silicon Macs (M1/M2/M3/M4) with MPS (Metal Performance Shaders) acceleration.
+Install and run ModelForge on Apple Silicon Macs (M1/M2/M3/M4/M5) with MPS (Metal Performance Shaders) acceleration.
 
 ## Overview
 
@@ -15,7 +15,7 @@ ModelForge supports Apple Silicon Macs through PyTorch's MPS backend. This provi
 ## Prerequisites
 
 - **macOS** 12.3 or later
-- **Apple Silicon** Mac (M1/M2/M3/M4)
+- **Apple Silicon** Mac (M1/M2/M3/M4/M5)
 - **Python 3.11.x** (Python 3.12 not yet supported)
 - **HuggingFace Account** with access token ([Get one here](https://huggingface.co/settings/tokens))
 

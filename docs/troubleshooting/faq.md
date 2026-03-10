@@ -12,25 +12,31 @@ ModelForge is a no-code toolkit for fine-tuning Large Language Models on your lo
 
 Yes! ModelForge is open-source under the MIT license. You can use it freely for personal or commercial projects.
 
-### What's the difference between v1.0 and v2.0?
+### What's the difference between v2.x and v3?
 
-v2.0 is a complete architectural rewrite with:
-- 2x faster training (Unsloth provider)
-- Multiple training strategies (SFT, QLoRA, RLHF, DPO)
-- Built-in evaluation
-- Better error handling
-- Modular, extensible architecture
+v3 builds on the v2 architecture with:
+- Apple Silicon (MPS) support — train on M1/M2/M3/M4/M5 Macs natively
+- Interactive CLI wizard (`modelforge cli`) for headless/SSH environments
+- Optional quantization — bitsandbytes moved to `[quantization]` extra for a lighter base install
+- Schema validation — catches incompatible config combinations at startup
 
-All existing workflows remain compatible.
+All existing v2 workflows remain compatible.
 
 ## System Requirements
 
 ### What are the minimum requirements?
 
+**NVIDIA GPU (Windows/Linux):**
 - Python 3.11.x
 - NVIDIA GPU with 4GB+ VRAM
 - CUDA 11.8 or 12.x
 - 8GB RAM
+- 10GB free disk space
+
+**Apple Silicon Mac (macOS):**
+- Python 3.11.x
+- Apple Silicon Mac (M1 or later) with 8GB+ unified memory
+- macOS 12.3 or later
 - 10GB free disk space
 
 ### Can I run ModelForge without a GPU?
@@ -43,12 +49,16 @@ Currently, only NVIDIA GPUs are supported due to CUDA requirements.
 
 ### Does ModelForge work on macOS?
 
-**No, macOS is not supported.** ModelForge requires NVIDIA CUDA, which is not available on macOS (including Apple Silicon M1/M2/M3 and Intel Macs).
+**Yes — Apple Silicon Macs are supported via PyTorch's MPS backend (added in v3).**
 
-**Alternative for Mac users:**
-- Use cloud GPU instances (Google Colab, AWS, Azure, Lambda Labs)
-- Set up a remote Linux server with NVIDIA GPU
-- Use a dual-boot Linux system on Intel Mac hardware
+Supported chips: M1, M2, M3, M4, M5. Intel Macs are not supported (no MPS).
+
+**Limitations on MPS:**
+- HuggingFace provider only (Unsloth requires NVIDIA CUDA)
+- No 4-bit/8-bit quantization (bitsandbytes is CUDA-only)
+- Smaller models recommended (1–7B depending on unified memory)
+
+See the **[macOS Installation Guide](../installation/macos-mps.md)** for full setup instructions.
 
 ## Installation
 

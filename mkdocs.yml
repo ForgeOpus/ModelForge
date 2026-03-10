@@ -48,11 +48,12 @@ nav:
   
   - Getting Started:
     - Quick Start Guide: getting-started/quickstart.md
-    - What's New in v3.0.0: getting-started/whats-new.md
+    - What's New in v3: getting-started/whats-new.md
   
   - Installation:
     - Windows Installation: installation/windows.md
     - Linux Installation: installation/linux.md
+    - macOS (Apple Silicon): installation/macos-mps.md
     - Post-Installation Setup: installation/post-installation.md
   
   - Configuration:
