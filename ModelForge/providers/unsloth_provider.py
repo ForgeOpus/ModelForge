@@ -55,6 +55,16 @@ class UnslothProvider:
             ProviderError: If Unsloth is not available or loading fails
         """
         logger.info(f"Loading model {model_id} with Unsloth optimizations")
+        
+        # Check if user is targeting MPS device (Unsloth only supports CUDA)
+        # This is a secondary check; primary check is in training_service
+        device_type = kwargs.get("device_type")
+        if device_type == "mps":
+            raise ProviderError(
+                "Unsloth provider is not supported on Apple MPS devices. "
+                "Unsloth requires NVIDIA CUDA GPUs for its optimized kernels. "
+                "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
+            )
 
         try:
             from unsloth import FastLanguageModel

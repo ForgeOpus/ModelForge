@@ -2,8 +2,14 @@
 Refactored CLI for ModelForge.
 Clean entry point with improved structure.
 """
+import os
 import sys
 import subprocess
+
+# MPS fallback must be set before importing torch (which happens transitively
+# via downstream imports). Once torch is imported, this env var is read and
+# cannot be changed.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 from huggingface_hub import login, whoami
 from .logging_config import logger
 

@@ -3,6 +3,12 @@ Refactored FastAPI application for ModelForge.
 Clean architecture with dependency injection and proper error handling.
 """
 import os
+
+# MPS fallback must be set before importing torch (which happens transitively
+# via router/strategy/provider imports below). Once torch is imported, this
+# env var is read and cannot be changed.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -218,7 +224,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app_new:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         reload=True,
         log_level="info",

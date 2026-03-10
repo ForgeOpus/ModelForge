@@ -2,6 +2,7 @@
 Training service for orchestrating model fine-tuning.
 Coordinates providers, strategies, and training execution.
 """
+import gc
 import os
 import json
 import uuid
@@ -16,11 +17,12 @@ from transformers import TrainerCallback
 from ..providers.provider_factory import ProviderFactory
 from ..strategies.strategy_factory import StrategyFactory
 from ..utilities.finetuning.quantization import QuantizationFactory
+from ..utilities.device_utils import resolve_device, clear_device_cache, get_mps_memory_info
 from ..evaluation.dataset_validator import DatasetValidator
 from ..evaluation.metrics import MetricsCalculator
 from ..database.database_manager import DatabaseManager
 from ..utilities.settings_managers.FileManager import FileManager
-from ..exceptions import TrainingError, DatasetValidationError
+from ..exceptions import TrainingError, DatasetValidationError, ConfigurationError
 from ..logging_config import logger
 
 
@@ -152,8 +154,73 @@ class TrainingService:
             self.training_status["progress"] = 0
             self.training_status["message"] = "Initializing training..."
 
+            # Get or default device setting
+            device_str = config.get("device", "auto")
+            
+            # Resolve device early
+            device_obj, device_type = resolve_device(device_str)
+            logger.info(f"Resolved device: {device_type} ({device_obj})")
+            
+            # Store device info in config for downstream use
+            config["device_type"] = device_type
+            config["device_obj"] = device_obj
+
             # Create provider
             provider_name = config.get("provider", "huggingface")
+            
+            # Validate Unsloth + MPS combination BEFORE any initialization
+            if provider_name == "unsloth" and device_type == "mps":
+                raise ConfigurationError(
+                    "Unsloth provider is not supported on Apple MPS devices. "
+                    "Unsloth requires NVIDIA CUDA GPUs for its optimized kernels. "
+                    "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
+                )
+            
+            # Validate and adjust settings for MPS
+            if device_type == "mps":
+                if config.get("use_4bit", False) or config.get("use_8bit", False):
+                    logger.warning(
+                        "4-bit/8-bit quantization via bitsandbytes is not supported on MPS. "
+                        "Disabling quantization and using fp16 precision instead."
+                    )
+
+                # MPS: always disable quantization (bitsandbytes is CUDA-only)
+                config["use_4bit"] = False
+                config["use_8bit"] = False
+
+                # MPS: disable Accelerate mixed precision flags entirely.
+                # fp16=True triggers Accelerate's mixed-precision mode which is CUDA-only.
+                # The model is already loaded with torch_dtype=float16 natively on MPS,
+                # so no TrainingArguments precision flag is needed.
+                config["fp16"] = False
+                config["bf16"] = False
+
+                # MPS: paged_adamw_32bit requires bitsandbytes, switch to adamw_torch
+                current_optim = config.get("optim", "paged_adamw_32bit")
+                if "paged_adamw" in current_optim:
+                    logger.warning(
+                        f"Optimizer '{current_optim}' requires bitsandbytes (not available on MPS). "
+                        f"Switching to 'adamw_torch'."
+                    )
+                    config["optim"] = "adamw_torch"
+
+                # MPS: reduce max_seq_length if not explicitly set to save memory
+                if config.get("max_seq_length") is None:
+                    config["max_seq_length"] = 512
+                    logger.info("MPS: Defaulting max_seq_length to 512 for memory efficiency")
+
+                # MPS: disable multiprocessing dataloaders and pin_memory
+                # (not applicable to unified memory, causes issues on macOS)
+                config["dataloader_num_workers"] = 0
+                config["dataloader_pin_memory"] = False
+
+                # Log MPS memory status
+                mem_info = get_mps_memory_info()
+                logger.info(
+                    f"MPS memory status: "
+                    f"system_available={mem_info['system_available_mb']:.0f}MB, "
+                    f"system_total={mem_info['system_total_mb']:.0f}MB"
+                )
 
             # CRITICAL: Configure single-process mode for Unsloth BEFORE any initialization
             # This must happen before creating provider, strategy, or loading model
@@ -197,7 +264,8 @@ class TrainingService:
             strategy_name = config.get("strategy", "sft")
             strategy = StrategyFactory.create_strategy(strategy_name)
 
-            # Create quantization config
+            # Create quantization config (default True for CUDA;
+            # MPS override above already forces False)
             quant_config = QuantizationFactory.create_config(
                 use_4bit=config.get("use_4bit", True),
                 use_8bit=config.get("use_8bit", False),
@@ -222,6 +290,7 @@ class TrainingService:
                     model_class=model_class,
                     quantization_config=quant_config,
                     max_seq_length=config.get("max_seq_length", 2048),
+                    device_type=device_type,  # Pass device_type for MPS check
                 )
                 tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
             else:
@@ -229,6 +298,7 @@ class TrainingService:
                     model_id=config["model_name"],
                     model_class=model_class,
                     quantization_config=quant_config,
+                    device_type=device_type,
                 )
                 tokenizer = provider.load_tokenizer(config["model_name"])
                 tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
@@ -345,6 +415,9 @@ class TrainingService:
                 except Exception as e:
                     logger.debug(f"Could not verify Accelerate state: {e}")
 
+            # Clear device cache before training to maximize available memory
+            clear_device_cache(device_type)
+
             # Launch TensorBoard for real-time monitoring (config/env gated)
             enable_tensorboard = config.get("enable_tensorboard", True)
             tensorboard_env = os.getenv("MODELFORGE_ENABLE_TENSORBOARD", "1")
@@ -385,8 +458,11 @@ class TrainingService:
                 strategy=strategy_name,
                 provider=provider_name,
                 compute_profile=config.get("compute_specs"),
-                config=json.dumps(config),
+                config=json.dumps({k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in config.items()}),
             )
+
+            # Clean up memory after training
+            clear_device_cache(device_type)
 
             # Update status
             self.training_status["status"] = "completed"
@@ -462,6 +538,14 @@ class TrainingService:
         try:
             # Import torch locally to avoid adding dependency to module level
             import torch
+
+            # On MPS, fp16/bf16 TrainingArguments flags must always be False —
+            # Accelerate's mixed-precision mode is CUDA-only. The model dtype is set
+            # natively at load time (torch_dtype=float16), so no flag is needed here.
+            if config.get("device_type") == "mps":
+                config["fp16"] = False
+                config["bf16"] = False
+                return config
 
             # Try to get model dtype - handle PEFT-wrapped models
             model_dtype = None

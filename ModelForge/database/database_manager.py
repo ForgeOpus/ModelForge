@@ -34,7 +34,7 @@ class DatabaseManager:
         # Create engine with connection pooling
         self.engine = create_engine(
             f"sqlite:///{db_path}",
-            pool_size=10,
+            pool_size=1,
             max_overflow=20,
             pool_pre_ping=True,  # Verify connections before using
             echo=False,  # Set to True for SQL debugging
