@@ -10,7 +10,7 @@ Complete these steps after installing ModelForge to ensure everything is configu
 modelforge --version
 ```
 
-Should display: `ModelForge v3.0.0` (or current version)
+Should display: `ModelForge v3` (or current version)
 
 ### 2. Verify GPU Detection
 

@@ -60,7 +60,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ModelForge",
     description="Modular fine-tuning platform with support for multiple providers and strategies",
-    version="v2",
+    version="v3",
     lifespan=lifespan,
 )
 
@@ -204,7 +204,7 @@ async def get_info():
 async def root():
     """Root API endpoint."""
     return {
-        "message": "Welcome to ModelForge API v2",
+        "message": "Welcome to ModelForge API v3",
         "docs": "/docs",
         "health": "/api/health",
         "info": "/api/info",

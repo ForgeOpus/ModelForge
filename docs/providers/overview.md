@@ -1,6 +1,6 @@
 # Provider Overview
 
-ModelForge v3.0.0 introduces a modular provider system that allows you to choose different model loading and optimization backends.
+ModelForge v3 introduces a modular provider system that allows you to choose different model loading and optimization backends.
 
 ## What Are Providers?
 

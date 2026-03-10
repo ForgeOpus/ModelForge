@@ -1,12 +1,12 @@
 # ModelForge Documentation
 
-Welcome to the comprehensive documentation for **ModelForge v3.0.0** - A no-code toolkit for fine-tuning Large Language Models on your local GPU.
+Welcome to the comprehensive documentation for **ModelForge v3** - A no-code toolkit for fine-tuning Large Language Models on your local GPU.
 
 ## 📚 Documentation Index
 
 ### Getting Started
 - [Quick Start Guide](getting-started/quickstart.md) - Get up and running in 5 minutes
-- [What's New in v3.0.0](getting-started/whats-new.md) - Major features and improvements
+- [What's New in v3](getting-started/whats-new.md) - Major features and improvements
 
 ### Installation & Setup
 - [Windows Installation](installation/windows.md) - Complete setup guide for Windows users
@@ -14,7 +14,7 @@ Welcome to the comprehensive documentation for **ModelForge v3.0.0** - A no-code
   - WSL setup for full feature support
   - Docker with NVIDIA Container Toolkit
 - [Linux Installation](installation/linux.md) - Setup guide for Linux
-- [macOS (Apple Silicon) Installation](installation/macos-mps.md) - Setup for M1/M2/M3/M4 Macs with MPS support
+- [macOS (Apple Silicon) Installation](installation/macos-mps.md) - Setup for M1/M2/M3/M4/M5 Macs with MPS support
 - [Post-Installation Setup](installation/post-installation.md) - Initial configuration steps
 
 ### Configuration & Usage
@@ -77,4 +77,4 @@ Welcome to the comprehensive documentation for **ModelForge v3.0.0** - A no-code
 
 ---
 
-**ModelForge v2.1** - Making LLM fine-tuning accessible to everyone.
+**ModelForge v3** - Making LLM fine-tuning accessible to everyone.

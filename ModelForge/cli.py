@@ -90,7 +90,7 @@ def main():
     print(" |_|  |_|\\___/ \\__,_|\\___|_|_| \\___/|_|  \\__, |\\___| ")
     print("                                          __/ |      ")
     print("                                         |___/       ")
-    print("\n ModelForge v3.0.0 - No-code Fine-Tuning Platform")
+    print("\n ModelForge v3 - No-code Fine-Tuning Platform")
     print("=" * 80 + "\n")
 
     # Check HuggingFace login
