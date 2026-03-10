@@ -6,6 +6,10 @@ import gc
 import os
 import json
 import uuid
+import subprocess
+import threading
+import time
+import webbrowser
 from typing import Dict, Any, Optional
 from datasets import load_dataset
 from transformers import TrainerCallback
@@ -68,6 +72,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
         logger.info("Training service initialized")
@@ -82,6 +87,7 @@ class TrainingService:
             "status": "idle",
             "progress": 0,
             "message": "",
+            "model_path": None,
         }
 
     def validate_and_prepare_dataset(
@@ -333,6 +339,9 @@ class TrainingService:
                     lora_alpha=config.get("lora_alpha", 32),
                     lora_dropout=config.get("lora_dropout", 0.1),
                 )
+                # Signal to strategies that PEFT is already applied by Unsloth
+                # so they don't pass peft_config to the trainer (which would double-wrap)
+                config["_peft_already_applied"] = True
             else:
                 model = strategy.prepare_model(model, config)
 
@@ -385,6 +394,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=[ProgressCallback(self.training_status)],
+                compute_metrics=metrics_fn,
             )
 
             # Verify single-process mode for Unsloth (debug logging)
@@ -403,6 +413,18 @@ class TrainingService:
 
             # Clear device cache before training to maximize available memory
             clear_device_cache(device_type)
+
+            # Launch TensorBoard for real-time monitoring (config/env gated)
+            enable_tensorboard = config.get("enable_tensorboard", True)
+            tensorboard_env = os.getenv("MODELFORGE_ENABLE_TENSORBOARD", "1")
+            if enable_tensorboard and tensorboard_env == "1":
+                self._launch_tensorboard(config["logging_dir"])
+            else:
+                logger.info(
+                    "TensorBoard launch skipped: "
+                    f"enable_tensorboard={enable_tensorboard}, "
+                    f"MODELFORGE_ENABLE_TENSORBOARD={tensorboard_env}"
+                )
 
             # Train
             self.training_status["message"] = "Training in progress..."
@@ -442,6 +464,7 @@ class TrainingService:
             self.training_status["status"] = "completed"
             self.training_status["progress"] = 100
             self.training_status["message"] = "Training completed successfully!"
+            self.training_status["model_path"] = model_output_path
 
             logger.info(f"Training completed successfully: {model_id}")
 
@@ -603,6 +626,7 @@ class TrainingService:
         tokenizer: Any,
         config: Dict,
         callbacks: list = None,
+        compute_metrics=None,
     ) -> Any:
         """
         Create trainer with automatic precision mismatch recovery.
@@ -636,6 +660,7 @@ class TrainingService:
                 tokenizer=tokenizer,
                 config=config,
                 callbacks=callbacks,
+                compute_metrics=compute_metrics,
             )
 
         except TypeError as e:
@@ -700,10 +725,32 @@ class TrainingService:
                     tokenizer=tokenizer,
                     config=config,
                     callbacks=callbacks,
+                    compute_metrics=compute_metrics,
                 )
             else:
                 # Not an Unsloth precision error, re-raise
                 raise
+
+    def _launch_tensorboard(self, logdir: str):
+        """Launch TensorBoard and open browser tab after a short delay."""
+        try:
+            os.makedirs(logdir, exist_ok=True)
+            subprocess.Popen(
+                ["tensorboard", "--logdir", logdir, "--port", "6006"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            logger.info(f"TensorBoard launched at http://localhost:6006 (logdir: {logdir})")
+
+            def open_browser():
+                time.sleep(3)
+                webbrowser.open("http://localhost:6006")
+
+            threading.Thread(target=open_browser, daemon=True).start()
+        except FileNotFoundError:
+            logger.warning("TensorBoard not found. Install with: pip install tensorboard")
+        except Exception as e:
+            logger.warning(f"Failed to launch TensorBoard: {e}")
 
     def _create_model_config(self, config_dir: str, pipeline_task: str, model_class: str):
         """Create modelforge config file for playground compatibility."""

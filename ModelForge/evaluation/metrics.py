@@ -29,20 +29,27 @@ class MetricsCalculator:
         """
         logger.info("Computing causal LM metrics")
 
+        import torch
+        import torch.nn.functional as F
+
         predictions, labels = eval_pred.predictions, eval_pred.label_ids
 
-        # For language modeling, predictions are logits
-        # Loss is computed by the trainer, we just calculate perplexity
-        if hasattr(eval_pred, 'loss') and eval_pred.loss is not None:
-            loss = eval_pred.loss
-        else:
-            # Fallback: estimate loss from predictions
-            loss = 0.0
+        logits = torch.from_numpy(np.array(predictions)).float()
+        lbl = torch.from_numpy(np.array(labels))
 
-        perplexity = np.exp(loss) if loss > 0 else 0.0
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = lbl[..., 1:].contiguous()
+
+        loss = F.cross_entropy(
+            shift_logits.view(-1, shift_logits.size(-1)),
+            shift_labels.view(-1).long(),
+            ignore_index=-100,
+            reduction="mean",
+        )
+        perplexity = float(torch.exp(loss))
 
         metrics = {
-            "perplexity": float(perplexity),
+            "perplexity": perplexity,
             "eval_loss": float(loss),
         }
 
@@ -69,6 +76,9 @@ class MetricsCalculator:
 
         predictions, labels = eval_pred.predictions, eval_pred.label_ids
 
+        if predictions.ndim == 3:
+            predictions = np.argmax(predictions, axis=-1)
+
         # Decode predictions and labels
         if tokenizer is not None:
             # Replace -100 in labels (used for padding)
@@ -88,9 +98,9 @@ class MetricsCalculator:
                 )
 
                 metrics = {
-                    "rouge1": float(result["rouge1"].mid.fmeasure),
-                    "rouge2": float(result["rouge2"].mid.fmeasure),
-                    "rougeL": float(result["rougeL"].mid.fmeasure),
+                    "rouge1": float(result["rouge1"]),
+                    "rouge2": float(result["rouge2"]),
+                    "rougeL": float(result["rougeL"]),
                 }
 
                 logger.info(f"Seq2Seq metrics: {metrics}")

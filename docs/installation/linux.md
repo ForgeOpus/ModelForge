@@ -145,6 +145,10 @@ source venv/bin/activate
 
 ```bash
 pip install modelforge-finetuning
+
+# Optional extras
+pip install modelforge-finetuning[cli]           # CLI wizard
+pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization
 ```
 
 ### 7. Install PyTorch with CUDA Support
@@ -200,7 +204,8 @@ source ~/.bashrc
 ### 11. Run ModelForge
 
 ```bash
-modelforge run
+modelforge          # Launch web UI
+modelforge cli      # Launch CLI wizard (headless/SSH alternative)
 ```
 
 Open browser to: `http://localhost:8000`
@@ -227,7 +232,7 @@ User=your_username
 WorkingDirectory=/home/your_username/ModelForge
 Environment="PATH=/home/your_username/ModelForge/venv/bin"
 Environment="HUGGINGFACE_TOKEN=your_token_here"
-ExecStart=/home/your_username/ModelForge/venv/bin/modelforge run
+ExecStart=/home/your_username/ModelForge/venv/bin/modelforge
 Restart=always
 
 [Install]
@@ -304,7 +309,7 @@ sudo chown -R $USER:$USER ~/ModelForge
    ```
 2. Kill the process or use a different port:
    ```bash
-   modelforge run --port 8080
+   modelforge --port 8080
    ```
 
 ### Out of Memory (OOM)
@@ -392,7 +397,7 @@ WORKDIR /workspace
 EXPOSE 8000
 
 # Run ModelForge
-CMD ["modelforge", "run", "--host", "0.0.0.0"]
+CMD ["modelforge", "--host", "0.0.0.0"]
 ```
 
 Build and run:
@@ -417,4 +422,4 @@ docker run --gpus all -p 8000:8000 \
 
 ---
 
-**Need Help?** Check [Common Issues](../troubleshooting/common-issues.md) or ask in [GitHub Discussions](https://github.com/ForgeOpus/ModelForge/discussions).
+**Need Help?** Check [Common Issues](../troubleshooting/common-issues.md) or ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions).

@@ -55,7 +55,7 @@ class QuantizationFactory:
         if not _BNB_AVAILABLE:
             logger.warning(
                 "Quantization requested but bitsandbytes is not installed. "
-                "Install with: pip install 'modelforge-finetuning[cuda]'. "
+                "Install with: pip install 'modelforge-finetuning[quantization]'. "
                 "Proceeding without quantization."
             )
             return None
