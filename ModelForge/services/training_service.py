@@ -290,6 +290,7 @@ class TrainingService:
                     model_class=model_class,
                     quantization_config=quant_config,
                     max_seq_length=config.get("max_seq_length", 2048),
+                    device_type=device_type,  # Pass device_type for MPS check
                 )
                 tokenizer.eos_token = tokenizer.eos_token or tokenizer.sep_token
             else:

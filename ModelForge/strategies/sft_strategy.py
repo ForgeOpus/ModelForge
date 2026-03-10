@@ -174,7 +174,7 @@ class SFTStrategy:
             per_device_train_batch_size=config.get("per_device_train_batch_size", 1),
             per_device_eval_batch_size=config.get("per_device_eval_batch_size", 1),
             gradient_accumulation_steps=config.get("gradient_accumulation_steps", 4),
-            optim=config.get("optim", "adamw_torch"),
+            optim=config.get("optim", "paged_adamw_32bit"),
             save_steps=config.get("save_steps", 0),
             logging_steps=config.get("logging_steps", 25),
             learning_rate=config.get("learning_rate", 2e-4),

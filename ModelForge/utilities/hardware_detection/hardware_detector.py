@@ -112,10 +112,11 @@ class HardwareDetector:
                 pass  # Ignore shutdown errors
         
         # If no CUDA GPU, try to detect Apple MPS
+        mps_available = False
         if not cuda_available:
             try:
-                import torch
                 if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+                    mps_available = True
                     # MPS is available
                     memory = psutil.virtual_memory()
                     unified_memory_gb = memory.total / (1024 ** 3)
@@ -136,9 +137,10 @@ class HardwareDetector:
                     return
             except Exception as e:
                 logging.debug(f"MPS detection failed: {str(e)}")
+                mps_available = False
         
         # If neither CUDA nor MPS available, raise error
-        if not cuda_available and not (hasattr(torch, 'backends') and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+        if not cuda_available and not mps_available:
             raise RuntimeError(
                 "No GPU detected. ModelForge requires either an NVIDIA GPU with CUDA "
                 "or Apple Silicon with MPS support. If you have a GPU, please ensure "

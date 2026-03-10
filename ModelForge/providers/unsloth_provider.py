@@ -56,19 +56,15 @@ class UnslothProvider:
         """
         logger.info(f"Loading model {model_id} with Unsloth optimizations")
         
-        # Check for MPS device (Unsloth only supports CUDA)
-        try:
-            import torch
-            if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-                # Check if we're actually trying to use MPS
-                # (this is a secondary check, primary check is in training_service)
-                raise ProviderError(
-                    "Unsloth provider is not supported on Apple MPS devices. "
-                    "Unsloth requires NVIDIA CUDA GPUs for its optimized kernels. "
-                    "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
-                )
-        except ImportError:
-            pass  # torch not available, will fail below anyway
+        # Check if user is targeting MPS device (Unsloth only supports CUDA)
+        # This is a secondary check; primary check is in training_service
+        device_type = kwargs.get("device_type")
+        if device_type == "mps":
+            raise ProviderError(
+                "Unsloth provider is not supported on Apple MPS devices. "
+                "Unsloth requires NVIDIA CUDA GPUs for its optimized kernels. "
+                "Please switch to 'huggingface' provider or use 'device: cuda' with an NVIDIA GPU."
+            )
 
         try:
             from unsloth import FastLanguageModel

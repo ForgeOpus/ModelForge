@@ -171,9 +171,13 @@ class PlaygroundModel:
     def clean_up(self):
         if hasattr(self, 'generator'):
             del self.generator
-        # Clear device cache if CUDA
+        # Clear device cache based on device type
         if self.device == "cuda" and torch.cuda.is_available():
             torch.cuda.empty_cache()
+        elif self.device == "mps":
+            # MPS doesn't have an empty_cache() method yet, but we can help with GC
+            import gc
+            gc.collect()
         print("Resources cleaned")
 
 

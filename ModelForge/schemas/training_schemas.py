@@ -49,7 +49,7 @@ class TrainingConfig(BaseModel):
     max_grad_norm: float = 0.3
     learning_rate: float = 2e-4
     weight_decay: float = 0.001
-    optim: str = "adamw_torch"
+    optim: str = "paged_adamw_32bit"
     lr_scheduler_type: str = "cosine"
     max_steps: int = -1
     warmup_ratio: float = 0.03
@@ -87,15 +87,6 @@ class TrainingConfig(BaseModel):
         if v not in VALID_PROVIDERS:
             raise ValueError(
                 f"Invalid provider: {v}. Must be one of {VALID_PROVIDERS}"
-            )
-        return v
-
-    @field_validator("device")
-    @classmethod
-    def validate_device(cls, v):
-        if v not in VALID_DEVICES:
-            raise ValueError(
-                f"Invalid device: {v}. Must be one of {VALID_DEVICES}"
             )
         return v
 

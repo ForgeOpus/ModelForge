@@ -10,7 +10,7 @@ ModelForge supports Apple Silicon Macs through PyTorch's MPS backend. This provi
 - **HuggingFace provider only** - Unsloth provider is not supported on MPS
 - **No 4-bit/8-bit quantization** - bitsandbytes library doesn't support MPS
 - **Smaller models recommended** - Unified memory architecture limits model sizes
-- **FP16 precision** - Use `fp16: true` for best performance
+- **Native FP16 precision** - Model loads in float16 by default; training precision flags are disabled
 
 ## Prerequisites
 
@@ -86,8 +86,6 @@ When training on Apple Silicon with MPS:
 
   "use_4bit": false,
   "use_8bit": false,
-  "fp16": true,
-  "bf16": false,
 
   "optim": "adamw_torch",
   "per_device_train_batch_size": 1,
@@ -116,8 +114,9 @@ When training on Apple Silicon with MPS:
 - ❌ `"use_8bit": false` - **Required** (bitsandbytes doesn't support MPS)
 
 **Precision:**
-- ✅ `"fp16": true` - **Recommended** for MPS
-- ⚠️ `"bf16": false` - bfloat16 support on MPS varies by model
+- ℹ️ Training precision flags (`fp16`, `bf16`) are automatically disabled on MPS
+- The model loads natively in float16 (`torch_dtype=float16`) which provides optimal performance
+- Do not set `fp16: true` or `bf16: true` - they will be ignored
 
 **Batch Size:**
 - Use `per_device_train_batch_size: 1-2` to fit in unified memory

@@ -108,7 +108,7 @@ Open your browser to **http://localhost:8000** and start training!
 ### Installation
 - **[Windows Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md)** - Complete Windows setup (including WSL and Docker)
 - **[Linux Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/linux.md)** - Linux setup guide
-- **[macOS (Apple Silicon) Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md)** - Setup for M1/M2/M3 Macs with MPS support
+- **[macOS (Apple Silicon) Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md)** - Setup for M1/M2/M3/M4 Macs with MPS support
 - **[Post-Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/post-installation.md)** - Initial configuration
 
 ### Configuration & Usage

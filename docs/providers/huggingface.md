@@ -120,7 +120,6 @@ Use HuggingFace provider when:
   "device": "mps",
   "use_4bit": false,
   "use_8bit": false,
-  "fp16": true,
   "gradient_checkpointing": true,
   "per_device_train_batch_size": 1,
   "gradient_accumulation_steps": 8,
@@ -128,7 +127,7 @@ Use HuggingFace provider when:
 }
 ```
 
-**Note**: On MPS, quantization (4-bit/8-bit) is automatically disabled as bitsandbytes doesn't support MPS.
+**Note**: On MPS, quantization (4-bit/8-bit) is automatically disabled as bitsandbytes doesn't support MPS. Training precision flags (`fp16`, `bf16`) are also automatically disabled - the model loads natively in float16 for optimal performance.
 
 ### For Low VRAM
 
