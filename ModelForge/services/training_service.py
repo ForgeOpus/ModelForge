@@ -188,8 +188,11 @@ class TrainingService:
                 config["use_4bit"] = False
                 config["use_8bit"] = False
 
-                # MPS: force fp16 precision (bf16 is not supported on MPS)
-                config["fp16"] = True
+                # MPS: disable Accelerate mixed precision flags entirely.
+                # fp16=True triggers Accelerate's mixed-precision mode which is CUDA-only.
+                # The model is already loaded with torch_dtype=float16 natively on MPS,
+                # so no TrainingArguments precision flag is needed.
+                config["fp16"] = False
                 config["bf16"] = False
 
                 # MPS: paged_adamw_32bit requires bitsandbytes, switch to adamw_torch
@@ -454,7 +457,7 @@ class TrainingService:
                 strategy=strategy_name,
                 provider=provider_name,
                 compute_profile=config.get("compute_specs"),
-                config=json.dumps(config),
+                config=json.dumps({k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in config.items()}),
             )
 
             # Clean up memory after training
@@ -534,6 +537,14 @@ class TrainingService:
         try:
             # Import torch locally to avoid adding dependency to module level
             import torch
+
+            # On MPS, fp16/bf16 TrainingArguments flags must always be False —
+            # Accelerate's mixed-precision mode is CUDA-only. The model dtype is set
+            # natively at load time (torch_dtype=float16), so no flag is needed here.
+            if config.get("device_type") == "mps":
+                config["fp16"] = False
+                config["bf16"] = False
+                return config
 
             # Try to get model dtype - handle PEFT-wrapped models
             model_dtype = None
