@@ -211,7 +211,7 @@ class QLoRAStrategy:
             max_seq_length = 2048
 
         # QLoRA-optimized training arguments
-        training_args = SFTConfig(
+        sft_kwargs = dict(
             output_dir=config.get("output_dir", "./checkpoints"),
             num_train_epochs=config.get("num_train_epochs", 1),
             per_device_train_batch_size=config.get("per_device_train_batch_size", 4),
@@ -227,7 +227,6 @@ class QLoRAStrategy:
             bf16=config.get("bf16", True),  # Default True for CUDA; MPS overrides to False in training_service
             max_grad_norm=config.get("max_grad_norm", 0.3),
             max_steps=config.get("max_steps", -1),
-            group_by_length=config.get("group_by_length", True),
             lr_scheduler_type=config.get("lr_scheduler_type", "cosine"),
             report_to="tensorboard",
             logging_dir=config.get("logging_dir", "./training_logs"),
@@ -249,6 +248,12 @@ class QLoRAStrategy:
             dataloader_num_workers=config.get("dataloader_num_workers", 0),
             dataloader_pin_memory=config.get("dataloader_pin_memory", True),
         )
+
+        # Unsloth's patched SFTConfig doesn't support group_by_length
+        if not config.get("_peft_already_applied"):
+            sft_kwargs["group_by_length"] = config.get("group_by_length", True)
+
+        training_args = SFTConfig(**sft_kwargs)
 
         # Build the PEFT config for SFTTrainer to apply LoRA
         # Skip if PEFT was already applied (e.g. by Unsloth provider)
