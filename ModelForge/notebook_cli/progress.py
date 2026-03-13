@@ -7,8 +7,13 @@ notebook environment, and falls back to tqdm for plain terminal use.
 from __future__ import annotations
 
 
+_NOTEBOOK_OVERRIDE: bool | None = None
+
+
 def _is_notebook() -> bool:
     """Return True if running inside a Jupyter-compatible notebook kernel."""
+    if _NOTEBOOK_OVERRIDE is not None:
+        return _NOTEBOOK_OVERRIDE
     try:
         from IPython import get_ipython
         shell = get_ipython()
@@ -17,6 +22,12 @@ def _is_notebook() -> bool:
         return shell.__class__.__name__ == "ZMQInteractiveShell"
     except ImportError:
         return False
+
+
+def set_notebook_mode(mode: bool) -> None:
+    """Override the auto-detected notebook mode."""
+    global _NOTEBOOK_OVERRIDE
+    _NOTEBOOK_OVERRIDE = mode
 
 
 class ProgressDisplay:

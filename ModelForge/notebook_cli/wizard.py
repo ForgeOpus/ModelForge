@@ -30,10 +30,15 @@ class ModelForgeWizard:
     Uses existing Python service classes directly — no REST API calls.
     """
 
-    def __init__(self):
+    def __init__(self, notebook: bool | None = None):
         from rich.console import Console
 
         self.console = Console()
+
+        if notebook is not None:
+            from . import prompts, progress
+            prompts.set_notebook_mode(notebook)
+            progress.set_notebook_mode(notebook)
 
     # ── Public ─────────────────────────────────────────────────────────────
 
@@ -420,7 +425,7 @@ class ModelForgeWizard:
 # ── Entry point ──────────────────────────────────────────────────────────────
 
 def main() -> None:
-    """Entry point for the ``modelforge-nb`` console script."""
+    """Entry point for the ``modelforge-nb`` console script (notebook mode)."""
     try:
         import questionary  # noqa: F401
         import rich  # noqa: F401
@@ -433,7 +438,7 @@ def main() -> None:
             '    pip install "modelforge-finetuning[cli]"\n'
         )
         sys.exit(1)
-    ModelForgeWizard().run()
+    ModelForgeWizard(notebook=True).run()
 
 
 if __name__ == "__main__":

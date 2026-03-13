@@ -33,6 +33,12 @@ def _is_notebook() -> bool:
 _IN_NOTEBOOK = _is_notebook()
 
 
+def set_notebook_mode(mode: bool) -> None:
+    """Override the auto-detected notebook mode."""
+    global _IN_NOTEBOOK
+    _IN_NOTEBOOK = mode
+
+
 # ── Notebook-safe input() fallbacks ──────────────────────────────────────────
 
 def _nb_select(message: str, choices: list) -> str:

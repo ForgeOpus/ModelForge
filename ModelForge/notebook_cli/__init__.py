@@ -12,7 +12,8 @@ Usage from a notebook cell:
     run_cli()
 
 Usage from a terminal:
-    modelforge-nb
+    modelforge-nb          (notebook-safe input() prompts)
+    modelforge cli         (interactive terminal with questionary)
 """
 from .wizard import ModelForgeWizard, main as run_cli
 
