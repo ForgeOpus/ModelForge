@@ -192,7 +192,7 @@ def prompt_dataset(task: str, strategy: str, training_service: "TrainingService"
         else:
             path = questionary.path(
                 "Path to dataset file (.jsonl / .json):",
-                validate=lambda v: os.path.isfile(v.strip()) or "File not found — please enter a valid path",,
+                validate=lambda v: os.path.isfile(v.strip()) or "File not found — please enter a valid path",
             ).ask()
 
         if path is not None:
