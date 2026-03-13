@@ -57,6 +57,9 @@ class TrainingConfig(BaseModel):
     # Sequence settings
     max_seq_length: Optional[int] = None
 
+    # Chat template settings
+    use_chat_template: bool = False
+
     # Evaluation settings
     eval_split: float = 0.2
     eval_steps: int = 100

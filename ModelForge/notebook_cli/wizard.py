@@ -225,6 +225,7 @@ class ModelForgeWizard:
             "max_seq_length": hyperparams.get("max_seq_length", 2048),
             "use_4bit": hyperparams.get("use_4bit", True),
             "use_8bit": hyperparams.get("use_8bit", False),
+            "use_chat_template": hyperparams.get("use_chat_template", False),
             # TrainingConfig defaults for the rest
             "lora_dropout": TrainingConfig.model_fields["lora_dropout"].default,
             "bnb_4bit_compute_dtype": TrainingConfig.model_fields["bnb_4bit_compute_dtype"].default,

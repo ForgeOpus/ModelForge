@@ -2,7 +2,8 @@
 Interactive prompt steps for the ModelForge notebook CLI wizard.
 
 Each function handles one wizard step and returns a typed value.
-All prompts use questionary; display panels use rich.
+Uses questionary in terminals; falls back to plain input() in notebooks.
+Display panels use rich.
 """
 from __future__ import annotations
 
@@ -18,6 +19,67 @@ if TYPE_CHECKING:
     from ..services.training_service import TrainingService
 
 console = Console()
+
+
+def _is_notebook() -> bool:
+    """Return True when running inside a Jupyter/Colab/Databricks kernel."""
+    try:
+        from IPython import get_ipython
+        return get_ipython() is not None
+    except ImportError:
+        return False
+
+
+_IN_NOTEBOOK = _is_notebook()
+
+
+# ── Notebook-safe input() fallbacks ──────────────────────────────────────────
+
+def _nb_select(message: str, choices: list) -> str:
+    """Numbered-menu fallback for questionary.select()."""
+    print(f"\n{message}")
+    for i, choice in enumerate(choices, 1):
+        title = choice.title if hasattr(choice, "title") else str(choice)
+        print(f"  {i}) {title}")
+    while True:
+        raw = input("Enter number: ").strip()
+        if raw.isdigit() and 1 <= int(raw) <= len(choices):
+            c = choices[int(raw) - 1]
+            return c.value if hasattr(c, "value") else c
+        print(f"  Please enter a number between 1 and {len(choices)}.")
+
+
+def _nb_text(message: str, default: str = "", validate=None) -> str:
+    """Plain input() fallback for questionary.text()."""
+    while True:
+        raw = input(f"{message} ").strip()
+        if not raw and default:
+            raw = default
+        if validate is None:
+            return raw
+        result = validate(raw)
+        if result is True:
+            return raw
+        print(f"  {result}")
+
+
+def _nb_path(message: str, validate=None) -> str:
+    """Plain input() fallback for questionary.path()."""
+    return _nb_text(message, validate=validate)
+
+
+def _nb_confirm(message: str, default: bool = True) -> bool:
+    """y/n fallback for questionary.confirm()."""
+    hint = "Y/n" if default else "y/N"
+    while True:
+        raw = input(f"{message} [{hint}]: ").strip().lower()
+        if not raw:
+            return default
+        if raw in ("y", "yes"):
+            return True
+        if raw in ("n", "no"):
+            return False
+        print("  Please enter y or n.")
 
 # ── Choices ────────────────────────────────────────────────────────────────
 
@@ -58,6 +120,8 @@ _STRATEGY_FORMAT_HELP = {
 
 def prompt_task() -> str:
     """Ask the user to select a fine-tuning task."""
+    if _IN_NOTEBOOK:
+        return _nb_select("Select fine-tuning task:", _TASK_CHOICES)
     return questionary.select(
         "Select fine-tuning task:",
         choices=_TASK_CHOICES,
@@ -80,6 +144,15 @@ def prompt_model(recommended: str, alternatives: list[str]) -> str:
     for alt in alternatives:
         choices.append(questionary.Choice(alt, value=alt))
     choices.append(questionary.Choice("Enter a custom model ID…", value="__custom__"))
+
+    if _IN_NOTEBOOK:
+        selection = _nb_select("Select a base model:", choices)
+        if selection == "__custom__":
+            selection = _nb_text(
+                "Enter HuggingFace model ID (e.g. meta-llama/Llama-3.2-1B):",
+                validate=lambda v: bool(v.strip()) or "Model ID cannot be empty",
+            )
+        return selection
 
     selection = questionary.select(
         "Select a base model:",
@@ -111,11 +184,16 @@ def prompt_dataset(task: str, strategy: str, training_service: "TrainingService"
     fmt = _STRATEGY_FORMAT_HELP.get(strategy) or _TASK_FORMAT_HELP.get(task, "JSON Lines file.")
     console.print(f"\n[dim]Expected format:[/dim] {fmt}")
 
+    _path_validate = lambda v: os.path.isfile(v) or "File not found — please enter a valid path"
+
     while True:
-        path = questionary.path(
-            "Path to dataset file (.jsonl / .json):",
-            validate=lambda v: os.path.isfile(v) or "File not found — please enter a valid path",
-        ).ask()
+        if _IN_NOTEBOOK:
+            path = _nb_path("Path to dataset file (.jsonl / .json):", validate=_path_validate)
+        else:
+            path = questionary.path(
+                "Path to dataset file (.jsonl / .json):",
+                validate=_path_validate,
+            ).ask()
 
         if path is None:
             raise KeyboardInterrupt
@@ -131,13 +209,18 @@ def prompt_dataset(task: str, strategy: str, training_service: "TrainingService"
             return path
         except Exception as exc:
             console.print(f"  [red]✗[/red] Validation failed: {exc}")
-            retry = questionary.confirm("Try a different file?", default=True).ask()
+            if _IN_NOTEBOOK:
+                retry = _nb_confirm("Try a different file?", default=True)
+            else:
+                retry = questionary.confirm("Try a different file?", default=True).ask()
             if not retry:
                 raise
 
 
 def prompt_provider() -> str:
     """Ask the user to choose a training provider."""
+    if _IN_NOTEBOOK:
+        return _nb_select("Select training provider:", _PROVIDER_CHOICES)
     return questionary.select(
         "Select training provider:",
         choices=_PROVIDER_CHOICES,
@@ -147,6 +230,8 @@ def prompt_provider() -> str:
 
 def prompt_strategy() -> str:
     """Ask the user to choose a training strategy."""
+    if _IN_NOTEBOOK:
+        return _nb_select("Select training strategy:", _STRATEGY_CHOICES)
     return questionary.select(
         "Select training strategy:",
         choices=_STRATEGY_CHOICES,
@@ -178,20 +263,28 @@ def prompt_hyperparams(defaults: dict) -> dict:
 
     def _ask_int(key: str, question: str) -> int:
         default = defaults.get(key)
-        raw = questionary.text(
-            f"{question} [default: {default}]:",
-            default=str(default),
-            validate=lambda v: v.isdigit() and int(v) >= 1 or f"Must be a positive integer",
-        ).ask()
+        validate = lambda v: v.isdigit() and int(v) >= 1 or "Must be a positive integer"
+        if _IN_NOTEBOOK:
+            raw = _nb_text(f"{question} [default: {default}]:", default=str(default), validate=validate)
+        else:
+            raw = questionary.text(
+                f"{question} [default: {default}]:",
+                default=str(default),
+                validate=validate,
+            ).ask()
         return int(raw)
 
     def _ask_float(key: str, question: str, min_val: float = 0.0) -> float:
         default = defaults.get(key)
-        raw = questionary.text(
-            f"{question} [default: {default}]:",
-            default=str(default),
-            validate=lambda v: _valid_float(v, min_val),
-        ).ask()
+        validate = lambda v: _valid_float(v, min_val)
+        if _IN_NOTEBOOK:
+            raw = _nb_text(f"{question} [default: {default}]:", default=str(default), validate=validate)
+        else:
+            raw = questionary.text(
+                f"{question} [default: {default}]:",
+                default=str(default),
+                validate=validate,
+            ).ask()
         return float(raw)
 
     def _valid_float(v: str, min_val: float) -> bool | str:
@@ -219,13 +312,29 @@ def prompt_hyperparams(defaults: dict) -> dict:
         questionary.Choice("None (full precision / no bitsandbytes required)", value="none"),
     ]
     default_quant = "4bit" if defaults.get("use_4bit") else ("8bit" if defaults.get("use_8bit") else "none")
-    quant = questionary.select(
-        f"Quantization [default: {default_quant}]:",
-        choices=quant_choices,
-        default=quant_choices[["4bit", "8bit", "none"].index(default_quant)],
-    ).ask()
+    if _IN_NOTEBOOK:
+        quant = _nb_select(f"Quantization [default: {default_quant}]:", quant_choices)
+    else:
+        quant = questionary.select(
+            f"Quantization [default: {default_quant}]:",
+            choices=quant_choices,
+            default=quant_choices[["4bit", "8bit", "none"].index(default_quant)],
+        ).ask()
     params["use_4bit"] = quant == "4bit"
     params["use_8bit"] = quant == "8bit"
+
+    if _IN_NOTEBOOK:
+        params["use_chat_template"] = _nb_confirm(
+            "Use model's native chat template for formatting? "
+            "(recommended for instruct models)",
+            default=False,
+        )
+    else:
+        params["use_chat_template"] = questionary.confirm(
+            "Use model's native chat template for formatting? "
+            "(recommended for instruct models)",
+            default=False,
+        ).ask()
 
     return params
 
@@ -260,6 +369,7 @@ def prompt_confirm_config(config: dict) -> bool:
         ("max_seq_length", "Max seq length"),
         ("use_4bit", "4-bit quantization"),
         ("use_8bit", "8-bit quantization"),
+        ("use_chat_template", "Use chat template"),
     ]
 
     for key, label in display_keys:
@@ -268,6 +378,8 @@ def prompt_confirm_config(config: dict) -> bool:
 
     console.print(table)
 
+    if _IN_NOTEBOOK:
+        return _nb_confirm("Start training with this configuration?", default=True)
     return questionary.confirm(
         "Start training with this configuration?", default=True
     ).ask()

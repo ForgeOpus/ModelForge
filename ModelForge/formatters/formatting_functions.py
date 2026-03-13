@@ -6,10 +6,23 @@ that are ready for training. Each function must return a list of strings
 as required by Unsloth.
 """
 
-from typing import Callable, List
+from typing import Any, Callable, List, Optional
+
+try:
+    from jinja2.exceptions import TemplateError
+except ImportError:
+    TemplateError = Exception
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def create_text_generation_formatter(eos_token: str) -> Callable:
+def create_text_generation_formatter(
+    eos_token: str,
+    tokenizer: Optional[Any] = None,
+    use_chat_template: bool = False,
+) -> Callable:
     """
     Create formatting function for text-generation tasks.
 
@@ -19,6 +32,8 @@ def create_text_generation_formatter(eos_token: str) -> Callable:
 
     Args:
         eos_token: The EOS token string from the tokenizer
+        tokenizer: Optional tokenizer instance (required when use_chat_template=True)
+        use_chat_template: If True, use the tokenizer's native chat template
 
     Returns:
         Formatting function that returns a list of formatted strings
@@ -27,9 +42,24 @@ def create_text_generation_formatter(eos_token: str) -> Callable:
         prompt = example.get("prompt", "")
         completion = example.get("completion", "")
 
-        # Format as USER/ASSISTANT conversation with EOS token
-        text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
+        if use_chat_template and tokenizer is not None:
+            try:
+                messages = [
+                    {"role": "user", "content": prompt},
+                    {"role": "assistant", "content": completion},
+                ]
+                text = tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=False
+                )
+                return [text]
+            except (AttributeError, TemplateError, Exception) as e:
+                logger.warning(
+                    f"Chat template unavailable ({e}), "
+                    f"falling back to USER/ASSISTANT format"
+                )
 
+        # Default: USER/ASSISTANT conversation with EOS token
+        text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
         return [text]  # Must return list as required by Unsloth
 
     return formatting_func
@@ -95,13 +125,20 @@ def create_qa_formatter(eos_token: str) -> Callable:
     return formatting_func
 
 
-def get_formatting_func(task: str, eos_token: str) -> Callable:
+def get_formatting_func(
+    task: str,
+    eos_token: str,
+    tokenizer: Optional[Any] = None,
+    use_chat_template: bool = False,
+) -> Callable:
     """
     Get the appropriate formatting function for a given task type.
 
     Args:
         task: Task type (e.g., "text-generation", "summarization", "extractive-question-answering")
         eos_token: The EOS token string from the tokenizer
+        tokenizer: Optional tokenizer instance (used when use_chat_template=True)
+        use_chat_template: If True, use the tokenizer's native chat template for text-generation
 
     Returns:
         Formatting function for the specified task
@@ -109,8 +146,12 @@ def get_formatting_func(task: str, eos_token: str) -> Callable:
     Raises:
         ValueError: If the task type is not supported
     """
+    if task == "text-generation":
+        return create_text_generation_formatter(
+            eos_token, tokenizer=tokenizer, use_chat_template=use_chat_template
+        )
+
     formatters = {
-        "text-generation": create_text_generation_formatter,
         "summarization": create_summarization_formatter,
         "extractive-question-answering": create_qa_formatter,
     }
@@ -119,7 +160,7 @@ def get_formatting_func(task: str, eos_token: str) -> Callable:
     if formatter_creator is None:
         raise ValueError(
             f"No formatter available for task: {task}. "
-            f"Supported tasks: {list(formatters.keys())}"
+            f"Supported tasks: ['text-generation', {', '.join(repr(k) for k in formatters)}]"
         )
 
     return formatter_creator(eos_token)

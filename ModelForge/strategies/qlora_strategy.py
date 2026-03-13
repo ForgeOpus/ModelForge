@@ -4,6 +4,12 @@ QLoRA combines 4-bit quantization with LoRA for memory-efficient fine-tuning.
 Uses TRL's SFTTrainer with QLoRA-optimized defaults.
 """
 from typing import Any, Dict
+
+try:
+    from jinja2.exceptions import TemplateError
+except ImportError:
+    TemplateError = Exception
+
 from peft import LoraConfig, TaskType, prepare_model_for_kbit_training
 
 # Import unsloth first to prevent EOS token corruption
@@ -114,12 +120,31 @@ class QLoRAStrategy:
         task = config.get("task", "text-generation")
         eos_token = tokenizer.eos_token or tokenizer.sep_token or ""
 
+        use_chat_template = config.get("use_chat_template", False)
+
         def format_to_text(example):
             """Format each example into a single text field for SFTTrainer."""
             if task == "text-generation":
                 prompt = example.get('prompt', '')
                 completion = example.get('completion', '')
-                text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
+
+                if use_chat_template:
+                    try:
+                        messages = [
+                            {"role": "user", "content": prompt},
+                            {"role": "assistant", "content": completion},
+                        ]
+                        text = tokenizer.apply_chat_template(
+                            messages, tokenize=False, add_generation_prompt=False
+                        )
+                    except (AttributeError, TemplateError, Exception) as e:
+                        logger.warning(
+                            f"Chat template unavailable ({e}), "
+                            f"falling back to USER/ASSISTANT format"
+                        )
+                        text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
+                else:
+                    text = f"USER: {prompt}\nASSISTANT: {completion}{eos_token}"
 
             elif task == "summarization":
                 input_text = example.get('input', '')
