@@ -432,7 +432,16 @@ class TrainingService:
 
             # Train
             self.training_status["message"] = "Training in progress..."
-            trainer.train()
+            provider_name = config.get("provider", "")
+            if provider_name == "unsloth":
+                try:
+                    from unsloth import unsloth_train
+                    unsloth_train(trainer)
+                except ImportError:
+                    logger.warning("unsloth_train not available, falling back to trainer.train()")
+                    trainer.train()
+            else:
+                trainer.train()
 
             # Save model
             self.training_status["message"] = "Saving model..."

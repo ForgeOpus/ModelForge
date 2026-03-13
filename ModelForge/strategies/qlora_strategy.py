@@ -22,6 +22,7 @@ except ImportError:
 from trl import SFTTrainer, SFTConfig
 
 from ..logging_config import logger
+from .sft_strategy import _preprocess_logits_for_metrics
 
 
 class QLoRAStrategy:
@@ -269,6 +270,7 @@ class QLoRAStrategy:
             peft_config=peft_config,
             callbacks=callbacks or [],
             compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=_preprocess_logits_for_metrics,
         )
 
         logger.info("QLoRA SFTTrainer created successfully")

@@ -21,6 +21,10 @@ class MetricsCalculator:
         - Perplexity: exp(loss)
         - Loss: Cross-entropy loss
 
+        Note: When preprocess_logits_for_metrics is used, predictions contain
+        pre-computed scalar losses (one per eval batch) instead of full logit tensors.
+        This prevents RAM exhaustion during evaluation.
+
         Args:
             eval_pred: Evaluation prediction with predictions and labels
 
@@ -29,28 +33,16 @@ class MetricsCalculator:
         """
         logger.info("Computing causal LM metrics")
 
-        import torch
-        import torch.nn.functional as F
+        predictions = eval_pred.predictions
 
-        predictions, labels = eval_pred.predictions, eval_pred.label_ids
-
-        logits = torch.from_numpy(np.array(predictions)).float()
-        lbl = torch.from_numpy(np.array(labels))
-
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = lbl[..., 1:].contiguous()
-
-        loss = F.cross_entropy(
-            shift_logits.view(-1, shift_logits.size(-1)),
-            shift_labels.view(-1).long(),
-            ignore_index=-100,
-            reduction="mean",
-        )
-        perplexity = float(torch.exp(loss))
+        # predictions is shape (num_eval_batches, 1) of pre-computed scalar losses
+        # (from _preprocess_logits_for_metrics in sft_strategy.py)
+        mean_loss = float(np.mean(predictions))
+        perplexity = float(np.exp(mean_loss))
 
         metrics = {
             "perplexity": perplexity,
-            "eval_loss": float(loss),
+            "eval_loss": mean_loss,
         }
 
         logger.info(f"Causal LM metrics: {metrics}")
