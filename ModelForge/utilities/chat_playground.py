@@ -36,9 +36,14 @@ class PlaygroundModel:
     MIN_CONTEXT_LENGTH = 32
 
     def __init__(self, model_path: str):
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        if self.device == "cpu":
-            print("CUDA is not available. Exiting...")
+        # Auto-detect device: CUDA > MPS > CPU
+        if torch.cuda.is_available():
+            self.device = "cuda"
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = "mps"
+        else:
+            self.device = "cpu"
+            print("No GPU available (CUDA or MPS). Playground requires a GPU. Exiting...")
             input("\nPress Enter to exit...")
             exit(1)
 
@@ -166,7 +171,13 @@ class PlaygroundModel:
     def clean_up(self):
         if hasattr(self, 'generator'):
             del self.generator
-        torch.cuda.empty_cache()
+        # Clear device cache based on device type
+        if self.device == "cuda" and torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        elif self.device == "mps":
+            # MPS doesn't have an empty_cache() method yet, but we can help with GC
+            import gc
+            gc.collect()
         print("Resources cleaned")
 
 

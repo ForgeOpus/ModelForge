@@ -3,17 +3,17 @@
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/modelforge-finetuning?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/modelforge-finetuning)
 [![License: BSD](https://img.shields.io/badge/License-BSD-yellow.svg)](https://opensource.org/licenses/BSD)
 [![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-2.1.3-blue)](https://github.com/forgeopus/modelforge)
+[![Version](https://img.shields.io/badge/version-3-blue)](https://github.com/forgeopus/modelforge)
 
 <a href="https://www.producthunt.com/products/forgeopus?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-forgeopus" target="_blank" rel="noopener noreferrer"><img alt="ForgeOpus - Where AI masterpieces are forged. Your work, your opus. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1080450&amp;theme=light&amp;t=1771311433851"></a>
 
 **Fine-tune LLMs on your laptop's GPU—no code, no PhD, no hassle.**
 
-ModelForge v2.1 is a complete architectural overhaul bringing **2x faster training**, modular providers, advanced strategies, and production-ready code quality.
+ModelForge v3 is a complete architectural overhaul bringing **2x faster training**, modular providers, advanced strategies, and production-ready code quality.
 
 ![logo](https://github.com/user-attachments/assets/12b3545d-0e8b-4460-9291-d0786c9cb0fa)
 
-## ✨ What's New in v2.1
+## ✨ What's New in v3
 
 - 🚀 **2x Faster Training** with Unsloth provider
 - 🧩 **Multiple Providers**: HuggingFace, Unsloth (more coming!)
@@ -22,15 +22,15 @@ ModelForge v2.1 is a complete architectural overhaul bringing **2x faster traini
 - 🖥️ **Interactive CLI Wizard** (`modelforge cli`) for headless/SSH environments
 - 📦 **Optional Quantization** — bitsandbytes moved to `[quantization]` extra
 
-**[See What's New in v2.1 →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)**
+**[See What's New in v3 →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)**
 
 ## 🚀 Features
 
-- **GPU-Powered Fine-Tuning**: Optimized for NVIDIA GPUs (even 4GB VRAM)
+- **GPU-Powered Fine-Tuning**: Optimized for NVIDIA GPUs (even 4GB VRAM) and Apple Silicon (MPS)
 - **One-Click Workflow**: Upload data → Configure → Train → Test
-- **Hardware-Aware**: Auto-detects GPU and recommends optimal models
+- **Hardware-Aware**: Auto-detects GPU (CUDA or MPS) and recommends optimal settings
 - **No-Code UI**: Beautiful React interface, or use the CLI wizard for headless environments
-- **Multiple Providers**: HuggingFace (standard) or Unsloth (2x faster)
+- **Multiple Providers**: HuggingFace (standard, works on CUDA + MPS) or Unsloth (2x faster, CUDA only)
 - **Advanced Strategies**: SFT, QLoRA, RLHF, DPO support
 - **Automatic Evaluation**: Built-in metrics for all tasks
 
@@ -45,13 +45,15 @@ ModelForge v2.1 is a complete architectural overhaul bringing **2x faster traini
 ### Prerequisites
 
 - **Python 3.11.x** (Python 3.12 not yet supported)
-- **NVIDIA GPU** with 4GB+ VRAM (6GB+ recommended)
-- **CUDA** installed and configured
+- **GPU with 4GB+ VRAM**:
+  - **NVIDIA GPU** (6GB+ recommended) for CUDA-accelerated training with Unsloth support
+  - **OR Apple Silicon** (M1/M2/M3/M4/M5) for MPS-accelerated training (HuggingFace provider only, experimental)
+- **CUDA** (for NVIDIA GPUs) - [Installation Guide](https://developer.nvidia.com/cuda-downloads)
 - **HuggingFace Account** with access token ([Get one here](https://huggingface.co/settings/tokens))
-- **Linux or Windows** operating system
+- **Linux, Windows, or macOS** operating system
 
-> **⚠️ macOS is NOT supported.** ModelForge requires NVIDIA CUDA which is not available on macOS. Use Linux or Windows with NVIDIA GPU.
-> 
+> **Apple Silicon Users**: ModelForge now has **experimental support** for Apple Silicon Macs with MPS (Metal Performance Shaders). See [macOS MPS Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md) for setup instructions and limitations (HuggingFace provider only, no quantization support).
+>
 > **Windows Users**: See [Windows Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md) for platform-specific instructions, especially for Unsloth support.
 
 ### Installation
@@ -101,11 +103,12 @@ Open your browser to **http://localhost:8000** and start training!
 
 ### Getting Started
 - **[Quick Start Guide](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/quickstart.md)** - Get up and running in 5 minutes
-- **[What's New in v2.1](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)** - Major features and improvements
+- **[What's New in v3](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)** - Major features and improvements
 
 ### Installation
 - **[Windows Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md)** - Complete Windows setup (including WSL and Docker)
 - **[Linux Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/linux.md)** - Linux setup guide
+- **[macOS (Apple Silicon) Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md)** - Setup for M1/M2/M3/M4/M5 Macs with MPS support
 - **[Post-Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/post-installation.md)** - Initial configuration
 
 ### Configuration & Usage
@@ -146,10 +149,11 @@ Open your browser to **http://localhost:8000** and start training!
 
 | Platform | HuggingFace Provider | Unsloth Provider | Notes |
 |----------|---------------------|------------------|-------|
-| **Linux** | ✅ Full support | ✅ Full support | Recommended |
+| **Linux (Native)** | ✅ Full support | ✅ Full support | Recommended for best performance |
 | **Windows (Native)** | ✅ Full support | ❌ Not supported | Use WSL or Docker for Unsloth |
 | **WSL 2** | ✅ Full support | ✅ Full support | Recommended for Windows users |
 | **Docker** | ✅ Full support | ✅ Full support | With NVIDIA runtime |
+| **macOS (Apple MPS)** | ✅ Experimental | ❌ Not supported | Requires PyTorch MPS; no bitsandbytes / Unsloth; smaller models recommended |
 
 **[Platform-Specific Installation Guides →](https://github.com/forgeopus/modelforge/tree/main/docs/installation/)**
 
@@ -246,6 +250,6 @@ BSD License - see [LICENSE](LICENSE) file for details.
 
 ---
 
-**ModelForge v2.1 - Making LLM fine-tuning accessible to everyone** 🚀
+**ModelForge v3 - Making LLM fine-tuning accessible to everyone** 🚀
 
 **[Get Started →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/quickstart.md)** | **[Documentation →](https://github.com/forgeopus/modelforge/tree/main/docs/)** | **[GitHub →](https://github.com/forgeopus/modelforge)**

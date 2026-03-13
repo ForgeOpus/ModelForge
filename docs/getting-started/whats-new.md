@@ -1,6 +1,18 @@
 # What's New in ModelForge
 
-## What's New in v2.1.3
+## What's New in v3
+
+### Apple Silicon (MPS) Support
+
+ModelForge v3 adds native support for training on Apple Silicon Macs (M1/M2/M3/M4/M5) via PyTorch's MPS backend:
+
+- **Auto-detection** — set `"device": "auto"` and ModelForge picks MPS automatically on Apple Silicon
+- **MPS-safe defaults** — quantization, mixed-precision flags, and dataloader settings are automatically adjusted for MPS compatibility
+- **Unsloth guard** — clear error if Unsloth provider is selected on MPS (CUDA only), with a prompt to switch to HuggingFace
+- **Memory management** — `PYTORCH_MPS_HIGH_WATERMARK_RATIO` is configured automatically to let macOS manage memory pressure
+- **Supported models** — 1B to 7B models depending on unified memory (8GB → 1-3B, 16GB → up to 3B, 32GB+ → up to 7B)
+
+See the **[macOS Installation Guide](../installation/macos-mps.md)** for full setup instructions.
 
 ### Interactive CLI Wizard
 
@@ -31,7 +43,7 @@ This prevents cryptic training errors by catching incompatible configurations ea
 
 ### Legacy Tuner Removal
 
-The following legacy tuners have been removed in v2.1:
+The following legacy tuners have been removed:
 
 - `CausalLLMTuner`
 - `Finetuner`

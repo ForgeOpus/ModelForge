@@ -1,10 +1,10 @@
-# ModelForge v2.0 Architecture
+# ModelForge v3 Architecture
 
 Technical overview of ModelForge's modular architecture.
 
 ## Architecture Overview
 
-ModelForge v2.0 uses a clean, modular architecture based on SOLID principles:
+ModelForge v3 uses a clean, modular architecture based on SOLID principles:
 
 ```
 ┌─────────────────────────────────────────────────────┐

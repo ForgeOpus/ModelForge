@@ -3,6 +3,12 @@ Refactored FastAPI application for ModelForge.
 Clean architecture with dependency injection and proper error handling.
 """
 import os
+
+# MPS fallback must be set before importing torch (which happens transitively
+# via router/strategy/provider imports below). Once torch is imported, this
+# env var is read and cannot be changed.
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -54,7 +60,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="ModelForge",
     description="Modular fine-tuning platform with support for multiple providers and strategies",
-    version="v2",
+    version="v3",
     lifespan=lifespan,
 )
 
@@ -167,7 +173,7 @@ async def health_check():
     """Health check endpoint."""
     return {
         "status": "healthy",
-        "version": "2.0.1",
+        "version": "3.0.0",
         "message": "ModelForge is running",
     }
 
@@ -181,7 +187,7 @@ async def get_info():
 
     return {
         "name": "ModelForge",
-        "version": "2.0.1",
+        "version": "3.0.0",
         "description": "No-code fine-tuning platform",
         "available_providers": ProviderFactory.get_available_providers(),
         "available_strategies": StrategyFactory.get_available_strategies(),
@@ -198,7 +204,7 @@ async def get_info():
 async def root():
     """Root API endpoint."""
     return {
-        "message": "Welcome to ModelForge API v2",
+        "message": "Welcome to ModelForge API v3",
         "docs": "/docs",
         "health": "/api/health",
         "info": "/api/info",
@@ -218,7 +224,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app_new:app",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=8000,
         reload=True,
         log_level="info",
