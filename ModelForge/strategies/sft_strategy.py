@@ -23,6 +23,37 @@ from trl import SFTTrainer, SFTConfig
 from ..logging_config import logger
 
 
+def _preprocess_logits_for_metrics(logits, labels):
+    """
+    Reduce logit tensors to scalar loss per batch before CPU accumulation.
+
+    This prevents RAM exhaustion when the Trainer accumulates eval predictions.
+    Instead of storing full logit tensors (batch × seq_len × vocab_size),
+    we compute the loss on GPU and return only a scalar, reducing memory by
+    orders of magnitude (e.g., 19.7 GB/batch → bytes/batch).
+
+    Args:
+        logits: Model logits (batch, seq_len, vocab_size)
+        labels: Token labels (batch, seq_len)
+
+    Returns:
+        Scalar loss tensor for this batch, shape (1,)
+    """
+    import torch.nn.functional as F
+
+    shift_logits = logits[..., :-1, :].contiguous()
+    shift_labels = labels[..., 1:].contiguous()
+
+    loss = F.cross_entropy(
+        shift_logits.view(-1, shift_logits.size(-1)),
+        shift_labels.view(-1).long(),
+        ignore_index=-100,
+        reduction="mean",
+    )
+
+    return loss.unsqueeze(0)
+
+
 class SFTStrategy:
     """Supervised Fine-Tuning strategy using TRL's SFTTrainer."""
 
@@ -248,6 +279,7 @@ class SFTStrategy:
             peft_config=peft_config,
             callbacks=callbacks or [],
             compute_metrics=compute_metrics,
+            preprocess_logits_for_metrics=_preprocess_logits_for_metrics,
         )
 
         logger.info("SFTTrainer created successfully")
