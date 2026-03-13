@@ -38,48 +38,151 @@ class ModelForgeWizard:
     # ── Public ─────────────────────────────────────────────────────────────
 
     def run(self) -> None:
-        """Execute the full wizard flow."""
-        from pydantic import ValidationError
-
-        from ..schemas.training_schemas import TrainingConfig
-        from .prompts import prompt_confirm_config
+        """Show main menu in a loop, dispatching until the user exits."""
+        from .prompts import prompt_main_menu
 
         try:
             self._print_banner()
-            hardware_info = self._detect_hardware()
-            task = self._select_task()
-            model_name = self._select_model(task, hardware_info)
-            provider = self._select_provider()
-            strategy = self._select_strategy()
-            dataset_path = self._select_dataset(task, strategy)
-            hyperparams = self._configure_hyperparams(hardware_info, strategy)
-            config = self._build_config(
-                task=task,
-                model_name=model_name,
-                provider=provider,
-                strategy=strategy,
-                dataset=dataset_path,
-                compute_specs=hardware_info.get("compute_profile", "low_end"),
-                hyperparams=hyperparams,
-            )
-            try:
-                TrainingConfig(**config)
-            except ValidationError as exc:
-                errors = "; ".join(e["msg"] for e in exc.errors())
-                self.console.print(
-                    f"\n[red bold]Invalid configuration:[/red bold] {errors}"
-                )
-                return
-            confirmed = prompt_confirm_config(config)
-            if not confirmed:
-                self.console.print("\n[yellow]Training cancelled.[/yellow]")
-                return
-            self._run_training(config)
+            while True:
+                action = prompt_main_menu()
+                if action is None or action == "exit":
+                    self.console.print("\n[dim]Goodbye![/dim]")
+                    return
+                if action == "train":
+                    self._run_train_wizard()
+                elif action == "list":
+                    self._list_models()
+                elif action == "test":
+                    self._test_model()
         except KeyboardInterrupt:
             self.console.print("\n\n[yellow]Interrupted — goodbye.[/yellow]")
         except Exception as exc:
             self.console.print(f"\n[red bold]Error:[/red bold] {exc}")
             raise
+
+    def _run_train_wizard(self) -> None:
+        """Execute the full training wizard flow."""
+        from pydantic import ValidationError
+
+        from ..schemas.training_schemas import TrainingConfig
+        from .prompts import prompt_confirm_config
+
+        hardware_info = self._detect_hardware()
+        task = self._select_task()
+        model_name = self._select_model(task, hardware_info)
+        provider = self._select_provider()
+        strategy = self._select_strategy()
+        dataset_path = self._select_dataset(task, strategy)
+        hyperparams = self._configure_hyperparams(hardware_info, strategy)
+        config = self._build_config(
+            task=task,
+            model_name=model_name,
+            provider=provider,
+            strategy=strategy,
+            dataset=dataset_path,
+            compute_specs=hardware_info.get("compute_profile", "low_end"),
+            hyperparams=hyperparams,
+        )
+        try:
+            TrainingConfig(**config)
+        except ValidationError as exc:
+            errors = "; ".join(e["msg"] for e in exc.errors())
+            self.console.print(
+                f"\n[red bold]Invalid configuration:[/red bold] {errors}"
+            )
+            return
+        confirmed = prompt_confirm_config(config)
+        if not confirmed:
+            self.console.print("\n[yellow]Training cancelled.[/yellow]")
+            return
+        self._run_training(config)
+
+    # ── List & Test ────────────────────────────────────────────────────────
+
+    def _list_models(self) -> None:
+        """Display a table of all fine-tuned models."""
+        from rich.table import Table
+
+        from ..dependencies import get_model_service
+
+        self.console.print("\n[bold]Past Fine-Tuned Models[/bold]\n")
+        model_service = get_model_service()
+        models = model_service.get_all_models()
+
+        if not models:
+            self.console.print("  [dim]No models found.[/dim]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Name")
+        table.add_column("Base Model")
+        table.add_column("Task")
+        table.add_column("Strategy")
+        table.add_column("Provider")
+        table.add_column("Created")
+        table.add_column("Path", style="dim")
+
+        for i, m in enumerate(models, 1):
+            created = m.get("created_at", "")
+            if created:
+                created = created[:16].replace("T", " ")
+            table.add_row(
+                str(i),
+                m.get("name", "—"),
+                m.get("base_model", "—"),
+                m.get("task", "—"),
+                m.get("strategy", "—"),
+                m.get("provider", "—"),
+                created,
+                m.get("path", "—"),
+            )
+
+        self.console.print(table)
+
+    def _test_model(self) -> None:
+        """Let the user pick a fine-tuned model and launch the playground."""
+        import os
+
+        from rich.panel import Panel
+
+        from ..dependencies import get_model_service
+        from .prompts import prompt_select_model
+
+        self.console.print("\n[bold]Test a Fine-Tuned Model[/bold]\n")
+        model_service = get_model_service()
+        models = model_service.get_all_models()
+
+        if not models:
+            self.console.print("  [dim]No models found. Fine-tune a model first.[/dim]")
+            return
+
+        selected = prompt_select_model(models)
+        if selected is None:
+            return
+
+        model_path = selected.get("path", "")
+        if not model_path or not os.path.isdir(model_path):
+            self.console.print(
+                f"\n[red]Model path not found:[/red] {model_path}"
+            )
+            return
+
+        self.console.print(
+            Panel(
+                f"[bold]Model:[/bold]  {selected.get('name', '—')}\n"
+                f"[bold]Path:[/bold]   {model_path}\n\n"
+                "[dim]Type /bye to exit, /view_settings to inspect the model.[/dim]",
+                title="Playground",
+                border_style="cyan",
+                expand=False,
+            )
+        )
+
+        from ..utilities.chat_playground import PlaygroundModel
+
+        bot = PlaygroundModel(model_path=model_path)
+        bot.chat()
 
     # ── Steps ───────────────────────────────────────────────────────────────
 

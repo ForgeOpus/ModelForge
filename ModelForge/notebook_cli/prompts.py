@@ -83,6 +83,14 @@ def _nb_confirm(message: str, default: bool = True) -> bool:
 
 # ── Choices ────────────────────────────────────────────────────────────────
 
+_MAIN_MENU_CHOICES = [
+    questionary.Choice("Fine-tune a model", value="train"),
+    questionary.Choice("List past models", value="list"),
+    questionary.Choice("Test a fine-tuned model", value="test"),
+    questionary.Choice("Exit", value="exit"),
+]
+
+
 _TASK_CHOICES = [
     questionary.Choice("Text Generation  (causal LM fine-tuning)", value="text-generation"),
     questionary.Choice("Summarization    (seq-to-seq fine-tuning)", value="summarization"),
@@ -340,6 +348,49 @@ def prompt_hyperparams(defaults: dict) -> dict:
         ).ask()
 
     return params
+
+
+def prompt_main_menu() -> str:
+    """Ask the user what they want to do."""
+    if _IN_NOTEBOOK:
+        return _nb_select("What would you like to do?", _MAIN_MENU_CHOICES)
+    return questionary.select(
+        "What would you like to do?",
+        choices=_MAIN_MENU_CHOICES,
+        style=questionary.Style([("selected", "fg:cyan bold")]),
+    ).ask()
+
+
+def prompt_select_model(models: list[dict]) -> dict | None:
+    """
+    Ask the user to select a model from a list.
+
+    Args:
+        models: List of model dictionaries from the database.
+
+    Returns:
+        Selected model dict, or None if cancelled.
+    """
+    choices = []
+    for m in models:
+        label = (
+            f"{m.get('name', 'unknown')}  "
+            f"[{m.get('task', '?')} / {m.get('strategy', '?')}]"
+        )
+        choices.append(questionary.Choice(label, value=m["id"]))
+
+    if _IN_NOTEBOOK:
+        model_id = _nb_select("Select a model:", choices)
+    else:
+        model_id = questionary.select(
+            "Select a model:",
+            choices=choices,
+            style=questionary.Style([("selected", "fg:cyan bold")]),
+        ).ask()
+
+    if model_id is None:
+        return None
+    return next((m for m in models if m["id"] == model_id), None)
 
 
 def prompt_confirm_config(config: dict) -> bool:

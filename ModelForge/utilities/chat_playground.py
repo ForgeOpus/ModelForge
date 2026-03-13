@@ -78,7 +78,7 @@ class PlaygroundModel:
             input("\nPress Enter to exit...")
             exit(1)
         except KeyError:
-            print(f"Pipeline task {self.modelforge_config['pipeline_task']} not found in definitions for the pipeline object of transformers.")
+            print(traceback.format_exc())
             input("\nPress Enter to exit...")
             exit(1)
         except Exception as e:

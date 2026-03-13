@@ -245,7 +245,6 @@ class QLoRAStrategy:
             load_best_model_at_end=True if eval_dataset else False,
             metric_for_best_model="eval_loss" if eval_dataset else None,
             ddp_find_unused_parameters=False,
-            use_cache=False,
             # Dataloader settings (MPS sets these to avoid multiprocessing issues)
             dataloader_num_workers=config.get("dataloader_num_workers", 0),
             dataloader_pin_memory=config.get("dataloader_pin_memory", True),
