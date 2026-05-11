@@ -1,0 +1,8 @@
+## Python gitignores
+.py[ocd]
+__pycache__/
+.env
+.env.local
+.venv
+venv/
+.pytest_cache/
