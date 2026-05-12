@@ -44,13 +44,10 @@ class FinetuningStrategy(ABC):
         """
         raise NotImplementedError("Please add a description")
 
-    @property
     @abstractmethod
     def set_config(self, config: Dict[str, Any]) -> None:
-        # Implement logic to set configuration parameters for the fine-tuning strategy
         raise NotImplementedError("Please add a ")
 
-    @property
     @abstractmethod
     def finetune(self, model, data):
         raise NotImplementedError("Please add a ")
