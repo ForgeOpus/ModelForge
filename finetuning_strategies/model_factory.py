@@ -46,5 +46,5 @@ class TaskModels:
         }
 
     @classmethod
-    def clear_registry(cls):
+    def clear_registry(cls) -> None:
         cls._registry.clear()

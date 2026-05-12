@@ -1,7 +1,9 @@
 from finetuning_strategies.tasks.task import FinetuningTask
+from finetuning_strategies.model_factory import TaskModels
 from transformers import AutoModelForCausalLM, AutoModel
 from typing import Type
 
+@TaskModels.register()
 class CausalLM(FinetuningTask):
 
     @property

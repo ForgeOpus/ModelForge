@@ -7,7 +7,7 @@ from typing import Optional, Union
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-class DatasetFactory():
+class DatasetFactory:
 
     @classmethod
     def handle_json(cls, path: str, streaming: bool = False) -> Union[DatasetDict, IterableDataset]:
