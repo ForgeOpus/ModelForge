@@ -134,5 +134,4 @@ class HardwareDetector:
     def detect_hardware(cls):
         specs = cls.get_device_info_non_mps() if not torch.backends.mps.is_available() else cls.get_device_info_mps()
         response = cls.HardwareSpecs(**specs)
-        print(f"Retrieved hardware specifications:\n{response}")
         return response
