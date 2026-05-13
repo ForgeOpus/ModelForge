@@ -1,28 +1,15 @@
 from finetuning_strategies.tasks.task import FinetuningTask
-from finetuning_strategies.model_factory import TaskModels
-from transformers import AutoModelForCausalLM, AutoModel
-from typing import Type
+from transformers import AutoModelForCausalLM
 
-@TaskModels.register()
 class CausalLM(FinetuningTask):
 
-    @property
-    def name(self) -> str:
-        self.name = "Text Generation"
-        return self.name
-
-    @property
-    def description(self) -> str:
-        self.description = "Generate sequences of text on any given topic"
-        return self.description
-
-    @property
-    def slug(self) -> str:
-        self.slug = "causal_language_modeling"
-        return self.slug
-    
-    @property
-    def model_class(self) -> Type[AutoModel]:
-        self.model_class = AutoModelForCausalLM
-        return self.model_class
-    
+    name = "Causal Language Modeling"
+    slug = "causal_language_modeling"
+    description = """
+    Causal Language Modeling (CLM) is a fine-tuning strategy where a pre-trained language model is further trained to 
+    predict the next token in a sequence, given all the previous tokens. This approach is particularly effective for 
+    tasks that involve generating coherent and contextually relevant text, such as story generation, dialogue systems, 
+    and code generation. In CLM, the model learns to understand the structure and semantics of language by being exposed 
+    to large amounts of text data, allowing it to generate fluent and meaningful responses based on the input it receives.
+    """
+    model_class = AutoModelForCausalLM

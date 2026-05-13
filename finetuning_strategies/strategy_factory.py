@@ -1,5 +1,12 @@
 from finetuning_strategies.strategies import FinetuningStrategy
-from typing import Dict, Type, List, Any
+from pydantic import BaseModel, Field
+from typing import Type, List
+
+class StrategyResponse(BaseModel):
+    name: str = Field(..., description="The display name of the fine-tuning strategy.")
+    slug: str = Field(..., description="The unique slug identifier for the fine-tuning strategy.")
+    description: str = Field(..., description="A detailed description of the fine-tuning strategy, including its use cases and requirements.")
+    supported_providers: List[str] = Field(..., description="A list of fine-tuning providers that are compatible with this strategy.")
 
 class FinetuningStrategies:
     """
@@ -13,49 +20,48 @@ class FinetuningStrategies:
     enhancing existing ones without disrupting the overall architecture of the system.
     """
 
-    _registry: Dict[str, FinetuningStrategy] = {}
+    instance = None
 
-    @classmethod
-    def register(cls, strategy_class: Type[FinetuningStrategy]):
-        def decorator(strategy_class: Type[FinetuningStrategy]):
-            if not issubclass(strategy_class, FinetuningStrategy):
-                raise ValueError(f"Strategy class '{strategy_class.__name__}' must inherit from FinetuningStrategy")
-            if strategy_class.slug in cls._registry:
-                raise ValueError(f"Strategy with slug '{strategy_class.slug}' is already registered")
-            cls._registry[strategy_class.slug] = strategy_class
-        return strategy_class
+    def __new__(cls):
+        if cls.instance is not None:
+            cls.instance = super(FinetuningStrategies, cls).__new__(cls)
+        return cls.instance
 
-    @classmethod
-    def get_strategy(cls, slug: str) -> Type[FinetuningStrategy]:
-        if slug not in cls._registry:
-            raise ValueError(f"Strategy with slug '{slug}' is not registered")
-        return cls._registry[slug]
     
-    @classmethod
-    def list_strategies_slugs(cls) -> List[str]:
-        return list(cls._registry.keys())
+    @staticmethod
+    def get_strategy_class(slug: str) -> Type[FinetuningStrategy]:
+        """Get a fine-tuning strategy class by its slug identifier.
 
-    @classmethod
-    def list_strategies_display_info(cls) -> List[Dict[str, Any]]:
+        Args:
+            slug (str): The unique slug identifier for the desired fine-tuning strategy.
+
+        Returns:
+            Type[FinetuningStrategy]: The fine-tuning strategy class associated with the provided slug.
+
+        Raises:
+            ValueError: If no strategy is found for the given slug.
+        """
+        if slug in FinetuningStrategy._registry:
+            return FinetuningStrategy._registry[slug]
+        else:
+            raise ValueError(f"No strategy found for slug '{slug}'")
+    
+    @staticmethod
+    def list_strategies() -> List[StrategyResponse]:
+        """List all available fine-tuning strategies with their details.
+
+        Returns:
+            List[StrategyResponse]: A list of strategy responses, each containing the name, slug, description,
+            and supported providers for a fine-tuning strategy.
+        """
         return [
-            {"name": strategy_class.name, 
-            "supported_providers": strategy_class.supported_providers} 
-            for strategy_class in cls._registry.values()
+            StrategyResponse(
+                name=strategy_cls.name,
+                slug=strategy_cls.slug,
+                description=strategy_cls.description,
+                supported_providers=strategy_cls.supported_providers
+            )
+            for strategy_cls in FinetuningStrategy._registry.values()
         ]
-
-    @classmethod
-    def get_strategy_display_info(cls, slug: str) -> Dict[str, Any]:
-        strategy_class: type[Any] = cls.get_strategy(slug)
-        return {
-            "name": strategy_class.name,
-            "supported_providers": strategy_class.supported_providers,
-            "description": strategy_class.description
-        }
-
-    
-    @classmethod
-    def clear_registry(cls):
-        cls._registry.clear()
-        
 
 

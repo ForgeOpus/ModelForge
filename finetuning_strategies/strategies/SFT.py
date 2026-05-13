@@ -6,49 +6,32 @@ implements the finetune method to perform the fine-tuning process. The provider
 attribute indicates the specific fine-tuning provider or framework being used for
 this strategy.
 '''
-from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
-from finetuning_strategies.strategy_factory import FinetuningStrategies
-from finetuning_strategies.model_factory import TaskModels
+from finetuning_strategies.tasks.task import FinetuningTask
+from finetuning_strategies.strategies.strategy import FinetuningStrategy
 from typing import List, Literal, Any, Dict, Optional, Callable, Union
-from providers import SUPPORTED_PROVIDERS
-from .strategy import FinetuningStrategy
-from trl import SFTTrainer, SFTConfig
+from finetuning_strategies.model_factory import TaskModels
 from datasets import IterableDataset, Dataset
+from .strategy import FinetuningStrategy
+from transformers import AutoTokenizer
+from trl import SFTTrainer, SFTConfig
 from peft import PeftConfig
-import torch
 
 
-@FinetuningStrategies.register()
 class SFT(FinetuningStrategy):
 
     optimizer = None
     config: Optional[SFTConfig] = None
 
-    @property
-    def name(self) -> str:
-        return "Supervised Fine-Tuning"
-
-    @property
-    def slug(self) -> str:
-        return "sft"
-
-    @property
-    def device(self) -> str:
-        return "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
-
-    @property
-    def description(self) -> str:
-        return (
-            "Supervised Fine-Tuning (SFT) is a strategy that involves training a model on a labeled dataset using supervised learning techniques. "
-            "In this approach, the model learns to make predictions based on the input data and the corresponding labels, allowing it to generalize to new, unseen data. "
-            "SFT is used in LLMs to adapt a pre-trained model to specific tasks or domains by fine-tuning it on task-specific datasets, or "
-            "to make it follow instructions and output formats to be able to hold a proper conversation with users. This strategy is effective for improving the performance of "
-            "models on specific tasks."
-        )
-
-    @property
-    def supported_providers(self) -> List[str]:
-        return ["HuggingFace", "Unsloth"]
+    name = "Supervised Fine-Tuning"
+    slug = "sft"
+    description = """
+    Supervised Fine-Tuning (SFT) is a strategy for fine-tuning pre-trained language models on specific tasks using labeled datasets. 
+    In this approach, the model is trained to predict the correct output based on the input data, leveraging the knowledge it has acquired 
+    during pre-training. SFT teaches the model to follow instructions, for output formats and to perform specific tasks by providing it with 
+    examples of the desired behavior. 
+    This strategy uses a highly-curated high-quality dataset that is often smaller in size compared to the datasets used for pre-training.
+    """
+    supported_providers = ["huggingface", "unsloth"]
 
     @staticmethod
     def validate_data_format(iterable_dataset: IterableDataset) -> bool:
@@ -214,8 +197,8 @@ class SFT(FinetuningStrategy):
         sft_config = self.config if self.config is not None else SFTConfig(output_dir="sft_output")
 
         model_init_kwargs = sft_config.model_init_kwargs or {}
-        task_class: type[Any] = TaskModels.get_task_class(task_slug)
-        model = task_class.from_pretrained(model_name, **model_init_kwargs)
+        task_class: type[FinetuningTask] = TaskModels.get_task_class(task_slug)
+        model = task_class.model_class.from_pretrained(model_name, **model_init_kwargs)
 
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         if tokenizer.pad_token is None:

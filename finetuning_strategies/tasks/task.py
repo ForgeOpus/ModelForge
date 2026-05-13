@@ -1,37 +1,28 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 from transformers import AutoModel
-from typing import Type
 
 class FinetuningTask(ABC):
 
+    _registry = {}
+    
     name: str = None
     slug: str = None
     description: str = None
 
     model_class: AutoModel = None
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Define the display name for the task"""
-        raise NotImplementedError("Please add a name for task", self.name)
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        if hasattr(cls, 'slug') and cls.slug is not None and isinstance(cls.slug, str):
+            if cls.slug in FinetuningTask._registry:
+                raise ValueError(f"Duplicate slug '{cls.slug}' found for task class '{cls.__name__}'. Please ensure that each task class has a unique slug.")
+            FinetuningTask._registry[cls.slug] = cls
+        else:
+            raise ValueError(f"Task class '{cls.__name__}' must define a 'slug' attribute")
 
-    @property
-    @abstractmethod
-    def slug(self) -> str:
-        """Define a unique task alub for the task"""
-        raise NotImplementedError("Please add a unique slub for task", self.name)
-
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Give a brief description about the task, the expected dataset format, the use cases
-        and any other relevant information"""
-        raise NotImplementedError("Please add a description for task", self.name)
-
-    @property
-    @abstractmethod
-    def model_class(self) -> Type[AutoModel]:
-        """Define the AutoModel class associated with the task type to create model of the task
-        for finetuning"""
-        raise NotImplementedError(f"Please add a model class for the task {self.name}")
+        if cls.name is None or not isinstance(cls.name, str):
+            raise ValueError(f"Task class '{cls.__name__}' must define a 'name' attribute of type string")
+        if cls.description is None or not isinstance(cls.description, str):
+            raise ValueError(f"Task class '{cls.__name__}' must define a 'description' attribute of type string")
+        if cls.model_class is None or not issubclass(cls.model_class, AutoModel):
+            raise ValueError(f"Task class '{cls.__name__}' must define a 'model_class' attribute that is a subclass of AutoModel")
