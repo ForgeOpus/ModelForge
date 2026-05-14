@@ -1,3 +1,13 @@
+"""
+Base class for finetuning tasks. Each task should inherit from this class and implement the required attributes and methods.
+Maintains a registry of all defined tasks, allowing for easy retrieval and management of tasks by their slug. Each task must 
+define a unique slug, a name, a description, and specify the model class it is associated with. The tasks are auto-registered to the
+registry upon subclassing, ensuring that all tasks are easily accessible and organized.
+
+All task access operations can be performed using the model_factory interface, which provides a consistent way to retrieve and manage 4
+tasks based on their slugs.
+"""
+
 from abc import ABC
 from transformers import AutoModel
 

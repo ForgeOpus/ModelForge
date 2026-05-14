@@ -3,6 +3,11 @@ from typing import Dict, Any, Type, List
 from pydantic import BaseModel, Field
 
 class TaskResponse(BaseModel):
+    """
+    Response model for representing fine-tuning task details. This model is used to structure the information about each fine-tuning task,
+    including its name, slug, description, and associated model class. It serves as a standardized format for returning task information in 
+    API responses or other interfaces.
+    """
     name: str = Field(..., description="The display name of the fine-tuning task.")
     slug: str = Field(..., description="The unique slug identifier for the fine-tuning task.")
     description: str = Field(..., description="A detailed description of the fine-tuning task, including its use cases and requirements.")
@@ -12,6 +17,8 @@ class TaskModels:
     """
     This module provides a collection of different supported task types associated with language modeling.
     These task types control the model heads and the expected dataset formats for the different SFT technniques.
+    This factory provides a public interface to retrieve the different task types based on their slugs, and also to list all available 
+    tasks with their details.
     """
 
     @classmethod
