@@ -1,0 +1,224 @@
+import sqlite3
+from platformdirs import user_data_dir, user_config_dir
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional
+from pathlib import Path
+import sqlite3
+import re
+
+app_name = "ModelForge"
+app_author = "ForgeOpus"
+data_dir = Path(user_data_dir(app_name, app_author))
+config_dir = Path(user_config_dir(app_name, app_author))
+
+class ModelMetadata(BaseModel):
+    id: Optional[int] = Field(None, description="The unique identifier for the model.")
+    name: str = Field(..., description="The display name of the model.")
+    task_slug: str = Field(..., description="The slug identifier for the fine-tuning task associated with this model.")
+    description: Optional[str] = Field(None, description="A detailed description of the model, including its use cases and requirements.")
+    model_path: str = Field(..., description="The path where the model is stored.")
+    pushed_to_hub: bool = Field(..., description="Indicates whether the model has been pushed to Hugging Face Hub.")
+    created_at: str = Field(..., description="The date and time when the model was created.")
+
+    @field_validator('id', mode='before')
+    def validate_id(cls, value):
+        if value is None:
+            return None
+        if not isinstance(value, int):
+            raise ValueError("ID must be an integer")
+        return value
+    
+    @field_validator('name', 'task_slug', 'model_path', mode='before')
+    def validate_non_empty_string(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("This field must be a non-empty string")
+        return value.strip()
+    
+    @field_validator('model_path', mode='before')
+    def validate_model_path(cls, value):
+        value = value.strip()
+        global data_dir
+        parent_dir = Path(value).parent
+        if not parent_dir == data_dir:
+            raise ValueError("Model path must be within the ModelForge data directory")
+        return value
+    
+    @field_validator('created_at', mode='before')
+    def validate_created_at(cls, value):
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError("Created at must be a non-empty string")
+        value = value.strip()
+        # Accept dates in YYYY-MM-DD or ISO 8601 datetime formats (e.g., 2023-05-01 or 2023-05-01T13:45:30Z)
+        iso_regex = re.compile(r"^\d{4}-\d{2}-\d{2}([T\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?)?$")
+        if not iso_regex.match(value):
+            raise ValueError("Created at must be a valid date (YYYY-MM-DD) or ISO 8601 datetime")
+        return value
+
+    @field_validator('pushed_to_hub', mode='before')
+    def validate_pushed_to_hub(cls, value):
+        if not isinstance(value, bool):
+            raise ValueError("Pushed to hub must be a boolean value")
+        return value
+
+
+class DatabaseManager:
+
+    _instance = None
+
+
+    def _initialize(self) -> None:
+        """
+        Initializes the DatabaseManager by creating the necessary directories and setting up the SQLite database.
+        This method is called only once when the singleton instance is created. It ensures that the data
+        and config directories exist, and then creates a connection to the SQLite database located in the data directory.
+
+        Args:
+            None
+        Returns:
+            None
+        """
+        global data_dir, config_dir
+        data_dir.mkdir(parents=True, exist_ok=True)
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.connection = sqlite3.connect(data_dir / "modelforge.db")
+        self.cursor = self.connection.cursor()
+
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS models (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                task_slug TEXT NOT NULL,
+                description TEXT,
+                model_path TEXT NOT NULL,
+                pushed_to_hub BOOLEAN NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        ''')
+
+        self._instance = self
+
+
+    def __new__(cls) -> DatabaseManager:
+        """Implements the singleton pattern to ensure only one instance of DatabaseManager exists.
+        Args:
+            None
+        Returns:
+            DatabaseManager: The singleton instance of the DatabaseManager class.
+        """
+        if cls._instance is None:
+            cls._instance = super(DatabaseManager, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    
+    def save_model(self, model_metadata: ModelMetadata) -> int:
+        """Saves a model's metadata to the database. If the model already has an ID, it updates the existing record; otherwise, it creates a new record.
+        Args:
+            model_metadata (ModelMetadata): An instance of the ModelMetadata class containing the details of the model to be saved.
+        Returns:
+            int: The ID of the saved model in the database. If the model was updated,
+            it returns the existing ID; if a new model was created, it returns the newly generated ID.
+        Raises:
+            ValueError: If the provided model metadata is invalid or if there are issues with the database operation.
+        """
+
+        if model_metadata.id is not None:
+            self.cursor.execute('''
+                UPDATE models
+                SET name = ?, task_slug = ?, description = ?, model_path = ?, pushed_to_hub = ?, created_at = ?
+                WHERE id = ?
+            ''', (
+                model_metadata.name,
+                model_metadata.task_slug,
+                model_metadata.description,
+                model_metadata.model_path,
+                model_metadata.pushed_to_hub,
+                model_metadata.created_at,
+                model_metadata.id
+            ))
+            self.connection.commit()
+            return model_metadata.id
+        else:
+            if model_metadata.created_at is None or model_metadata.created_at.strip() == "":
+                from datetime import datetime
+                model_metadata.created_at = datetime.utcnow().isoformat()
+            elif model_metadata.created_at.strip() < datetime.utcnow().isoformat():
+                raise ValueError("Created at cannot be in the past")
+            
+            if model_metadata.id is not None:
+                raise ValueError("ID must be None for new models")
+
+            self.cursor.execute('''
+                INSERT INTO models (name, task_slug, description, model_path, pushed_to_hub, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (
+                model_metadata.name,
+                model_metadata.task_slug,
+                model_metadata.description,
+                model_metadata.model_path,
+                model_metadata.pushed_to_hub,
+                model_metadata.created_at
+            ))
+            self.connection.commit()
+            return self.cursor.lastrowid
+        
+
+    def list_all_models(self, limit: int = 100) -> List[ModelMetadata]:
+        """Retrieves a list of all models stored in the database, ordered by creation date in descending order. The number of models returned can be limited by specifying the 'limit' parameter.
+        Args:
+            limit (int, optional): The maximum number of models to retrieve. Defaults to 100. Put -1 to retrieve all models without limit (potentially slow).
+        Returns:
+            List[ModelMetadata]: A list of ModelMetadata instances representing the models stored in the database.
+        Raises:
+            ValueError: If the provided limit is not a positive integer or if there are issues with
+            the database operation.
+        """
+        if not isinstance(limit, int) or (limit <= 0 and limit != -1):
+            raise ValueError("Limit must be a positive integer or -1 for no limit")
+
+        if limit == -1:
+            self.cursor.execute('''
+                SELECT id, name, task_slug, description, model_path, pushed_to_hub, created_at
+                FROM models
+                ORDER BY created_at DESC
+            ''')
+        else:
+            parameters = (limit,)
+            self.cursor.execute('''
+                SELECT id, name, task_slug, description, model_path, pushed_to_hub, created_at
+                FROM models
+                ORDER BY created_at DESC
+                LIMIT ?
+                ''', parameters
+            )
+        
+        rows = self.cursor.fetchall()
+        return [ModelMetadata(
+            id=row[0],
+            name=row[1],
+            task_slug=row[2],
+            description=row[3],
+            model_path=row[4],
+            pushed_to_hub=bool(row[5]),
+            created_at=row[6]
+        ) for row in rows]
+
+    def delete_model(self, model_id: int) -> Optional[bool]:
+        """Deletes a model from the database based on its unique identifier (ID).
+        Args:
+            model_id (int): The unique identifier of the model to be deleted.
+        Returns:
+            Optional[bool]: Returns True if the model was successfully deleted, or None if no model with the specified ID was found.
+        Raises:
+            ValueError: If the provided model ID is not a positive integer or if there are issues with the database operation.
+        """
+
+        if not isinstance(model_id, int) or model_id <= 0:
+            raise ValueError("Model ID must be a positive integer")
+        self.cursor.execute('DELETE FROM models WHERE id = ?', (model_id,))
+        self.connection.commit()
+        if self.cursor.rowcount == 0:
+            raise ValueError(f"No model found with ID {model_id}")
+        else:
+            return True
