@@ -1,7 +1,7 @@
-import sqlite3
 from platformdirs import user_data_dir, user_config_dir
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
+from datetime import datetime
 from pathlib import Path
 import sqlite3
 import re
@@ -99,7 +99,7 @@ class DatabaseManager:
         self._instance = self
 
 
-    def __new__(cls) -> DatabaseManager:
+    def __new__(cls) -> "DatabaseManager":
         """Implements the singleton pattern to ensure only one instance of DatabaseManager exists.
         Args:
             None
@@ -141,10 +141,14 @@ class DatabaseManager:
             return model_metadata.id
         else:
             if model_metadata.created_at is None or model_metadata.created_at.strip() == "":
-                from datetime import datetime
+                
                 model_metadata.created_at = datetime.utcnow().isoformat()
-            elif model_metadata.created_at.strip() < datetime.utcnow().isoformat():
-                raise ValueError("Created at cannot be in the past")
+            else:
+                # Parse and compare dates without microseconds to avoid precision issues
+                created_dt = datetime.fromisoformat(model_metadata.created_at.replace('Z', '+00:00'))
+                now_dt = datetime.utcnow()
+                if created_dt.replace(microsecond=0) < now_dt.replace(microsecond=0):
+                    raise ValueError("Created at cannot be in the past")
             
             if model_metadata.id is not None:
                 raise ValueError("ID must be None for new models")

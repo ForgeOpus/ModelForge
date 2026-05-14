@@ -34,5 +34,5 @@ class FinetuningTask(ABC):
             raise ValueError(f"Task class '{cls.__name__}' must define a 'name' attribute of type string")
         if cls.description is None or not isinstance(cls.description, str):
             raise ValueError(f"Task class '{cls.__name__}' must define a 'description' attribute of type string")
-        if cls.model_class is None or not issubclass(cls.model_class, AutoModel):
+        if cls.model_class is None or not hasattr(cls.model_class, 'from_pretrained'):
             raise ValueError(f"Task class '{cls.__name__}' must define a 'model_class' attribute that is a subclass of AutoModel")
