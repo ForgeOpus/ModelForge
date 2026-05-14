@@ -166,13 +166,15 @@ class TestLoad:
         ("data.txt",     "text"),
     ])
     def test_extension_inference(self, filename, expected_type):
-        with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
-            DatasetFactory.load(filename)
+        with patch("dataset_manager.dataset_factory.os.path.exists", return_value=True):
+            with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
+                DatasetFactory.load(filename)
         m.assert_called_once_with(expected_type, filename, streaming=False)
 
     def test_explicit_type_used_when_provided(self):
-        with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
-            DatasetFactory.load("data.csv", type_="csv")
+        with patch("dataset_manager.dataset_factory.os.path.exists", return_value=True):
+            with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
+                DatasetFactory.load("data.csv", type_="csv")
         m.assert_called_once_with("csv", "data.csv", streaming=False)
 
     def test_no_extension_falls_through_to_remote(self):
@@ -200,6 +202,7 @@ class TestLoad:
         m.assert_called_once_with("squad", streaming=True)
 
     def test_streaming_forwarded_to_local(self):
-        with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
-            DatasetFactory.load("data.csv", streaming=True)
+        with patch("dataset_manager.dataset_factory.os.path.exists", return_value=True):
+            with patch.object(DatasetFactory, "get_local_dataset", return_value=MOCK_DS) as m:
+                DatasetFactory.load("data.csv", streaming=True)
         m.assert_called_once_with("csv", "data.csv", streaming=True)
