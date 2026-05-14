@@ -23,7 +23,7 @@ class FinetuningStrategies:
     instance = None
 
     def __new__(cls):
-        if cls.instance is not None:
+        if cls.instance is None:
             cls.instance = super(FinetuningStrategies, cls).__new__(cls)
         return cls.instance
 
