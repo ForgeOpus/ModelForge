@@ -1,13 +1,34 @@
-import re
-import logging
 from datasets import load_dataset, DatasetDict, IterableDataset
 from typing import Optional, Union
+import logging
+import re
+import os
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_EXT_PRIORITY = ["parquet", "arrow", "jsonl", "json", "csv", "txt"]
+_EXT_NORMALIZE = {"jsonl": "json", "txt": "text"}
+
 class DatasetFactory:
+
+    @classmethod
+    def _detect_dir_type(cls, path: str) -> tuple[str, list[str]]:
+        """Scan a directory and return (normalized_type, sorted_file_list) for the dominant extension."""
+        files_by_ext: dict[str, list[str]] = {}
+        for fname in sorted(os.listdir(path)):
+            if "." in fname:
+                ext = fname.rsplit(".", 1)[-1].lower()
+                if ext in set(_EXT_PRIORITY):
+                    files_by_ext.setdefault(ext, []).append(os.path.join(path, fname))
+
+        for ext in _EXT_PRIORITY:
+            if ext in files_by_ext:
+                normalized = _EXT_NORMALIZE.get(ext, ext)
+                logger.info(f"Detected {len(files_by_ext[ext])} .{ext} shard(s) in {path}")
+                return normalized, files_by_ext[ext]
+
+        raise ValueError(f"No supported dataset files found in directory: {path}")
 
     @classmethod
     def handle_json(cls, path: str, streaming: bool = False) -> Union[DatasetDict, IterableDataset]:
@@ -58,17 +79,22 @@ class DatasetFactory:
             raise ValueError(f"Invalid JSON structure for dataset loading: {e}")
 
     @classmethod
-    def get_local_dataset(cls, type_: str, path: str, streaming: bool=False) -> Union[DatasetDict, IterableDataset]:
-        """Loads a local dataset file based on its type."""
+    def get_local_dataset(cls, type_: str, path: Union[str, list[str]], streaming: bool = False) -> Union[DatasetDict, IterableDataset]:
+        """Loads a local dataset file (or list of shards) based on its type."""
         try:
             dataset: Optional[Union[DatasetDict, IterableDataset]] = None
-            
+            is_sharded = isinstance(path, list)
+
             if type_ == "csv":
                 dataset = load_dataset("csv", data_files=path, streaming=streaming)
             elif type_ == "json":
-                dataset = cls.handle_json(path, streaming=streaming)
+                # Shard files are always flat JSONL — skip nested-field detection
+                if is_sharded:
+                    dataset = load_dataset("json", data_files=path, streaming=streaming)
+                else:
+                    dataset = cls.handle_json(path, streaming=streaming)
             elif type_ == "parquet":
-                dataset = load_dataset("parquet", data_files={'train': path}, streaming=streaming)
+                dataset = load_dataset("parquet", data_files={"train": path}, streaming=streaming)
             elif type_ == "arrow":
                 dataset = load_dataset("arrow", data_files={"train": path}, streaming=streaming)
             elif type_ == "text":
@@ -101,7 +127,15 @@ class DatasetFactory:
         if remote:
             return cls.get_remote_dataset(path, streaming=streaming, **kwargs)
 
+        if os.path.isdir(path):
+            detected_type, shard_files = cls._detect_dir_type(path)
+            return cls.get_local_dataset(detected_type, shard_files, streaming=streaming)
+
         if type_ or (isinstance(path, str) and (path.endswith(('.csv', '.json', '.jsonl', '.parquet', '.arrow', '.txt')))):
+            if not os.path.exists(path):
+                logger.error(f"Local dataset file not found: {path}")
+                raise FileNotFoundError(f"Local dataset file not found: {path}")
+                
             # If type not provided but extension is present, infer it
             if not type_ and isinstance(path, str):
                 ext = path.split('.')[-1].lower()
