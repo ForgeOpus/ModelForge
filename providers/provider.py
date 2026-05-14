@@ -2,22 +2,30 @@ from abc import ABC, abstractmethod
 
 class Provider(ABC):
     
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Provider name"""
-        raise NotImplementedError("Provider name not defined for provider ", self.__name__)
+    _registry = {}
+    
+    name: str = None
+    description: str = None
+    slug: str = None
 
-    @property
-    @abstractmethod
-    def description(self) -> str:
-        """Provider name"""
-        raise NotImplementedError("Provider descripiton not defined for provider ", self.__name__)
 
-    @property
-    @abstractmethod
-    def slug(self) -> str:
-        """Provider name"""
-        raise NotImplementedError("Unique provider slug not defined for provider ", self.__name__)
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+
+        if not issubclass(cls, Provider):
+            raise ValueError(f"Provider class '{cls.__name__}' must be inherited from the base Provider class")
+        if not isinstance(cls.name, str):
+            raise ValueError(f"Provider class '{cls.__name__}' must have a 'name' of type str")
+        if not isinstance(cls.description, str):
+            raise ValueError(f"Provider class '{cls.__name__}' must have a 'description' of type str")
+        if not isinstance(cls.slug, str):
+            raise ValueError(f"Provider class '{cls.__name__}' must have a 'slug' of type str")
+            
+        if cls.slug in cls._registry:
+            raise ValueError(f"Provider with slug '{cls.slug}' already exists. Please choose a unique slug")
+        cls._registry[cls.slug] = cls
+
+
+    
 
     
