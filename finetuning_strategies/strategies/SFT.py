@@ -12,7 +12,7 @@ from typing import List, Literal, Any, Dict, Optional, Callable, Union
 from finetuning_strategies.model_factory import TaskModels
 from datasets import IterableDataset, Dataset
 from .strategy import FinetuningStrategy
-from transformers import AutoTokenizer
+from providers.provider import Provider
 from trl import SFTTrainer, SFTConfig
 from peft import PeftConfig
 
@@ -186,6 +186,7 @@ class SFT(FinetuningStrategy):
         model_name: str,
         dataset: Union[Dataset, IterableDataset],
         task_slug: str,
+        provider: Provider,
         eval_dataset: Optional[Union[Dataset, IterableDataset, Dict]] = None,
         peft_config: Optional[PeftConfig] = None,
         formatting_func: Optional[Callable] = None,
@@ -198,12 +199,8 @@ class SFT(FinetuningStrategy):
 
         model_init_kwargs = sft_config.model_init_kwargs or {}
         task_class: type[FinetuningTask] = TaskModels.get_task_class(task_slug)
-        model = task_class.model_class.from_pretrained(model_name, **model_init_kwargs)
-
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.pad_token_id = tokenizer.eos_token_id
+        model = provider.load_model(model_name, task_class.model_class, **model_init_kwargs)
+        tokenizer = provider.load_tokenizer(model_name)
 
         trainer = SFTTrainer(
             model=model,

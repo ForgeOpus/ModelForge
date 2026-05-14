@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 
 class Provider(ABC):
     
@@ -25,7 +26,10 @@ class Provider(ABC):
             raise ValueError(f"Provider with slug '{cls.slug}' already exists. Please choose a unique slug")
         cls._registry[cls.slug] = cls
 
+    @abstractmethod
+    def load_model(self, model_name: str, model_class: Any, **kwargs) -> Any:
+        raise NotImplementedError("Provider must implement load_model.")
 
-    
-
-    
+    @abstractmethod
+    def load_tokenizer(self, model_name: str) -> Any:
+        raise NotImplementedError("Provider must implement load_tokenizer.")
