@@ -1,37 +1,105 @@
 from abc import ABC, abstractmethod
+from typing import Any, Dict, List, Literal
 from providers import SUPPORTED_PROVIDERS
-from typing import List, Dict, Literal, Any
 import torch
 
+
 class FinetuningStrategy(ABC):
-    
+    """Abstract base for all fine-tuning strategies. Subclasses auto-register on definition.
+
+    Required class attributes (validated in __init_subclass__):
+        name: str — display name
+        slug: str — unique identifier
+        description: str — human-readable description
+        supported_providers: List[str] — which providers can run this strategy
+        supported_tasks: List[str] — task slugs this strategy supports (validated lazily)
+        extra_model_copies: int — additional full model weight copies in VRAM during training
+        batch_multiplier: float — multiplier on activation/batch memory budget vs SFT baseline of 1.0
+    """
+
     name: str = None
     slug: str = None
     description: str = None
 
-    _registry = {}
+    _registry: Dict[str, type] = {}
 
     supported_providers: Literal[tuple(SUPPORTED_PROVIDERS)] = None
 
-    device: Literal['cpu', 'cuda', 'mps'] = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+    # --- New required attributes for the recommendation engine ---
+    supported_tasks: List[str] = None
+    extra_model_copies: int = None
+    batch_multiplier: float = None
+
+    device: Literal["cpu", "cuda", "mps"] = (
+        "cuda" if torch.cuda.is_available()
+        else "mps" if torch.backends.mps.is_available()
+        else "cpu"
+    )
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
-        if hasattr(cls, 'slug') and cls.slug is not None and isinstance(cls.slug, str):
+
+        # --- Existing validations (unchanged) ---
+        if hasattr(cls, "slug") and cls.slug is not None and isinstance(cls.slug, str):
             if cls.slug in FinetuningStrategy._registry:
-                raise ValueError(f"Duplicate slug '{cls.slug}' found for strategy class '{cls.__name__}'. Please ensure that each strategy class has a unique slug.")
+                raise ValueError(
+                    f"Duplicate slug '{cls.slug}' found for strategy class '{cls.__name__}'. "
+                    f"Please ensure that each strategy class has a unique slug."
+                )
             FinetuningStrategy._registry[cls.slug] = cls
         else:
             raise ValueError(f"Strategy class '{cls.__name__}' must define a 'slug' attribute")
-        
+
         if cls.name is None or not isinstance(cls.name, str):
-            raise ValueError(f"Strategy class '{cls.__name__}' must define a 'name' attribute of type string")
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define a 'name' attribute of type string"
+            )
         if cls.description is None or not isinstance(cls.description, str):
-            raise ValueError(f"Strategy class '{cls.__name__}' must define a 'description' attribute of type string")
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define a 'description' attribute of type string"
+            )
         if cls.supported_providers is None:
-            raise ValueError(f"Strategy class '{cls.__name__}' must define a 'supported_providers' attribute")
-        if not isinstance(cls.supported_providers, list) or not all(isinstance(provider, str) for provider in cls.supported_providers):
-            raise ValueError(f"Strategy class '{cls.__name__}' must have 'supported_providers' as a list of strings")
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define a 'supported_providers' attribute"
+            )
+        if not isinstance(cls.supported_providers, list) or not all(
+            isinstance(p, str) for p in cls.supported_providers
+        ):
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must have 'supported_providers' as a list of strings"
+            )
+
+        # --- New validations ---
+        if cls.supported_tasks is None:
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define a 'supported_tasks' attribute"
+            )
+        if (
+            not isinstance(cls.supported_tasks, list)
+            or len(cls.supported_tasks) == 0
+            or not all(isinstance(t, str) for t in cls.supported_tasks)
+        ):
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must have 'supported_tasks' as a non-empty list of strings"
+            )
+
+        if cls.extra_model_copies is None:
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define an 'extra_model_copies' attribute"
+            )
+        if not isinstance(cls.extra_model_copies, int) or cls.extra_model_copies < 0:
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must have 'extra_model_copies' as an integer >= 0"
+            )
+
+        if cls.batch_multiplier is None:
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must define a 'batch_multiplier' attribute"
+            )
+        if not isinstance(cls.batch_multiplier, (int, float)) or cls.batch_multiplier <= 0.0:
+            raise ValueError(
+                f"Strategy class '{cls.__name__}' must have 'batch_multiplier' as a float > 0.0"
+            )
 
     @abstractmethod
     def set_config(self, config: Dict[str, Any]) -> None:
@@ -40,6 +108,22 @@ class FinetuningStrategy(ABC):
     @abstractmethod
     def finetune(self, model, data):
         raise NotImplementedError("Please add an entry point method to trigger the fine-tuning process for this strategy.")
+
+    @classmethod
+    @abstractmethod
+    def build_recommended_config(cls, peft_tier: str, hardware: Any, chosen_model: Any) -> tuple[Any, Any | None]:
+        """Build a recommended training configuration for this strategy.
+
+        Args:
+            peft_tier: One of 'full_finetune', 'lora_bf16', 'qlora_8bit', 'qlora_4bit'.
+            hardware: HardwareDetector.HardwareSpecs instance.
+            chosen_model: RecommendedModel instance (top-ranked Hub result).
+
+        Returns:
+            A (strategy_config, peft_config_or_None) tuple of Pydantic BaseModel instances.
+            The engine stores these without inspection.
+        """
+        raise NotImplementedError("Strategy must implement build_recommended_config.")
 
     def get_supported_providers(self) -> List[str]:
         return self.supported_providers
