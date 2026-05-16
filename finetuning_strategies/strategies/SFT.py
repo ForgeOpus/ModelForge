@@ -15,6 +15,31 @@ from .strategy import FinetuningStrategy
 from providers.provider import Provider
 from trl import SFTTrainer, SFTConfig
 from peft import PeftConfig
+from pydantic import BaseModel
+from utilities.hardware_detector import HardwareDetector
+from recommendation_engine.validation_models.recommendation import RecommendedModel
+
+
+class SFTRecommendedConfig(BaseModel):
+    """Recommended SFTTrainer configuration for a detected hardware profile."""
+    per_device_train_batch_size: int
+    gradient_accumulation_steps: int
+    gradient_checkpointing: bool
+    packing: bool
+    packing_strategy: str
+    max_length: int
+    use_liger_kernel: bool
+    activation_offloading: bool
+    bf16: bool
+    fp16: bool
+    model_init_kwargs: dict
+
+
+class LoraRecommendedConfig(BaseModel):
+    """Recommended LoRA adapter configuration."""
+    r: int
+    lora_alpha: int
+    target_modules: list[str]
 
 
 class SFT(FinetuningStrategy):
@@ -32,6 +57,9 @@ class SFT(FinetuningStrategy):
     This strategy uses a highly-curated high-quality dataset that is often smaller in size compared to the datasets used for pre-training.
     """
     supported_providers = ["huggingface", "unsloth"]
+    supported_tasks = ["causal_language_modeling", "seq2seq_modeling"]
+    extra_model_copies = 0
+    batch_multiplier = 1.0
 
     @staticmethod
     def validate_data_format(iterable_dataset: IterableDataset) -> bool:
@@ -181,6 +209,112 @@ class SFT(FinetuningStrategy):
             for key, value in config.items():
                 setattr(self.config, key, value)
 
+    @classmethod
+    def build_recommended_config(
+        cls,
+        peft_tier: str,
+        hardware: HardwareDetector.HardwareSpecs,
+        chosen_model: RecommendedModel,
+    ) -> tuple[SFTRecommendedConfig, LoraRecommendedConfig | None]:
+        """Build a recommended SFT configuration keyed off peft_tier, hardware, and chosen model size.
+
+        LoRA target modules use Llama-style names as the initial convention (known limitation:
+        other architectures use different module names).
+        """
+        raw_vram_gb = sum(
+            g["total_memory_gb"]
+            for g in hardware.gpus
+            if isinstance(g["total_memory_gb"], (int, float))
+        )
+
+        # Determine max_length and activation_offloading from available VRAM
+        if raw_vram_gb < 12:
+            max_length = 512
+            activation_offloading = True
+        elif raw_vram_gb < 32:
+            max_length = 1024
+            activation_offloading = False
+        else:
+            max_length = 2048
+            activation_offloading = False
+
+        # Determine gradient_accumulation_steps from VRAM (smaller VRAM needs larger accumulation
+        # to compensate for batch_size=1)
+        if raw_vram_gb < 12:
+            gradient_accumulation_steps = 16
+        elif raw_vram_gb < 32:
+            gradient_accumulation_steps = 8
+        else:
+            gradient_accumulation_steps = 4
+
+        # Determine quantization and whether bf16 is available for the base weights
+        if peft_tier == "full_finetune":
+            model_init_kwargs: dict = {}
+            bf16 = True
+            fp16 = False
+        elif peft_tier == "lora_bf16":
+            model_init_kwargs = {}
+            bf16 = True
+            fp16 = False
+        elif peft_tier == "qlora_8bit":
+            model_init_kwargs = {"load_in_8bit": True}
+            bf16 = True
+            fp16 = False
+        elif peft_tier == "qlora_4bit":
+            model_init_kwargs = {"load_in_4bit": True}
+            bf16 = True
+            fp16 = False
+        else:
+            raise ValueError(
+                f"Unknown peft_tier '{peft_tier}'. "
+                f"Expected one of: full_finetune, lora_bf16, qlora_8bit, qlora_4bit."
+            )
+
+        # CPU-only: disable bf16 and quantisation (bitsandbytes requires CUDA)
+        if raw_vram_gb == 0:
+            bf16 = False
+            fp16 = False
+            model_init_kwargs = {}
+
+        strategy_config = SFTRecommendedConfig(
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            gradient_checkpointing=True,
+            packing=True,
+            packing_strategy="bfd",
+            max_length=max_length,
+            use_liger_kernel=(raw_vram_gb > 0),  # Liger requires CUDA
+            activation_offloading=activation_offloading,
+            bf16=bf16,
+            fp16=fp16,
+            model_init_kwargs=model_init_kwargs,
+        )
+
+        if peft_tier == "full_finetune":
+            return strategy_config, None
+
+        # LoRA rank and target modules keyed off model parameter count
+        p = chosen_model.num_parameters
+        if p < 1_000_000_000:
+            rank = 8
+            target_modules = ["q_proj", "v_proj"]
+        elif p < 7_000_000_000:
+            rank = 16
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        elif p < 13_000_000_000:
+            rank = 32
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj"]
+        else:
+            rank = 64
+            target_modules = ["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "down_proj"]
+
+        peft_config = LoraRecommendedConfig(
+            r=rank,
+            lora_alpha=rank * 2,
+            target_modules=target_modules,
+        )
+        return strategy_config, peft_config
+
     def finetune(
         self,
         model_name: str,
@@ -201,6 +335,10 @@ class SFT(FinetuningStrategy):
         task_class: type[FinetuningTask] = TaskModels.get_task_class(task_slug)
         model = provider.load_model(model_name, task_class.model_class, **model_init_kwargs)
         tokenizer = provider.load_tokenizer(model_name)
+
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.pad_token_id = tokenizer.eos_token_id
 
         trainer = SFTTrainer(
             model=model,
