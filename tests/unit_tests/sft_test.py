@@ -140,7 +140,7 @@ class TestFinetune:
     @pytest.fixture
     def mock_task_class(self):
         mock_cls = MagicMock()
-        mock_cls.model_class.from_pretrained.return_value = MagicMock()
+        mock_cls.model_class = MagicMock()
         return mock_cls
 
     @pytest.fixture
@@ -151,6 +151,13 @@ class TestFinetune:
         return tok
 
     @pytest.fixture
+    def mock_provider(self, mock_tokenizer):
+        provider = MagicMock()
+        provider.load_model.return_value = MagicMock()
+        provider.load_tokenizer.return_value = mock_tokenizer
+        return provider
+
+    @pytest.fixture
     def valid_dataset(self):
         return make_dataset(["text"])
 
@@ -158,29 +165,27 @@ class TestFinetune:
         sft = SFT()
         invalid_ds = make_dataset(["irrelevant"])
         with pytest.raises(ValueError):
-            sft.finetune("gpt2", invalid_ds, "causal_language_modeling")
+            sft.finetune("gpt2", invalid_ds, "causal_language_modeling", MagicMock())
 
-    def test_finetune_calls_trainer_train(self, mock_task_class, mock_tokenizer, valid_dataset):
+    def test_finetune_calls_trainer_train(self, mock_task_class, mock_provider, valid_dataset):
         sft = SFT()
         sft.build_sft_config(**_CPU_CONFIG)
         mock_trainer_instance = MagicMock()
 
         with patch("finetuning_strategies.strategies.sft.TaskModels.get_task_class", return_value=mock_task_class):
-            with patch("finetuning_strategies.strategies.sft.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
-                with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance) as MockTrainer:
-                    sft.finetune("gpt2", valid_dataset, "causal_language_modeling")
+            with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance):
+                sft.finetune("gpt2", valid_dataset, "causal_language_modeling", mock_provider)
 
         mock_trainer_instance.train.assert_called_once()
 
-    def test_finetune_returns_trainer(self, mock_task_class, mock_tokenizer, valid_dataset):
+    def test_finetune_returns_trainer(self, mock_task_class, mock_provider, valid_dataset):
         sft = SFT()
         sft.build_sft_config(**_CPU_CONFIG)
         mock_trainer_instance = MagicMock()
 
         with patch("finetuning_strategies.strategies.sft.TaskModels.get_task_class", return_value=mock_task_class):
-            with patch("finetuning_strategies.strategies.sft.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
-                with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance):
-                    result = sft.finetune("gpt2", valid_dataset, "causal_language_modeling")
+            with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance):
+                result = sft.finetune("gpt2", valid_dataset, "causal_language_modeling", mock_provider)
 
         assert result is mock_trainer_instance
 
@@ -191,25 +196,26 @@ class TestFinetune:
         tok.pad_token = None
         tok.eos_token = "<eos>"
         tok.eos_token_id = 1
+        provider = MagicMock()
+        provider.load_model.return_value = MagicMock()
+        provider.load_tokenizer.return_value = tok
         mock_trainer_instance = MagicMock()
 
         with patch("finetuning_strategies.strategies.sft.TaskModels.get_task_class", return_value=mock_task_class):
-            with patch("finetuning_strategies.strategies.sft.AutoTokenizer.from_pretrained", return_value=tok):
-                with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance):
-                    sft.finetune("gpt2", valid_dataset, "causal_language_modeling")
+            with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance):
+                sft.finetune("gpt2", valid_dataset, "causal_language_modeling", provider)
 
         assert tok.pad_token == "<eos>"
         assert tok.pad_token_id == 1
 
-    def test_finetune_uses_existing_config(self, mock_task_class, mock_tokenizer, valid_dataset):
+    def test_finetune_uses_existing_config(self, mock_task_class, mock_provider, valid_dataset):
         sft = SFT()
         sft.build_sft_config(output_dir="custom_output", seed=123, **_CPU_CONFIG)
         mock_trainer_instance = MagicMock()
 
         with patch("finetuning_strategies.strategies.sft.TaskModels.get_task_class", return_value=mock_task_class):
-            with patch("finetuning_strategies.strategies.sft.AutoTokenizer.from_pretrained", return_value=mock_tokenizer):
-                with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance) as MockTrainer:
-                    sft.finetune("gpt2", valid_dataset, "causal_language_modeling")
+            with patch("finetuning_strategies.strategies.sft.SFTTrainer", return_value=mock_trainer_instance) as MockTrainer:
+                sft.finetune("gpt2", valid_dataset, "causal_language_modeling", mock_provider)
 
         # The config passed to SFTTrainer should be the one we built
         call_kwargs = MockTrainer.call_args[1]

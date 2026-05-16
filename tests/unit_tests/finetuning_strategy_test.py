@@ -18,12 +18,19 @@ class TestFinetuningStrategyRegistration:
             slug = "test_strategy_unique_1"
             description = "A test strategy"
             supported_providers = ["huggingface"]
+            supported_tasks = ["causal_language_modeling"]
+            extra_model_copies = 0
+            batch_multiplier = 1.0
 
             def set_config(self, config):
                 pass
 
             def finetune(self, model, data):
                 pass
+
+            @classmethod
+            def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                return None, None
 
         assert "test_strategy_unique_1" in FinetuningStrategy._registry
         assert FinetuningStrategy._registry["test_strategy_unique_1"] is TestStrategy
@@ -118,6 +125,9 @@ class TestFinetuningStrategyRegistration:
             slug = "dup_slug_test_1"
             description = "First"
             supported_providers = ["huggingface"]
+            supported_tasks = ["causal_language_modeling"]
+            extra_model_copies = 0
+            batch_multiplier = 1.0
 
             def set_config(self, config):
                 pass
@@ -125,18 +135,29 @@ class TestFinetuningStrategyRegistration:
             def finetune(self, model, data):
                 pass
 
+            @classmethod
+            def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                return None, None
+
         with pytest.raises(ValueError, match="Duplicate slug"):
             class SecondStrategy(FinetuningStrategy):
                 name = "Second"
                 slug = "dup_slug_test_1"
                 description = "Second"
                 supported_providers = ["huggingface"]
+                supported_tasks = ["causal_language_modeling"]
+                extra_model_copies = 0
+                batch_multiplier = 1.0
 
                 def set_config(self, config):
                     pass
 
                 def finetune(self, model, data):
                     pass
+
+                @classmethod
+                def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                    return None, None
 
     def test_sft_in_registry_after_import(self):
         assert "sft" in FinetuningStrategy._registry
@@ -154,3 +175,98 @@ class TestFinetuningStrategyRegistration:
 
     def test_device_attribute_is_valid(self):
         assert SFT.device in ("cpu", "cuda", "mps")
+
+    def test_missing_supported_tasks_raises(self):
+        with pytest.raises(ValueError, match="supported_tasks"):
+            class BadStrategy(FinetuningStrategy):
+                name = "Bad Strategy"
+                slug = "bad_strategy_no_tasks_1"
+                description = "No tasks"
+                supported_providers = ["huggingface"]
+                supported_tasks = None
+                extra_model_copies = 0
+                batch_multiplier = 1.0
+
+                def set_config(self, config):
+                    pass
+
+                def finetune(self, model, data):
+                    pass
+
+                @classmethod
+                def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                    return None, None
+
+    def test_empty_supported_tasks_raises(self):
+        with pytest.raises(ValueError, match="supported_tasks"):
+            class BadStrategy(FinetuningStrategy):
+                name = "Bad Strategy"
+                slug = "bad_strategy_empty_tasks_1"
+                description = "Empty tasks"
+                supported_providers = ["huggingface"]
+                supported_tasks = []
+                extra_model_copies = 0
+                batch_multiplier = 1.0
+
+                def set_config(self, config):
+                    pass
+
+                def finetune(self, model, data):
+                    pass
+
+                @classmethod
+                def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                    return None, None
+
+    def test_negative_extra_model_copies_raises(self):
+        with pytest.raises(ValueError, match="extra_model_copies"):
+            class BadStrategy(FinetuningStrategy):
+                name = "Bad Strategy"
+                slug = "bad_strategy_neg_copies_1"
+                description = "Negative copies"
+                supported_providers = ["huggingface"]
+                supported_tasks = ["causal_language_modeling"]
+                extra_model_copies = -1
+                batch_multiplier = 1.0
+
+                def set_config(self, config):
+                    pass
+
+                def finetune(self, model, data):
+                    pass
+
+                @classmethod
+                def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                    return None, None
+
+    def test_zero_batch_multiplier_raises(self):
+        with pytest.raises(ValueError, match="batch_multiplier"):
+            class BadStrategy(FinetuningStrategy):
+                name = "Bad Strategy"
+                slug = "bad_strategy_zero_mult_1"
+                description = "Zero multiplier"
+                supported_providers = ["huggingface"]
+                supported_tasks = ["causal_language_modeling"]
+                extra_model_copies = 0
+                batch_multiplier = 0.0
+
+                def set_config(self, config):
+                    pass
+
+                def finetune(self, model, data):
+                    pass
+
+                @classmethod
+                def build_recommended_config(cls, peft_tier, hardware, chosen_model):
+                    return None, None
+
+    def test_sft_has_required_engine_attributes(self):
+        assert isinstance(SFT.supported_tasks, list)
+        assert len(SFT.supported_tasks) > 0
+        assert all(isinstance(t, str) for t in SFT.supported_tasks)
+        assert isinstance(SFT.extra_model_copies, int)
+        assert SFT.extra_model_copies >= 0
+        assert isinstance(SFT.batch_multiplier, float)
+        assert SFT.batch_multiplier > 0.0
+        assert "causal_language_modeling" in SFT.supported_tasks
+        assert "seq2seq_modeling" in SFT.supported_tasks
