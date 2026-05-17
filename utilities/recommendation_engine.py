@@ -250,12 +250,12 @@ class RecommendationEngine:
         Raises ValueError for: unknown use_case_slug, incompatible objective, misconfigured (task, strategy) pair.
         """
         # Step 1: Look up use case
-        if use_case_slug not in LanguageUseCase._registry:
+        if not LanguageUseCase.is_valid_use_case(use_case_slug):
             raise ValueError(
                 f"Unknown use case slug '{use_case_slug}'. "
-                f"Registered: {sorted(LanguageUseCase._registry)}"
+                f"Registered: {sorted(LanguageUseCase.list_use_cases())}"
             )
-        use_case_cls = LanguageUseCase._registry[use_case_slug]
+        use_case_cls = LanguageUseCase.get_use_case_by_slug(use_case_slug)
 
         # Step 2: Check objective compatibility
         if training_objective not in use_case_cls.compatible_objectives:

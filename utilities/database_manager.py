@@ -226,3 +226,74 @@ class DatabaseManager:
             raise ValueError(f"No model found with ID {model_id}")
         else:
             return True
+
+
+class FinetuneLedger:
+    """Tracks every completed finetune run."""
+
+    _instance = None
+
+    def _initialize(self) -> None:
+        global data_dir
+        data_dir.mkdir(parents=True, exist_ok=True)
+        self.connection = sqlite3.connect(data_dir / "modelforge.db")
+        self.cursor = self.connection.cursor()
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS finetunes (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp   TEXT NOT NULL,
+                model_id    TEXT NOT NULL,
+                use_case    TEXT NOT NULL,
+                task_slug   TEXT NOT NULL,
+                strategy    TEXT NOT NULL,
+                peft        TEXT NOT NULL,
+                dataset     TEXT NOT NULL,
+                output_dir  TEXT NOT NULL,
+                config_json TEXT NOT NULL
+            )
+        ''')
+        self.connection.commit()
+
+    def __new__(cls) -> "FinetuneLedger":
+        if cls._instance is None:
+            cls._instance = super(FinetuneLedger, cls).__new__(cls)
+            cls._instance._initialize()
+        return cls._instance
+
+    def record(self, model_id: str, use_case: str, task_slug: str, strategy: str,
+               peft: str, dataset: str, output_dir: str, config_json: str) -> int:
+        """Insert a finetune run record. Returns the new row id."""
+        import json
+        from datetime import datetime
+        timestamp = datetime.utcnow().isoformat()
+        self.cursor.execute(
+            '''INSERT INTO finetunes
+               (timestamp, model_id, use_case, task_slug, strategy, peft, dataset, output_dir, config_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (timestamp, model_id, use_case, task_slug, strategy, peft, dataset, output_dir, config_json)
+        )
+        self.connection.commit()
+        return self.cursor.lastrowid
+
+    def list_runs(self, limit: int = 100) -> list[dict]:
+        """Return all runs ordered by timestamp descending."""
+        self.cursor.execute(
+            '''SELECT id, timestamp, model_id, use_case, task_slug, strategy, peft, dataset, output_dir, config_json
+               FROM finetunes ORDER BY timestamp DESC LIMIT ?''',
+            (limit,)
+        )
+        cols = ["id", "timestamp", "model_id", "use_case", "task_slug", "strategy", "peft", "dataset", "output_dir", "config_json"]
+        return [dict(zip(cols, row)) for row in self.cursor.fetchall()]
+
+    def get_run(self, run_id: int) -> dict | None:
+        """Return a single run by id, or None if not found."""
+        self.cursor.execute(
+            '''SELECT id, timestamp, model_id, use_case, task_slug, strategy, peft, dataset, output_dir, config_json
+               FROM finetunes WHERE id = ?''',
+            (run_id,)
+        )
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        cols = ["id", "timestamp", "model_id", "use_case", "task_slug", "strategy", "peft", "dataset", "output_dir", "config_json"]
+        return dict(zip(cols, row))
