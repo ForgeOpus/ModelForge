@@ -106,7 +106,7 @@ class FinetuningStrategy(ABC):
         raise NotImplementedError("Please add a method to configure trainer parameters for this strategy.")
 
     @abstractmethod
-    def finetune(self, model, data):
+    def finetune(self, model, data, task_slug: str, provider, peft_config=None, callbacks=None) -> Any:
         raise NotImplementedError("Please add an entry point method to trigger the fine-tuning process for this strategy.")
 
     @classmethod

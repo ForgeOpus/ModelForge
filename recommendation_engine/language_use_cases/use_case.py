@@ -86,6 +86,32 @@ class LanguageUseCase:
         LanguageUseCase._registry[cls.slug] = cls
 
     @classmethod
+    def get_use_cases(cls) -> List[type]:
+        """Return a list of all registered use case slugs."""
+        return list(cls._registry.keys())
+
+    @classmethod
+    def list_use_case_classes(cls) -> List[str]:
+        """Return a list of registered use case slugs."""
+        return list(cls._registry.keys())
+
+    @classmethod
+    def get_use_case_by_slug(cls, slug: str) -> type:
+        """Look up a registered use case by slug. Raises ValueError if not found."""
+        if slug not in cls._registry:
+            registered = sorted(cls._registry.keys())
+            raise ValueError(
+                f"No LanguageUseCase found with slug '{slug}'. "
+                f"Registered slugs: {registered}"
+            )
+        return cls._registry[slug]
+
+    @classmethod
+    def is_valid_use_case(cls, slug: str) -> bool:
+        """Return True if the given slug corresponds to a registered use case."""
+        return slug in cls._registry
+
+    @classmethod
     def get_use_case(cls, slug: str) -> type:
         """Look up a registered use case by slug. Raises ValueError if not found."""
         if slug not in cls._registry:
