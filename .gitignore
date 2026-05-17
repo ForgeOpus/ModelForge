@@ -8,3 +8,6 @@ venv/
 .pytest_cache/
 HF_DOCS
 .claude
+
+*.egg-info/
+dist/
