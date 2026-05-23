@@ -1,2 +1,3 @@
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
 from finetuning_strategies.strategies.sft import SFT
+from finetuning_strategies.strategies.dpo import DPO
