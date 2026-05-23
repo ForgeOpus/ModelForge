@@ -1,7 +1,8 @@
 import os
-from finetuning_strategies.strategy_factory import FinetuningStrategies
-from providers.provider_factory import ProviderFactory
 from peft import LoraConfig
+from accelerate import notebook_launcher
+from providers.provider_factory import ProviderFactory
+from finetuning_strategies.strategy_factory import FinetuningStrategies
 from recommendation_engine.validation_models.recommendation import Recommendation
 
 _TASK_SLUG_TO_PEFT_TASK_TYPE = {
@@ -28,7 +29,8 @@ def assemble_and_train(
     provider_cls = ProviderFactory.get_provider(recommendation.provider_slug)
     provider = provider_cls()
 
-    strategy.build_sft_config(output_dir=output_dir, **recommendation.strategy_config.model_dump())
+    config_dict = {k: v for k, v in recommendation.strategy_config.model_dump().items() if v is not None}
+    strategy.set_config({"output_dir": output_dir, **config_dict})
 
     if recommendation.peft_approach == "full_finetune" or recommendation.peft_config is None:
         peft_config = None
@@ -41,18 +43,19 @@ def assemble_and_train(
             task_type=task_type,
         )
 
-    trainer = strategy.finetune(
-        model_id,
-        dataset,
-        recommendation.task_slug,
-        provider,
-        peft_config=peft_config,
-        callbacks=callbacks,
+    # Integrate Accelerate config
+    notebook_launcher(
+        lambda: strategy.finetune(
+            model_id,
+            dataset,
+            recommendation.task_slug,
+            provider,
+            peft_approach=recommendation.peft_approach,
+            output_dir=output_dir,
+            peft_config=peft_config,
+            callbacks=callbacks,
+        ),
+        num_processes=len(cuda_visible_devices.split(",")) if cuda_visible_devices else 1,
     )
-
-    if recommendation.peft_approach != "full_finetune":
-        trainer.model.save_pretrained(output_dir)
-    else:
-        trainer.save_model(output_dir)
 
     return output_dir
