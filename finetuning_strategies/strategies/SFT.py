@@ -321,6 +321,8 @@ class SFT(FinetuningStrategy):
         dataset: Union[Dataset, IterableDataset],
         task_slug: str,
         provider: Provider,
+        peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"],
+        output_dir: str,
         eval_dataset: Optional[Union[Dataset, IterableDataset, Dict]] = None,
         peft_config: Optional[PeftConfig] = None,
         formatting_func: Optional[Callable] = None,
@@ -353,4 +355,9 @@ class SFT(FinetuningStrategy):
         )
 
         trainer.train()
-        return trainer
+
+        if peft_approach != "full_finetune":
+            trainer.model.save_pretrained(output_dir)
+        else:
+            trainer.save_model(output_dir)
+
