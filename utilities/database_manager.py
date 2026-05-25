@@ -297,3 +297,176 @@ class FinetuneLedger:
             return None
         cols = ["id", "timestamp", "model_id", "use_case", "task_slug", "strategy", "peft", "dataset", "output_dir", "config_json"]
         return dict(zip(cols, row))
+
+
+class WebRunLedger:
+    """Durable run and checkpoint metadata for web/CLI/notebook workflow surfaces."""
+
+    def __init__(self, db_path: str | Path | None = None) -> None:
+        global data_dir
+        if db_path is None:
+            data_dir.mkdir(parents=True, exist_ok=True)
+            self.db_path = data_dir / "modelforge.db"
+        else:
+            self.db_path = Path(db_path)
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _initialize(self) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_runs (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    status              TEXT NOT NULL,
+                    model_id            TEXT NOT NULL,
+                    use_case            TEXT NOT NULL,
+                    objective           TEXT NOT NULL,
+                    task_slug           TEXT,
+                    strategy            TEXT,
+                    peft                TEXT,
+                    dataset             TEXT NOT NULL,
+                    output_dir          TEXT NOT NULL,
+                    config_json         TEXT NOT NULL DEFAULT '{}',
+                    tensorboard_log_dir TEXT,
+                    error               TEXT,
+                    created_at          TEXT NOT NULL,
+                    updated_at          TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_checkpoints (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id     INTEGER NOT NULL,
+                    path       TEXT NOT NULL,
+                    step       INTEGER,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(run_id, path),
+                    FOREIGN KEY(run_id) REFERENCES web_runs(id)
+                )
+                """
+            )
+            conn.commit()
+
+    @staticmethod
+    def _now() -> str:
+        return datetime.utcnow().isoformat()
+
+    def create_run(
+        self,
+        *,
+        model_id: str,
+        use_case: str,
+        objective: str,
+        dataset: str,
+        output_dir: str,
+        tensorboard_log_dir: str | None = None,
+        config_json: str = "{}",
+    ) -> int:
+        now = self._now()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO web_runs
+                (status, model_id, use_case, objective, dataset, output_dir,
+                 config_json, tensorboard_log_dir, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    "queued",
+                    model_id,
+                    use_case,
+                    objective,
+                    dataset,
+                    output_dir,
+                    config_json,
+                    tensorboard_log_dir,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            return int(cursor.lastrowid)
+
+    def update_run(self, run_id: int, **fields) -> None:
+        if not fields:
+            return
+        fields["updated_at"] = self._now()
+        allowed = {
+            "status",
+            "task_slug",
+            "strategy",
+            "peft",
+            "config_json",
+            "tensorboard_log_dir",
+            "error",
+            "updated_at",
+        }
+        updates = {key: value for key, value in fields.items() if key in allowed}
+        if not updates:
+            return
+        assignments = ", ".join(f"{key} = ?" for key in updates)
+        params = list(updates.values()) + [run_id]
+        with self._connect() as conn:
+            conn.execute(f"UPDATE web_runs SET {assignments} WHERE id = ?", params)
+            conn.commit()
+
+    def record_checkpoint(self, run_id: int, path: str, step: int | None = None) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO web_checkpoints (run_id, path, step, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (run_id, path, step, self._now()),
+            )
+            conn.commit()
+
+    def mark_interrupted_runs(self) -> int:
+        """Mark non-terminal runs from a previous process as failed on startup."""
+        now = self._now()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE web_runs
+                SET status = 'failed',
+                    error = COALESCE(error, 'ModelForge stopped before this run reached a terminal state.'),
+                    updated_at = ?
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def list_runs(self, limit: int = 100) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM web_runs ORDER BY updated_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+    def get_run(self, run_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM web_runs WHERE id = ?", (run_id,)).fetchone()
+            return dict(row) if row else None
+
+    def list_checkpoints(self, run_id: int) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT * FROM web_checkpoints
+                WHERE run_id = ?
+                ORDER BY COALESCE(step, 0) DESC, created_at DESC
+                """,
+                (run_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]

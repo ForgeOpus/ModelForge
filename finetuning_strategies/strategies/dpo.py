@@ -288,6 +288,7 @@ class DPO(FinetuningStrategy):
         eval_dataset: Optional[Union[Dataset, IterableDataset, Dict]] = None,
         peft_config: Optional[PeftConfig] = None,
         callbacks: Optional[list] = None,
+        resume_from_checkpoint: Optional[str] = None,
     ) -> DPOTrainer:
         self.validate_data_format(dataset)
 
@@ -322,7 +323,7 @@ class DPO(FinetuningStrategy):
         )
 
         self.launch_tensorboard(dpo_config)
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
             trainer.model.save_pretrained(output_dir)

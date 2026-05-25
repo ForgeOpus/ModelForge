@@ -330,6 +330,7 @@ class SFT(FinetuningStrategy):
         formatting_func: Optional[Callable] = None,
         compute_metrics: Optional[Callable] = None,
         callbacks: Optional[list] = None,
+        resume_from_checkpoint: Optional[str] = None,
     ) -> SFTTrainer:
         self.validate_data_format(dataset)
 
@@ -358,7 +359,7 @@ class SFT(FinetuningStrategy):
         )
 
         self.launch_tensorboard(sft_config)
-        trainer.train()
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
             trainer.model.save_pretrained(output_dir)
