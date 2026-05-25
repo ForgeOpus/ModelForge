@@ -1,6 +1,14 @@
+import os
+import webbrowser
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, Dict, List, Literal
 from providers import SUPPORTED_PROVIDERS
+from utilities.tensorboard import (
+    DEFAULT_TENSORBOARD_HOST,
+    DEFAULT_TENSORBOARD_PORT,
+    default_log_dir,
+)
 import torch
 
 
@@ -22,6 +30,7 @@ class FinetuningStrategy(ABC):
     description: str = None
 
     _registry: Dict[str, type] = {}
+    _tensorboard_urls: Dict[str, str] = {}
 
     supported_providers: Literal[tuple(SUPPORTED_PROVIDERS)] = None
 
@@ -108,6 +117,71 @@ class FinetuningStrategy(ABC):
     @abstractmethod
     def finetune(self, model, data, task_slug: str, provider, peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"], output_dir: str, peft_config=None, callbacks=None) -> Any:
         raise NotImplementedError("Please add an entry point method to trigger the fine-tuning process for this strategy.")
+
+    def launch_tensorboard(
+        self,
+        training_args: Any | None = None,
+        log_dir: str | None = None,
+        host: str = DEFAULT_TENSORBOARD_HOST,
+        port: int = DEFAULT_TENSORBOARD_PORT,
+        enabled: bool | None = None,
+        open_browser: bool = True,
+    ) -> str | None:
+        """Launch TensorBoard via its Python API and return the served URL."""
+        if not self._is_main_process():
+            return None
+
+        if enabled is None:
+            enabled = self._reports_to_tensorboard(getattr(training_args, "report_to", None))
+        if not enabled:
+            return None
+
+        resolved_log_dir = log_dir or getattr(training_args, "logging_dir", None)
+        if resolved_log_dir is None:
+            output_dir = getattr(training_args, "output_dir", None)
+            if output_dir is None:
+                return None
+            resolved_log_dir = default_log_dir(output_dir)
+
+        Path(resolved_log_dir).mkdir(parents=True, exist_ok=True)
+        process_key = f"{host}:{port}:{Path(resolved_log_dir).resolve()}"
+        existing_url = self._tensorboard_urls.get(process_key)
+        if existing_url is not None:
+            if open_browser:
+                webbrowser.open(existing_url)
+            return existing_url
+
+        tensorboard = self._create_tensorboard_program()
+        tensorboard.configure(
+            argv=["tensorboard"],
+            logdir=str(resolved_log_dir),
+            host=host,
+            port=port,
+        )
+        url = tensorboard.launch()
+        self._tensorboard_urls[process_key] = url
+        if open_browser:
+            webbrowser.open(url)
+        print(f"TensorBoard started at {url} for {resolved_log_dir}")
+        return url
+
+    @staticmethod
+    def _reports_to_tensorboard(report_to: Any) -> bool:
+        if report_to is None:
+            return False
+        if isinstance(report_to, str):
+            return report_to.lower() in {"tensorboard", "all"}
+        return any(str(target).lower() in {"tensorboard", "all"} for target in report_to)
+
+    @staticmethod
+    def _is_main_process() -> bool:
+        return all(os.environ.get(name, "0") in {"", "0", "-1"} for name in ("RANK", "LOCAL_RANK", "PROCESS_INDEX"))
+
+    @staticmethod
+    def _create_tensorboard_program() -> Any:
+        from tensorboard import program
+
+        return program.TensorBoard()
 
     @classmethod
     @abstractmethod

@@ -149,6 +149,7 @@ class SFT(FinetuningStrategy):
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
         report_to: Union[str, List[str]] = "none",
+        logging_dir: Optional[str] = None,
         seed: int = 42,
         dataloader_num_workers: int = 0,
         remove_unused_columns: bool = True,
@@ -195,6 +196,7 @@ class SFT(FinetuningStrategy):
             push_to_hub=push_to_hub,
             hub_model_id=hub_model_id,
             report_to=report_to,
+            logging_dir=logging_dir,
             seed=seed,
             dataloader_num_workers=dataloader_num_workers,
             remove_unused_columns=remove_unused_columns,
@@ -321,8 +323,8 @@ class SFT(FinetuningStrategy):
         dataset: Union[Dataset, IterableDataset],
         task_slug: str,
         provider: Provider,
-        peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"],
-        output_dir: str,
+        peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"] = "full_finetune",
+        output_dir: Optional[str] = None,
         eval_dataset: Optional[Union[Dataset, IterableDataset, Dict]] = None,
         peft_config: Optional[PeftConfig] = None,
         formatting_func: Optional[Callable] = None,
@@ -332,6 +334,7 @@ class SFT(FinetuningStrategy):
         self.validate_data_format(dataset)
 
         sft_config = self.config if self.config is not None else SFTConfig(output_dir="sft_output")
+        output_dir = output_dir or sft_config.output_dir
 
         model_init_kwargs = sft_config.model_init_kwargs or {}
         task_class: type[FinetuningTask] = TaskModels.get_task_class(task_slug)
@@ -354,6 +357,7 @@ class SFT(FinetuningStrategy):
             formatting_func=formatting_func,
         )
 
+        self.launch_tensorboard(sft_config)
         trainer.train()
 
         if peft_approach != "full_finetune":
@@ -361,3 +365,4 @@ class SFT(FinetuningStrategy):
         else:
             trainer.save_model(output_dir)
 
+        return trainer

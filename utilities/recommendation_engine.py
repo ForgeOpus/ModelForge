@@ -253,7 +253,7 @@ class RecommendationEngine:
         if not LanguageUseCase.is_valid_use_case(use_case_slug):
             raise ValueError(
                 f"Unknown use case slug '{use_case_slug}'. "
-                f"Registered: {sorted(LanguageUseCase.list_use_cases())}"
+                f"Registered: {sorted(LanguageUseCase.get_use_cases())}"
             )
         use_case_cls = LanguageUseCase.get_use_case_by_slug(use_case_slug)
 

@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import MagicMock, patch
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
 from finetuning_strategies.strategies.sft import SFT
 
@@ -270,3 +271,31 @@ class TestFinetuningStrategyRegistration:
         assert SFT.batch_multiplier > 0.0
         assert "causal_language_modeling" in SFT.supported_tasks
         assert "seq2seq_modeling" in SFT.supported_tasks
+
+    def test_launch_tensorboard_starts_when_enabled(self, tmp_path):
+        args = MagicMock()
+        args.report_to = ["tensorboard"]
+        args.logging_dir = str(tmp_path / "tb")
+        tensorboard = MagicMock()
+        tensorboard.launch.return_value = "http://127.0.0.1:6006/"
+
+        SFT._tensorboard_urls.clear()
+        with patch.object(SFT, "_create_tensorboard_program", return_value=tensorboard):
+            with patch("finetuning_strategies.strategies.strategy.webbrowser.open") as browser_open:
+                result = SFT().launch_tensorboard(args)
+
+        assert result == "http://127.0.0.1:6006/"
+        tensorboard.configure.assert_called_once()
+        tensorboard.launch.assert_called_once()
+        browser_open.assert_called_once_with("http://127.0.0.1:6006/")
+
+    def test_launch_tensorboard_skips_when_not_enabled(self, tmp_path):
+        args = MagicMock()
+        args.report_to = "none"
+        args.logging_dir = str(tmp_path / "tb")
+
+        with patch.object(SFT, "_create_tensorboard_program") as tensorboard:
+            result = SFT().launch_tensorboard(args)
+
+        assert result is None
+        tensorboard.assert_not_called()

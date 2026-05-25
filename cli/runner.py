@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 from peft import LoraConfig
 from accelerate import notebook_launcher
 from providers.provider_factory import ProviderFactory
@@ -19,6 +20,7 @@ def assemble_and_train(
     output_dir: str,
     cuda_visible_devices: str,
     callbacks: list,
+    tensorboard_log_dir: str | None = None,
 ) -> str:
     if cuda_visible_devices:
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
@@ -30,6 +32,12 @@ def assemble_and_train(
     provider = provider_cls()
 
     config_dict = {k: v for k, v in recommendation.strategy_config.model_dump().items() if v is not None}
+    if tensorboard_log_dir:
+        Path(tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
+        config_dict.update({
+            "report_to": ["tensorboard"],
+            "logging_dir": tensorboard_log_dir,
+        })
     strategy.set_config({"output_dir": output_dir, **config_dict})
 
     if recommendation.peft_approach == "full_finetune" or recommendation.peft_config is None:

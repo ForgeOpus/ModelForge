@@ -1,4 +1,5 @@
 import click
+import subprocess
 from rich.console import Console
 from rich.table import Table
 from utilities.hardware_detector import HardwareDetector
@@ -7,6 +8,12 @@ from cli.display import print_header, print_hardware, print_recommendation, prin
 from cli.wizard import check_hf_login, select_gpus, select_use_case, select_objective, select_model, select_dataset, validate_and_load_dataset, prompt_output_dir
 from cli.runner import assemble_and_train
 from utilities.database_manager import FinetuneLedger
+from utilities.tensorboard import (
+    DEFAULT_TENSORBOARD_HOST,
+    DEFAULT_TENSORBOARD_PORT,
+    default_log_dir,
+    launch_command,
+)
 
 console = Console()
 
@@ -17,7 +24,19 @@ def cli():
 
 
 @cli.command()
-def run():
+@click.option(
+    "--tensorboard/--no-tensorboard",
+    default=True,
+    show_default=True,
+    help="Write TensorBoard event logs for training metrics.",
+)
+@click.option(
+    "--tensorboard-logdir",
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Directory for TensorBoard event logs. Defaults to OUTPUT_DIR/tensorboard.",
+)
+def run(tensorboard: bool, tensorboard_logdir: str | None):
     print_header()
     check_hf_login()
     hardware = HardwareDetector.detect_hardware()
@@ -32,10 +51,21 @@ def run():
     dataset_path, is_remote = select_dataset()
     dataset = validate_and_load_dataset(dataset_path, is_remote, recommendation)
     output_dir = prompt_output_dir(model_id)
-    print_training_summary(model_id, dataset_path, output_dir, recommendation)
+    resolved_tensorboard_logdir = tensorboard_logdir if tensorboard else None
+    if tensorboard and resolved_tensorboard_logdir is None:
+        resolved_tensorboard_logdir = default_log_dir(output_dir)
+    print_training_summary(model_id, dataset_path, output_dir, recommendation, resolved_tensorboard_logdir)
     if not click.confirm("Proceed with training?", default=True):
         raise click.Abort()
-    output_path = assemble_and_train(recommendation, model_id, dataset, output_dir, cuda_str, callbacks=[RichTrainingCallback()])
+    output_path = assemble_and_train(
+        recommendation,
+        model_id,
+        dataset,
+        output_dir,
+        cuda_str,
+        callbacks=[RichTrainingCallback()],
+        tensorboard_log_dir=resolved_tensorboard_logdir,
+    )
     FinetuneLedger().record(
         model_id=model_id,
         use_case=use_case_cls.slug,
@@ -47,6 +77,9 @@ def run():
         config_json=recommendation.strategy_config.model_dump_json(),
     )
     console.print(f"[green]Model saved to {output_path}[/green]")
+    if resolved_tensorboard_logdir:
+        console.print(f"TensorBoard logs: [bold]{resolved_tensorboard_logdir}[/bold]")
+        console.print(f"Open with: [bold]{launch_command(resolved_tensorboard_logdir)}[/bold]")
     console.print("Run [bold]modelforge history[/bold] to view past runs or push to HuggingFace Hub.")
 
 
@@ -132,3 +165,30 @@ def history():
     from huggingface_hub import upload_folder
     upload_folder(folder_path=run["output_dir"], repo_id=repo_name, repo_type="model")
     console.print(f"[green]Pushed to https://huggingface.co/{repo_name}[/green]")
+
+
+@cli.command(name="tensorboard")
+@click.argument("logdir", required=False, type=click.Path(file_okay=False, dir_okay=True))
+@click.option("--host", default=DEFAULT_TENSORBOARD_HOST, show_default=True, help="TensorBoard host.")
+@click.option("--port", default=DEFAULT_TENSORBOARD_PORT, show_default=True, help="TensorBoard port.")
+def tensorboard_cmd(logdir: str | None, host: str, port: int):
+    """Launch TensorBoard for ModelForge run logs."""
+    resolved_logdir = logdir or "./modelforge_output"
+    console.print(f"Starting TensorBoard for [bold]{resolved_logdir}[/bold]")
+    console.print(f"URL: [bold]http://{host}:{port}[/bold]")
+    try:
+        subprocess.run(
+            [
+                "tensorboard",
+                "--logdir",
+                resolved_logdir,
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ],
+            check=False,
+        )
+    except FileNotFoundError:
+        console.print("[red]TensorBoard is not installed or is not on PATH.[/red]")
+        console.print("Install project dependencies, then run this command again.")
