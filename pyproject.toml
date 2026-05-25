@@ -1,32 +1,56 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
 [project]
-name = "ModelForge"
+name = "modelforge-finetuning"
 version = "4.0.0"
-description = "Add your description here"
+description = "Hardware-aware fine-tuning utility with browser, terminal, and notebook interfaces."
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.13.0",
     "bitsandbytes>=0.49.2",
-    "click>=8.1",
+    "fastapi>=0.124.0",
     "huggingface-hub>=1.14.0",
     "nvidia-ml-py>=13.595.45",
     "peft>=0.19.1",
     "platformdirs>=4.9.6",
     "pydantic>=2.13.4",
-    "pytest>=9.0.3",
-    "rich>=13.0",
+    "uvicorn>=0.38.0",
     "tensorboard>=2.20.0",
     "tqdm>=4.67.3",
     "transformers>=5.8.0",
     "trl>=1.4.0",
+    "setuptools>=81.0.0",
+]
+
+[project.optional-dependencies]
+cli = [
+    "click>=8.1",
+    "rich>=13.0",
+]
+notebook = []
+dev = [
+    "click>=8.1",
+    "httpx>=0.28.0",
+    "pytest>=9.0.3",
+    "rich>=13.0",
 ]
 
 [project.scripts]
 modelforge = "cli.main:cli"
+modelforge-nb = "notebook_cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_strategies*", "recommendation_engine*"]
+include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_strategies*", "recommendation_engine*", "workflow*", "web*", "notebook_cli*"]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.package-data]
+web = ["frontend_dist/index.html", "frontend_dist/assets/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
