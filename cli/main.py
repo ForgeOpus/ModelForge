@@ -1,194 +1,169 @@
-import click
-import subprocess
-from rich.console import Console
-from rich.table import Table
+from __future__ import annotations
+
+import argparse
+import sys
+import webbrowser
+
+from utilities.database_manager import FinetuneLedger, WebRunLedger
 from utilities.hardware_detector import HardwareDetector
 from utilities.recommendation_engine import RecommendationEngine
-from cli.display import print_header, print_hardware, print_recommendation, print_training_summary, RichTrainingCallback
-from cli.wizard import check_hf_login, select_gpus, select_use_case, select_objective, select_model, select_dataset, validate_and_load_dataset, prompt_output_dir
-from cli.runner import assemble_and_train
-from utilities.database_manager import FinetuneLedger
-from utilities.tensorboard import (
-    DEFAULT_TENSORBOARD_HOST,
-    DEFAULT_TENSORBOARD_PORT,
-    default_log_dir,
-    launch_command,
-)
-
-console = Console()
+from utilities.tensorboard import DEFAULT_TENSORBOARD_HOST, DEFAULT_TENSORBOARD_PORT
+from utilities.training_objective import TrainingObjective
+from workflow.registries import load_core_registries
+from workflow.service import WorkflowService
 
 
-@click.group()
-def cli():
-    pass
-
-
-@cli.command()
-@click.option(
-    "--tensorboard/--no-tensorboard",
-    default=True,
-    show_default=True,
-    help="Write TensorBoard event logs for training metrics.",
-)
-@click.option(
-    "--tensorboard-logdir",
-    type=click.Path(file_okay=False, dir_okay=True),
-    default=None,
-    help="Directory for TensorBoard event logs. Defaults to OUTPUT_DIR/tensorboard.",
-)
-def run(tensorboard: bool, tensorboard_logdir: str | None):
-    print_header()
-    check_hf_login()
-    hardware = HardwareDetector.detect_hardware()
-    print_hardware(hardware)
-    filtered_hardware, cuda_str = select_gpus(hardware)
-    use_case_cls = select_use_case()
-    objective = select_objective(use_case_cls)
-    console.print("[bold]Finding best models for your hardware...[/bold]")
-    recommendation = RecommendationEngine.recommend(use_case_cls.slug, objective, filtered_hardware, n=5)
-    print_recommendation(recommendation)
-    model_id = select_model(recommendation)
-    dataset_path, is_remote = select_dataset()
-    dataset = validate_and_load_dataset(dataset_path, is_remote, recommendation)
-    output_dir = prompt_output_dir(model_id)
-    resolved_tensorboard_logdir = tensorboard_logdir if tensorboard else None
-    if tensorboard and resolved_tensorboard_logdir is None:
-        resolved_tensorboard_logdir = default_log_dir(output_dir)
-    print_training_summary(model_id, dataset_path, output_dir, recommendation, resolved_tensorboard_logdir)
-    if not click.confirm("Proceed with training?", default=True):
-        raise click.Abort()
-    output_path = assemble_and_train(
-        recommendation,
-        model_id,
-        dataset,
-        output_dir,
-        cuda_str,
-        callbacks=[RichTrainingCallback()],
-        tensorboard_log_dir=resolved_tensorboard_logdir,
-    )
-    FinetuneLedger().record(
-        model_id=model_id,
-        use_case=use_case_cls.slug,
-        task_slug=recommendation.task_slug,
-        strategy=recommendation.strategy_slug,
-        peft=recommendation.peft_approach,
-        dataset=dataset_path,
-        output_dir=output_path,
-        config_json=recommendation.strategy_config.model_dump_json(),
-    )
-    console.print(f"[green]Model saved to {output_path}[/green]")
-    if resolved_tensorboard_logdir:
-        console.print(f"TensorBoard logs: [bold]{resolved_tensorboard_logdir}[/bold]")
-        console.print(f"Open with: [bold]{launch_command(resolved_tensorboard_logdir)}[/bold]")
-    console.print("Run [bold]modelforge history[/bold] to view past runs or push to HuggingFace Hub.")
-
-
-@cli.command()
-def recommend():
-    print_header()
-    check_hf_login()
-    hardware = HardwareDetector.detect_hardware()
-    print_hardware(hardware)
-    filtered_hardware, cuda_str = select_gpus(hardware)
-    use_case_cls = select_use_case()
-    objective = select_objective(use_case_cls)
-    console.print("[bold]Finding best models for your hardware...[/bold]")
-    recommendation = RecommendationEngine.recommend(use_case_cls.slug, objective, filtered_hardware, n=5)
-    print_recommendation(recommendation)
-
-
-@cli.command(name="list-tasks")
-def list_tasks():
-    from recommendation_engine.language_use_cases.use_case import LanguageUseCase
-    from recommendation_engine import (
-        TextGenerationUseCase,
-        InstructionFollowingUseCase,
-        SummarizationUseCase,
-        ExtractiveQAUseCase,
-    )
-
-    table = Table(title="Available Use Cases")
-    table.add_column("Use Case", style="bold")
-    table.add_column("Slug")
-    table.add_column("Compatible Objectives")
-    table.add_column("Description")
-
-    for use_case_cls in LanguageUseCase.list_use_case_classes():
-        objectives = ", ".join(obj.value for obj in use_case_cls.compatible_objectives)
-        table.add_row(
-            use_case_cls.__name__,
-            use_case_cls.slug,
-            objectives,
-            use_case_cls.description,
-        )
-
-    console.print(table)
-
-
-@cli.command()
-def history():
-    runs = FinetuneLedger().list_runs()
-    if not runs:
-        console.print("No finetune runs recorded yet.")
+def cli(argv: list[str] | None = None) -> None:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.command is None:
+        parser.print_help()
         return
-
-    table = Table(title="Finetune History")
-    table.add_column("ID", style="bold")
-    table.add_column("Timestamp")
-    table.add_column("Model")
-    table.add_column("Use Case")
-    table.add_column("PEFT")
-    table.add_column("Output Dir")
-
-    for run in runs:
-        table.add_row(
-            str(run["id"]),
-            str(run["timestamp"]),
-            run["model_id"],
-            run["use_case"],
-            run["peft"],
-            run["output_dir"],
-        )
-
-    console.print(table)
-    console.print("\nPush a run to HuggingFace Hub?")
-    run_id_str = click.prompt("Enter run ID to push (or press Enter to skip)", default="", show_default=False)
-    if not run_id_str.strip():
-        return
-
-    run = FinetuneLedger().get_run(int(run_id_str))
-    if run is None:
-        console.print(f"[red]No run found with ID {run_id_str}[/red]")
-        return
-
-    repo_name = click.prompt("HuggingFace repo ID (e.g. yourname/model-name)")
-    from huggingface_hub import upload_folder
-    upload_folder(folder_path=run["output_dir"], repo_id=repo_name, repo_type="model")
-    console.print(f"[green]Pushed to https://huggingface.co/{repo_name}[/green]")
+    args.func(args)
 
 
-@cli.command(name="tensorboard")
-@click.argument("logdir", required=False, type=click.Path(file_okay=False, dir_okay=True))
-@click.option("--host", default=DEFAULT_TENSORBOARD_HOST, show_default=True, help="TensorBoard host.")
-@click.option("--port", default=DEFAULT_TENSORBOARD_PORT, show_default=True, help="TensorBoard port.")
-def tensorboard_cmd(logdir: str | None, host: str, port: int):
-    """Launch TensorBoard for ModelForge run logs."""
-    resolved_logdir = logdir or "./modelforge_output"
-    console.print(f"Starting TensorBoard for [bold]{resolved_logdir}[/bold]")
-    console.print(f"URL: [bold]http://{host}:{port}[/bold]")
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="modelforge")
+    subcommands = parser.add_subparsers(dest="command")
+
+    run = subcommands.add_parser("run", help="Start the browser UI.")
+    run.add_argument("--host", default="0.0.0.0", help="Host to bind. Defaults to 0.0.0.0.")
+    run.add_argument("--port", default=8000, type=int, help="Port to bind.")
+    run.add_argument("--no-browser", action="store_true", help="Do not open the UI in a browser.")
+    run.add_argument("--token", default=None, help="Use a fixed startup token instead of generating one.")
+    run.set_defaults(func=run_web)
+
+    terminal = subcommands.add_parser("cli", help="Start the optional terminal wizard.")
+    terminal.add_argument("--no-tensorboard", action="store_true", help="Disable TensorBoard logging.")
+    terminal.add_argument("--tensorboard-logdir", default=None, help="Directory for TensorBoard event logs.")
+    terminal.set_defaults(func=run_terminal)
+
+    recommend = subcommands.add_parser("recommend", help="Print hardware-aware model recommendations.")
+    recommend.add_argument("--use-case", default=None, help="Use case slug.")
+    recommend.add_argument("--objective", default="supervised", choices=[item.value for item in TrainingObjective])
+    recommend.add_argument("--n", default=5, type=int)
+    recommend.set_defaults(func=run_recommend)
+
+    history = subcommands.add_parser("history", help="Print run history.")
+    history.add_argument("--legacy", action="store_true", help="Show the legacy terminal finetune ledger.")
+    history.set_defaults(func=run_history)
+
+    list_tasks = subcommands.add_parser("list-tasks", help="List available use cases.")
+    list_tasks.set_defaults(func=run_list_tasks)
+
+    tensorboard = subcommands.add_parser("tensorboard", help="Launch TensorBoard for a log directory.")
+    tensorboard.add_argument("logdir", nargs="?", default=None)
+    tensorboard.add_argument("--host", default=DEFAULT_TENSORBOARD_HOST)
+    tensorboard.add_argument("--port", default=DEFAULT_TENSORBOARD_PORT, type=int)
+    tensorboard.set_defaults(func=run_tensorboard)
+
+    return parser
+
+
+def run_web(args: argparse.Namespace) -> None:
+    import uvicorn
+    from web.app import create_app
+    from web.auth import TokenAuth
+
+    auth = TokenAuth(args.token)
+    url = auth.public_url(args.host, args.port)
+    print("ModelForge v4 browser UI")
+    print(f"Serving on: http://{args.host}:{args.port}")
+    print(f"Open:       {url}")
+    print("The startup token is required for API and WebSocket access.")
+    if not args.no_browser:
+        webbrowser.open(url)
+    app = create_app(auth=auth)
+    uvicorn.run(app, host=args.host, port=args.port)
+
+
+def run_terminal(args: argparse.Namespace) -> None:
     try:
-        subprocess.run(
-            [
-                "tensorboard",
-                "--logdir",
-                resolved_logdir,
-                "--host",
-                host,
-                "--port",
-                str(port),
-            ],
-            check=False,
-        )
-    except FileNotFoundError:
-        console.print("[red]TensorBoard is not installed or is not on PATH.[/red]")
-        console.print("Install project dependencies, then run this command again.")
+        from cli.terminal import run_terminal_wizard
+    except ImportError as exc:
+        raise SystemExit(
+            "The terminal UI requires optional dependencies. "
+            "Install with: pip install \"modelforge-finetuning[cli]\""
+        ) from exc
+    run_terminal_wizard(
+        tensorboard=not args.no_tensorboard,
+        tensorboard_logdir=args.tensorboard_logdir,
+    )
+
+
+def run_recommend(args: argparse.Namespace) -> None:
+    load_core_registries()
+    service = WorkflowService()
+    use_case = args.use_case or _prompt_use_case(service)
+    hardware = HardwareDetector.detect_hardware()
+    recommendation = RecommendationEngine.recommend(
+        use_case,
+        TrainingObjective(args.objective),
+        hardware,
+        n=args.n,
+    )
+    print(f"Task:      {recommendation.task_slug}")
+    print(f"Strategy:  {recommendation.strategy_slug}")
+    print(f"PEFT:      {recommendation.peft_approach}")
+    print("Models:")
+    for model in recommendation.recommended_models:
+        print(f"  - {model.model_id} ({model.num_parameters:,} params, {model.downloads:,} downloads)")
+    if recommendation.rationale.warnings:
+        print("Warnings:")
+        for warning in recommendation.rationale.warnings:
+            print(f"  - {warning}")
+
+
+def run_history(args: argparse.Namespace) -> None:
+    if args.legacy:
+        runs = FinetuneLedger().list_runs()
+        for run in runs:
+            print(f"{run['id']}: {run['timestamp']} {run['model_id']} ({run['peft']}) -> {run['output_dir']}")
+        if not runs:
+            print("No legacy finetune runs recorded yet.")
+        return
+    runs = WebRunLedger().list_runs()
+    for run in runs:
+        print(f"{run['id']}: {run['status']} {run['model_id']} -> {run['output_dir']}")
+    if not runs:
+        print("No runs recorded yet.")
+
+
+def run_list_tasks(args: argparse.Namespace) -> None:
+    service = WorkflowService()
+    for use_case in service.list_use_cases():
+        objectives = ", ".join(use_case["compatible_objectives"])
+        print(f"{use_case['slug']}: {use_case['name']} [{objectives}]")
+        print(f"  {use_case['description']}")
+
+
+def run_tensorboard(args: argparse.Namespace) -> None:
+    try:
+        from cli.terminal import tensorboard_cmd
+    except ImportError as exc:
+        raise SystemExit(
+            "The TensorBoard terminal helper requires optional dependencies. "
+            "Install with: pip install \"modelforge-finetuning[cli]\""
+        ) from exc
+    tensorboard_cmd(args.logdir, args.host, args.port)
+
+
+def _prompt_use_case(service: WorkflowService) -> str:
+    use_cases = service.list_use_cases()
+    print("Available use cases:")
+    for index, use_case in enumerate(use_cases, start=1):
+        print(f"  {index}. {use_case['name']} ({use_case['slug']})")
+    while True:
+        raw = input("Select use case: ").strip()
+        try:
+            choice = int(raw)
+            if 1 <= choice <= len(use_cases):
+                return use_cases[choice - 1]["slug"]
+        except ValueError:
+            if any(use_case["slug"] == raw for use_case in use_cases):
+                return raw
+        print("Enter a number from the list or a use case slug.")
+
+
+if __name__ == "__main__":
+    cli(sys.argv[1:])
