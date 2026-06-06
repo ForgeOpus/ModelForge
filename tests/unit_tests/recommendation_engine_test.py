@@ -3,6 +3,7 @@ from unittest.mock import patch, MagicMock
 from utilities.training_objective import TrainingObjective
 from utilities.recommendation_engine import RecommendationEngine, ACTIVATION_BUDGET_GB, ADAPTER_COST_GB
 from utilities.hardware_detector import HardwareDetector
+from utilities.parallelism_strategy import ParallelismStrategy
 from recommendation_engine.validation_models.recommendation import RecommendedModel, Recommendation
 
 
@@ -292,6 +293,8 @@ class TestRecommend:
         assert result.strategy_slug == "sft"
         assert result.provider_slug == "huggingface"
         assert result.peft_approach in ("full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit")
+        assert isinstance(result.parallelism_strategy, ParallelismStrategy)
+        assert result.rationale.parallelism_decision != ""
 
     def test_recommend_n_zero_raises(self, gpu_24gb):
         with pytest.raises(ValueError, match="n must be a positive integer"):
@@ -358,7 +361,12 @@ class TestRecommend:
             result = RecommendationEngine.recommend(
                 "text_generation", TrainingObjective.SUPERVISED, multi_gpu_hw
             )
-        assert any("Multi-GPU" in w or "multi-GPU" in w.lower() for w in result.rationale.warnings)
+        # Depending on VRAM the engine selects either FSDP or DATA_PARALLEL — both emit a
+        # Multi-GPU warning with different text; check that at least one warning mentions multi-GPU.
+        assert any(
+            "Multi-GPU detected" in w or "multi-GPU" in w.lower()
+            for w in result.rationale.warnings
+        )
 
     def test_strategy_config_not_none_when_model_found(self, gpu_24gb):
         model = make_recommended_model(num_parameters=250_000_000)
@@ -528,3 +536,116 @@ class TestQueryHub:
         assert used_retry is False
         assert call_count == 1
         assert len(results) == 1
+
+
+# ---------------------------------------------------------------------------
+# _select_parallelism_strategy
+# ---------------------------------------------------------------------------
+
+class TestSelectParallelismStrategy:
+    """Unit tests for RecommendationEngine._select_parallelism_strategy."""
+
+    def test_single_gpu_returns_data_parallel(self):
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=1,
+            per_gpu_vram_gb=24.0,
+            peft_tier="full_finetune",
+            chosen_num_params=7_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_cpu_only_returns_data_parallel(self):
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=0,
+            per_gpu_vram_gb=0.0,
+            peft_tier="qlora_4bit",
+            chosen_num_params=1_000_000_000,
+            is_cpu_only=True,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_mps_returns_data_parallel(self):
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=1,
+            per_gpu_vram_gb=8.0,
+            peft_tier="full_finetune",
+            chosen_num_params=7_000_000_000,
+            is_cpu_only=False,
+            is_mps=True,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_lora_returns_data_parallel(self):
+        # FSDP is blocked when peft_tier != full_finetune
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=24.0,
+            peft_tier="lora_bf16",
+            chosen_num_params=7_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_qlora_returns_data_parallel(self):
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=24.0,
+            peft_tier="qlora_4bit",
+            chosen_num_params=7_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_no_chosen_model_returns_data_parallel(self):
+        # Hub returned 0 models → nothing to shard
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=24.0,
+            peft_tier="full_finetune",
+            chosen_num_params=None,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_multi_gpu_full_finetune_model_too_large_returns_fsdp(self):
+        # 7B full replica ≈ 7e9 * 18 / 1e9 = 126 GB > 24 GB smallest GPU → FSDP
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=24.0,
+            peft_tier="full_finetune",
+            chosen_num_params=7_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.FSDP
+
+    def test_multi_gpu_full_finetune_model_fits_returns_data_parallel(self):
+        # 1B full replica ≈ 18 GB < 80 GB smallest GPU → DATA_PARALLEL
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=80.0,
+            peft_tier="full_finetune",
+            chosen_num_params=1_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.DATA_PARALLEL
+
+    def test_heterogeneous_gpus_use_smallest_card(self):
+        # Engine passes the MINIMUM per-GPU VRAM; an 8 GB card can't hold a 1B full replica (~18 GB)
+        # even though a paired 80 GB card could → FSDP.
+        result = RecommendationEngine._select_parallelism_strategy(
+            num_gpus=2,
+            per_gpu_vram_gb=8.0,
+            peft_tier="full_finetune",
+            chosen_num_params=1_000_000_000,
+            is_cpu_only=False,
+            is_mps=False,
+        )
+        assert result == ParallelismStrategy.FSDP

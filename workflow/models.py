@@ -5,6 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from utilities.training_objective import TrainingObjective
+from utilities.parallelism_strategy import ParallelismStrategy
 
 
 RunStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
@@ -47,6 +48,7 @@ class TrainingRunRequest(BaseModel):
     tensorboard_log_dir: str | None = None
     recommendation: dict[str, Any] | None = None
     resume_from_checkpoint: str | None = None
+    parallelism_strategy_override: ParallelismStrategy | None = None
 
     @field_validator("model_id", "dataset_path", "output_dir")
     @classmethod

@@ -5,6 +5,7 @@ import time
 import pytest
 
 from utilities.database_manager import WebRunLedger
+from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.training_objective import TrainingObjective
 from workflow.jobs import TrainingJobManager
 from workflow.models import TrainingRunRequest
@@ -14,9 +15,18 @@ class FakeRecommendation:
     task_slug = "causal_language_modeling"
     strategy_slug = "sft"
     peft_approach = "qlora_4bit"
+    parallelism_strategy = ParallelismStrategy.DATA_PARALLEL
 
     def model_dump_json(self):
         return '{"fake": true}'
+
+    def model_copy(self, *, update=None):
+        """Minimal Pydantic-compatible model_copy that applies the update dict."""
+        import copy
+        clone = copy.copy(self)
+        for k, v in (update or {}).items():
+            object.__setattr__(clone, k, v)
+        return clone
 
 
 class FakeWorkflow:
@@ -117,3 +127,62 @@ def test_ledger_marks_interrupted_runs(tmp_path):
 
     assert changed == 1
     assert ledger.get_run(run_id)["status"] == "failed"
+
+
+# ---------------------------------------------------------------------------
+# Parallelism override tests
+# ---------------------------------------------------------------------------
+
+def test_start_run_applies_parallelism_override(tmp_path, monkeypatch):
+    """When parallelism_strategy_override is set, the recommendation passed to
+    assemble_and_train must reflect the overridden strategy."""
+    ledger = WebRunLedger(tmp_path / "runs.db")
+    manager = TrainingJobManager(workflow=FakeWorkflow(), ledger=ledger, recover_interrupted=False)
+    monkeypatch.setattr("workflow.jobs.DatasetFactory.load", lambda *args, **kwargs: object())
+
+    captured = {}
+
+    def capture_train(recommendation, *args, **kwargs):
+        captured["parallelism_strategy"] = recommendation.parallelism_strategy
+        return "./out"
+
+    monkeypatch.setattr("workflow.jobs.assemble_and_train", capture_train)
+
+    request = make_request()
+    request = request.model_copy(update={"parallelism_strategy_override": ParallelismStrategy.DATA_PARALLEL})
+    run = manager.start_run(request)
+
+    wait_for(lambda: ledger.get_run(run["id"])["status"] == "completed")
+    assert captured["parallelism_strategy"] == ParallelismStrategy.DATA_PARALLEL
+
+
+def test_start_run_fsdp_lora_override_raises(tmp_path, monkeypatch):
+    """Overriding parallelism_strategy to FSDP when peft_approach is lora_bf16
+    must raise ValueError before any training thread is spawned."""
+    ledger = WebRunLedger(tmp_path / "runs.db")
+
+    class LoraWorkflow(FakeWorkflow):
+        def recommend(self, request):
+            rec = FakeRecommendation()
+            rec.peft_approach = "lora_bf16"
+            return rec
+
+    manager = TrainingJobManager(workflow=LoraWorkflow(), ledger=ledger, recover_interrupted=False)
+    monkeypatch.setattr("workflow.jobs.DatasetFactory.load", lambda *args, **kwargs: object())
+
+    spawned = {"count": 0}
+    original_thread_start = __import__("threading").Thread.start
+
+    def counting_start(self):
+        spawned["count"] += 1
+        original_thread_start(self)
+
+    monkeypatch.setattr("threading.Thread.start", counting_start)
+
+    request = make_request()
+    request = request.model_copy(update={"parallelism_strategy_override": ParallelismStrategy.FSDP})
+
+    with pytest.raises(ValueError):
+        manager.start_run(request)
+
+    assert spawned["count"] == 0, "No training thread should be spawned when validation fails"
