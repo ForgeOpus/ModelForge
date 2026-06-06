@@ -153,10 +153,15 @@ class FinetuningStrategy(ABC):
 
         tensorboard = self._create_tensorboard_program()
         tensorboard.configure(
-            argv=["tensorboard"],
-            logdir=str(resolved_log_dir),
-            host=host,
-            port=port,
+            argv=[
+                "tensorboard",
+                "--logdir",
+                str(resolved_log_dir),
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ]
         )
         url = tensorboard.launch()
         self._tensorboard_urls[process_key] = url
