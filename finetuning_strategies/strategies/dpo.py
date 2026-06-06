@@ -1,6 +1,6 @@
 from finetuning_strategies.tasks.task import FinetuningTask
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
-from finetuning_strategies.strategies.SFT import LoraRecommendedConfig
+from finetuning_strategies.strategies.sft import LoraRecommendedConfig
 from typing import List, Literal, Any, Dict, Optional, Callable, Union
 from finetuning_strategies.model_factory import TaskModels
 from datasets import IterableDataset, Dataset
@@ -124,6 +124,7 @@ class DPO(FinetuningStrategy):
         push_to_hub: bool = False,
         hub_model_id: Optional[str] = None,
         report_to: Union[str, List[str]] = "none",
+        logging_dir: Optional[str] = None,
         seed: int = 42,
         **training_kwargs: Any,
     ) -> None:
@@ -152,6 +153,7 @@ class DPO(FinetuningStrategy):
             push_to_hub=push_to_hub,
             hub_model_id=hub_model_id,
             report_to=report_to,
+            logging_dir=logging_dir,
             seed=seed,
             **training_kwargs,
         )
@@ -286,6 +288,7 @@ class DPO(FinetuningStrategy):
         eval_dataset: Optional[Union[Dataset, IterableDataset, Dict]] = None,
         peft_config: Optional[PeftConfig] = None,
         callbacks: Optional[list] = None,
+        resume_from_checkpoint: Optional[str] = None,
     ) -> DPOTrainer:
         self.validate_data_format(dataset)
 
@@ -319,7 +322,8 @@ class DPO(FinetuningStrategy):
             peft_config=peft_config,
         )
 
-        trainer.train()
+        self.launch_tensorboard(dpo_config)
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
             trainer.model.save_pretrained(output_dir)
