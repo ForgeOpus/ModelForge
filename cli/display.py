@@ -109,6 +109,7 @@ def print_training_summary(
     dataset_desc: str,
     output_dir: str,
     recommendation: Recommendation,
+    tensorboard_log_dir: str | None = None,
 ) -> None:
     body = (
         f"Model:          {model_id}\n"
@@ -118,6 +119,8 @@ def print_training_summary(
         f"PEFT approach:  {recommendation.peft_approach}\n"
         f"Output Dir:     {output_dir}"
     )
+    if tensorboard_log_dir:
+        body += f"\nTensorBoard:    {tensorboard_log_dir}"
     rprint(Panel(body, title="[bold blue]Training Summary[/bold blue]"))
 
 
