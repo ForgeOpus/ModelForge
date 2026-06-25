@@ -2,7 +2,7 @@ import os
 import webbrowser
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Dict, List, Literal
+from typing import Any, Dict, List, Literal, Tuple
 from providers import SUPPORTED_PROVIDERS
 from utilities.tensorboard import (
     DEFAULT_TENSORBOARD_HOST,
@@ -13,7 +13,7 @@ import torch
 
 
 class FinetuningStrategy(ABC):
-    """Abstract base for all fine-tuning strategies. Subclasses auto-register on definition.
+    """Abstract base for all fine-tuning strategiesbug fix. Subclasses auto-register on definition.
 
     Required class attributes (validated in __init_subclass__):
         name: str — display name
@@ -32,7 +32,7 @@ class FinetuningStrategy(ABC):
     _registry: Dict[str, type] = {}
     _tensorboard_urls: Dict[str, str] = {}
 
-    supported_providers: Literal[tuple(SUPPORTED_PROVIDERS)] = None
+    supported_providers: Tuple[str, ...] = None
 
     # --- New required attributes for the recommendation engine ---
     supported_tasks: List[str] = None
