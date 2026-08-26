@@ -11,3 +11,5 @@ HF_DOCS
 
 *.egg-info/
 dist/
+node_modules/
+web/frontend_dist/
