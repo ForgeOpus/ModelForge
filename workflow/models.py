@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -88,3 +89,4 @@ class TrainingEvent(BaseModel):
     type: str
     message: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)
+    ts: float = Field(default_factory=time.time, description="Unix seconds the event was emitted.")

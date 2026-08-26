@@ -26,6 +26,8 @@ class DatasetValidationResult:
     columns: list[str]
     format_description: str | None = None
     error: str | None = None
+    # None for streaming datasets, which have no length to report.
+    row_count: int | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -35,6 +37,7 @@ class DatasetValidationResult:
             "columns": self.columns,
             "format_description": self.format_description,
             "error": self.error,
+            "row_count": self.row_count,
         }
 
 
@@ -133,7 +136,13 @@ class WorkflowService:
             columns = list(getattr(split, "column_names", []) or getattr(split, "features", {}).keys())
             if strategy_cls is not None:
                 strategy_cls.validate_data_format(split)
-            return DatasetValidationResult(True, request.path, request.remote, columns, format_description)
+            try:
+                row_count = len(split)
+            except TypeError:
+                row_count = None
+            return DatasetValidationResult(
+                True, request.path, request.remote, columns, format_description, row_count=row_count
+            )
         except Exception as exc:
             return DatasetValidationResult(
                 False,
@@ -143,6 +152,54 @@ class WorkflowService:
                 format_description,
                 str(exc),
             )
+
+    def validate_model_id(self, model_id: str, task_slug: str | None = None) -> dict[str, Any]:
+        """Check a hand-entered model ID before a run is committed to it.
+
+        The old UI accepted any string and only failed once training had
+        started; this answers the question up front."""
+        model_id = (model_id or "").strip()
+        if not model_id:
+            return {"valid": False, "model_id": model_id, "num_parameters": None,
+                    "error": "Enter a model ID, for example org/model."}
+        try:
+            from huggingface_hub import HfApi
+            from huggingface_hub.utils import HfHubHTTPError
+
+            try:
+                info = HfApi().model_info(model_id, expand=["safetensors", "pipeline_tag"])
+            except HfHubHTTPError as exc:
+                # The Hub answers 401 rather than 404 for an unknown repo when
+                # you are not signed in, so both mean the same thing here. The
+                # raw error is a wall of Hub internals; say the useful part.
+                status = getattr(getattr(exc, "response", None), "status_code", None)
+                if status in (401, 403, 404):
+                    return {
+                        "valid": False,
+                        "model_id": model_id,
+                        "num_parameters": None,
+                        "error": "No model with that ID is visible on the Hub. Check the "
+                                 "spelling, or run `huggingface-cli login` if it is private "
+                                 "or gated.",
+                    }
+                return {"valid": False, "model_id": model_id, "num_parameters": None,
+                        "error": f"The Hub returned an error ({status or 'unknown'})."}
+
+            num_parameters = None
+            safetensors = getattr(info, "safetensors", None)
+            if safetensors is not None:
+                num_parameters = getattr(safetensors, "total", None)
+
+            return {
+                "valid": True,
+                "model_id": model_id,
+                "num_parameters": num_parameters,
+                "pipeline_tag": getattr(info, "pipeline_tag", None),
+                "error": None,
+            }
+        except Exception:  # noqa: BLE001
+            return {"valid": False, "model_id": model_id, "num_parameters": None,
+                    "error": "Could not reach the Hugging Face Hub. Check your connection."}
 
     @staticmethod
     def recommendation_to_json(recommendation) -> str:
