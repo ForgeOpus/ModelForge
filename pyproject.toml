@@ -16,8 +16,10 @@ dependencies = [
     "nvidia-ml-py>=13.595.45",
     "peft>=0.19.1",
     "platformdirs>=4.9.6",
+    "psutil>=5.9.0",
     "pydantic>=2.13.4",
     "uvicorn>=0.38.0",
+    "websockets>=13.0",
     "tensorboard>=2.20.0",
     "tqdm>=4.67.3",
     "transformers>=5.8.0",
@@ -50,7 +52,7 @@ include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_s
 include-package-data = true
 
 [tool.setuptools.package-data]
-web = ["frontend_dist/index.html", "frontend_dist/assets/*"]
+web = ["frontend_dist/index.html", "frontend_dist/*.svg", "frontend_dist/*.ico", "frontend_dist/*.png", "frontend_dist/*.jpg", "frontend_dist/assets/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

@@ -20,8 +20,29 @@ from utilities.hardware_detector import HardwareDetector
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 
 
+def _liger_kernel_available() -> bool:
+    """Liger needs CUDA *and* the optional liger-kernel package.
+
+    The package is not a declared dependency, and TRL raises rather than
+    falling back, so recommending it unconditionally on a CUDA box makes every
+    run fail at startup. Only ask for it when it can actually be used."""
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("liger_kernel") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 class SFTRecommendedConfig(BaseModel):
-    """Recommended SFTTrainer configuration for a detected hardware profile."""
+    """Recommended SFTTrainer configuration for a detected hardware profile.
+
+    Everything here is forwarded to build_sft_config() verbatim, which is what
+    lets an interface hand a modified copy back and have it take effect.
+
+    The schedule fields below default to build_sft_config()'s own values, so a
+    run started without touching them behaves exactly as it did before they
+    were surfaced -- they were always in force, just unreachable."""
     per_device_train_batch_size: int
     gradient_accumulation_steps: int
     gradient_checkpointing: bool
@@ -33,6 +54,17 @@ class SFTRecommendedConfig(BaseModel):
     bf16: bool
     fp16: bool
     model_init_kwargs: dict
+    num_train_epochs: float = 3.0
+    learning_rate: float = 2e-5
+    per_device_eval_batch_size: int = 8
+    weight_decay: float = 0.0
+    warmup_ratio: float = 0.0
+    lr_scheduler_type: str = "linear"
+    optim: str = "adamw_torch"
+    max_grad_norm: float = 1.0
+    logging_steps: int = 10
+    save_steps: int = 500
+    seed: int = 42
 
 
 class LoraRecommendedConfig(BaseModel):
@@ -285,7 +317,7 @@ class SFT(FinetuningStrategy):
             packing=True,
             packing_strategy="bfd",
             max_length=max_length,
-            use_liger_kernel=(raw_vram_gb > 0),  # Liger requires CUDA
+            use_liger_kernel=(raw_vram_gb > 0 and _liger_kernel_available()),
             activation_offloading=activation_offloading,
             bf16=bf16,
             fp16=fp16,

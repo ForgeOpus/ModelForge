@@ -50,6 +50,21 @@ class Rationale(BaseModel):
         return "\n".join(lines)
 
 
+class VramEstimate(BaseModel):
+    """The budget the tier decision was made against.
+
+    These numbers already exist inside the engine; returning them lets the
+    interface show the constraint that produced the plan instead of restating
+    the arithmetic and drifting from it."""
+
+    raw_vram_gb: float = Field(..., description="Summed VRAM across selected GPUs")
+    adjusted_vram_gb: float = Field(..., description="After strategy overhead (extra copies, batch multiplier)")
+    activation_budget_gb: float = Field(..., description="Reserved for activations")
+    adapter_cost_gb: float = Field(..., description="Reserved for the LoRA adapter and dequant buffers")
+    bytes_per_param: float = Field(..., description="Weight cost per parameter at the selected tier")
+    max_params_by_tier: dict[str, float] = Field(..., description="Parameter ceiling for each tier")
+
+
 class Recommendation(BaseModel):
     """Full output of RecommendationEngine.recommend()."""
 
@@ -74,3 +89,6 @@ class Recommendation(BaseModel):
         ..., description="User-facing data format spec for the resolved (use case, objective) pair"
     )
     rationale: Rationale = Field(..., description="Structured explanation of all engine decisions")
+    vram_estimate: VramEstimate | None = Field(
+        None, description="Budget the tier decision was made against; None on CPU-only fallbacks"
+    )

@@ -14,6 +14,20 @@ import warnings
 import torch
 
 
+def _liger_kernel_available() -> bool:
+    """Liger needs CUDA *and* the optional liger-kernel package.
+
+    The package is not a declared dependency, and TRL raises rather than
+    falling back, so recommending it unconditionally on a CUDA box makes every
+    run fail at startup. Only ask for it when it can actually be used."""
+    from importlib.util import find_spec
+
+    try:
+        return find_spec("liger_kernel") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 class DPORecommendedConfig(BaseModel):
     """Recommended DPOTrainer configuration for a detected hardware profile."""
     per_device_train_batch_size: int
@@ -28,6 +42,18 @@ class DPORecommendedConfig(BaseModel):
     beta: float
     loss_type: str
     learning_rate: Optional[float] = None
+    # Defaults mirror build_dpo_config(), so surfacing them changes nothing
+    # for a run that leaves them alone.
+    num_train_epochs: float = 3.0
+    per_device_eval_batch_size: int = 8
+    weight_decay: float = 0.0
+    warmup_ratio: float = 0.1
+    lr_scheduler_type: str = "cosine"
+    optim: str = "adamw_torch"
+    max_grad_norm: float = 1.0
+    logging_steps: int = 10
+    save_steps: int = 500
+    seed: int = 42
 
 
 class DPO(FinetuningStrategy):
@@ -244,7 +270,7 @@ class DPO(FinetuningStrategy):
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=True,
             max_length=max_length,
-            use_liger_kernel=(raw_vram_gb > 0),
+            use_liger_kernel=(raw_vram_gb > 0 and _liger_kernel_available()),
             activation_offloading=activation_offloading,
             bf16=bf16,
             fp16=fp16,

@@ -353,6 +353,42 @@ class WebRunLedger:
                 )
                 """
             )
+            # Event history, written once when a run reaches a terminal state.
+            # The live buffer lives in memory; without this, restarting
+            # ModelForge would leave every past run with an empty timeline.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_run_events (
+                    run_id      INTEGER PRIMARY KEY,
+                    events_json TEXT NOT NULL,
+                    created_at  TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES web_runs(id)
+                )
+                """
+            )
+            # Trained artifacts. Deliberately separate from the legacy `models`
+            # table, whose ModelMetadata requires model_path to sit directly
+            # inside the ModelForge data directory -- a user's chosen
+            # output_dir almost never does.
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS web_models (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    run_id        INTEGER,
+                    name          TEXT NOT NULL,
+                    base_model    TEXT NOT NULL,
+                    task_slug     TEXT,
+                    use_case      TEXT,
+                    peft_approach TEXT,
+                    model_path    TEXT NOT NULL UNIQUE,
+                    size_bytes    INTEGER,
+                    pushed_to_hub INTEGER NOT NULL DEFAULT 0,
+                    hub_repo_id   TEXT,
+                    created_at    TEXT NOT NULL,
+                    FOREIGN KEY(run_id) REFERENCES web_runs(id)
+                )
+                """
+            )
             conn.commit()
 
     @staticmethod
@@ -458,6 +494,107 @@ class WebRunLedger:
         with self._connect() as conn:
             row = conn.execute("SELECT * FROM web_runs WHERE id = ?", (run_id,)).fetchone()
             return dict(row) if row else None
+
+    def save_run_events(self, run_id: int, events_json: str) -> None:
+        """Archive a finished run's timeline so it survives a restart."""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO web_run_events (run_id, events_json, created_at)
+                VALUES (?, ?, ?)
+                ON CONFLICT(run_id) DO UPDATE SET
+                    events_json = excluded.events_json,
+                    created_at = excluded.created_at
+                """,
+                (run_id, events_json, self._now()),
+            )
+            conn.commit()
+
+    def load_run_events(self, run_id: int) -> str | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT events_json FROM web_run_events WHERE run_id = ?", (run_id,)
+            ).fetchone()
+            return row["events_json"] if row else None
+
+    # ------------------------------------------------------------------
+    # Trained artifacts
+    # ------------------------------------------------------------------
+
+    def record_model(
+        self,
+        *,
+        run_id: int | None,
+        name: str,
+        base_model: str,
+        model_path: str,
+        task_slug: str | None = None,
+        use_case: str | None = None,
+        peft_approach: str | None = None,
+        size_bytes: int | None = None,
+    ) -> int:
+        """Register a finished artifact. Re-registering the same path updates it."""
+        now = self._now()
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO web_models
+                    (run_id, name, base_model, task_slug, use_case, peft_approach,
+                     model_path, size_bytes, pushed_to_hub, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT(model_path) DO UPDATE SET
+                    run_id = excluded.run_id,
+                    name = excluded.name,
+                    base_model = excluded.base_model,
+                    task_slug = excluded.task_slug,
+                    use_case = excluded.use_case,
+                    peft_approach = excluded.peft_approach,
+                    size_bytes = excluded.size_bytes
+                """,
+                (run_id, name, base_model, task_slug, use_case, peft_approach,
+                 model_path, size_bytes, now),
+            )
+            conn.commit()
+            if cursor.lastrowid:
+                return int(cursor.lastrowid)
+            row = conn.execute(
+                "SELECT id FROM web_models WHERE model_path = ?", (model_path,)
+            ).fetchone()
+            return int(row["id"]) if row else 0
+
+    @staticmethod
+    def _model_row(row: sqlite3.Row) -> dict:
+        """SQLite stores booleans as integers; return a real bool."""
+        record = dict(row)
+        record["pushed_to_hub"] = bool(record.get("pushed_to_hub"))
+        return record
+
+    def list_models(self, limit: int = 200) -> list[dict]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM web_models ORDER BY created_at DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [self._model_row(row) for row in rows]
+
+    def get_model(self, model_id: int) -> dict | None:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM web_models WHERE id = ?", (model_id,)).fetchone()
+            return self._model_row(row) if row else None
+
+    def delete_model(self, model_id: int) -> bool:
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM web_models WHERE id = ?", (model_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+
+    def mark_model_pushed(self, model_id: int, repo_id: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE web_models SET pushed_to_hub = 1, hub_repo_id = ? WHERE id = ?",
+                (repo_id, model_id),
+            )
+            conn.commit()
 
     def list_checkpoints(self, run_id: int) -> list[dict]:
         with self._connect() as conn:
