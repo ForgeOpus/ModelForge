@@ -1,6 +1,6 @@
 from finetuning_strategies.tasks.task import FinetuningTask
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
-from finetuning_strategies.strategies.sft import LoraRecommendedConfig
+from finetuning_strategies.strategies.sft import LoraRecommendedConfig, LIGER_KERNEL_AVAILABLE
 from typing import List, Literal, Any, Dict, Optional, Callable, Union
 from finetuning_strategies.model_factory import TaskModels
 from datasets import IterableDataset, Dataset
@@ -243,7 +243,7 @@ class DPO(FinetuningStrategy):
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=True,
             max_length=max_length,
-            use_liger_kernel=(raw_vram_gb > 0),
+            use_liger_kernel=(raw_vram_gb > 0 and LIGER_KERNEL_AVAILABLE),
             activation_offloading=activation_offloading,
             bf16=bf16,
             fp16=fp16,

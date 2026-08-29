@@ -1,0 +1,38 @@
+.ui-codeblock {
+  position: relative;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: auto;
+  max-height: 60vh;
+}
+.ui-codeblock pre {
+  margin: 0;
+  padding: var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--step--1);
+  line-height: var(--leading-normal);
+  color: var(--text-2);
+}
+.ui-codeblock code {
+  font-family: inherit;
+  white-space: pre;
+}
+.ui-codeblock-copy {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+.ui-codeblock-copy:hover {
+  color: var(--text-1);
+}

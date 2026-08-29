@@ -31,6 +31,11 @@ cli = [
     "rich>=13.0",
 ]
 notebook = []
+# Liger kernels: fused Triton kernels that cut VRAM on CUDA GPUs. No CPU or
+# Windows wheels, so this is opt-in and the strategies fall back when it is absent.
+gpu = [
+    "liger-kernel>=0.5.0",
+]
 dev = [
     "click>=8.1",
     "httpx>=0.28.0",

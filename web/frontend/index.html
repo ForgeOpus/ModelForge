@@ -2,8 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ModelForge</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/mf-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#07090C" />
+    <meta
+      name="description"
+      content="ModelForge fine-tunes the right base model for the GPU you actually have — it reads your VRAM, picks a PEFT tier with the math shown, chooses data-parallel or FSDP, and streams the run."
+    />
+    <title>ModelForge — hardware-aware fine-tuning</title>
+    <script>
+      // Pre-paint theme: avoid a flash before React mounts.
+      try {
+        var t = localStorage.getItem("modelforge_theme");
+        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -1,0 +1,182 @@
+/* Landing page section styles. Semantic tokens only. */
+
+.lp-section {
+  padding-block: var(--space-12);
+}
+
+/* ---- Hero ---- */
+.lp-hero {
+  position: relative;
+  overflow: hidden;
+  min-height: 82vh;
+  display: flex;
+  align-items: center;
+  padding-block: var(--space-12);
+}
+
+.lp-hero__inner {
+  position: relative;
+  z-index: 1;
+}
+
+.lp-hero__chip {
+  display: inline-block;
+  margin-bottom: var(--space-5);
+}
+
+.lp-hero h1 {
+  font-size: var(--step-6);
+  letter-spacing: var(--tracking-tight);
+  line-height: var(--leading-tight);
+  max-width: 16ch;
+}
+
+.lp-hero__accent {
+  display: block;
+  background: linear-gradient(90deg, var(--ember-300), var(--ember-600));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.lp-hero__sub {
+  margin-top: var(--space-5);
+  color: var(--text-2);
+  font-size: var(--step-1);
+  line-height: var(--leading-normal);
+}
+
+.lp-hero__ctas {
+  margin-top: var(--space-6);
+}
+
+.lp-hero__features {
+  margin-top: var(--space-10);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-4);
+}
+
+.lp-hero__features h3 {
+  font-size: var(--step-0);
+  margin-bottom: var(--space-2);
+}
+
+.lp-hero__features p {
+  font-size: var(--step--1);
+  color: var(--text-3);
+  line-height: var(--leading-normal);
+}
+
+/* ---- Section headings ---- */
+.lp-head {
+  max-width: var(--container-narrow);
+  margin-bottom: var(--space-8);
+}
+
+.lp-head h2 {
+  font-size: var(--step-4);
+}
+
+.lp-head p {
+  margin-top: var(--space-3);
+  color: var(--text-2);
+  font-size: var(--step-1);
+}
+
+/* ---- HowItWorks ---- */
+.lp-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+}
+
+.lp-step__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-pill);
+  background: var(--accent-soft);
+  color: var(--accent);
+  border: 1px solid var(--border-ember);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  margin-bottom: var(--space-3);
+}
+
+.lp-step h3 {
+  font-size: var(--step-1);
+  margin-bottom: var(--space-2);
+}
+
+.lp-step p {
+  color: var(--text-3);
+  font-size: var(--step--1);
+}
+
+/* ---- RationaleShowcase ---- */
+.lp-rationale__frame {
+  max-width: 880px;
+  margin-inline: auto;
+}
+
+/* ---- FeatureGrid ---- */
+.lp-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+}
+
+.lp-grid h3 {
+  font-size: var(--step-1);
+  margin-bottom: var(--space-2);
+}
+
+.lp-grid p {
+  color: var(--text-3);
+  font-size: var(--step--1);
+}
+
+/* ---- FooterCta ---- */
+.lp-footer-cta {
+  position: relative;
+  overflow: hidden;
+  text-align: center;
+  padding-block: var(--space-12);
+}
+
+.lp-footer-cta__inner {
+  position: relative;
+  z-index: 1;
+}
+
+.lp-footer-cta h2 {
+  font-size: var(--step-4);
+  max-width: 20ch;
+  margin-inline: auto;
+}
+
+.lp-footer-cta__sub {
+  margin-top: var(--space-4);
+  color: var(--text-2);
+  font-size: var(--step-1);
+}
+
+.lp-footer-cta__ctas {
+  margin-top: var(--space-6);
+  justify-content: center;
+}
+
+.lp-footer-cta__logo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(560px, 90%);
+  height: auto;
+  opacity: 0.06;
+  z-index: 0;
+  pointer-events: none;
+  filter: grayscale(0.2);
+}

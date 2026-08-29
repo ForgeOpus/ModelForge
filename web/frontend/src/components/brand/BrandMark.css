@@ -1,0 +1,38 @@
+.mf-brandmark {
+  display: inline-block;
+  flex: none;
+  line-height: 0;
+}
+
+.mf-brandmark__img {
+  display: block;
+  border-radius: var(--radius-sm);
+  object-fit: cover;
+}
+
+.mf-brandmark__svg {
+  display: block;
+}
+
+.mf-brandmark__m {
+  fill: none;
+  stroke-width: 8;
+}
+
+.mf-brandmark--animated .mf-brandmark__m {
+  stroke-dasharray: 24 14;
+  animation: flow var(--dur-hero) linear infinite;
+}
+
+.mf-brandmark--animated .mf-brandmark__node {
+  animation: pulse 3s ease-in-out infinite;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mf-brandmark--animated .mf-brandmark__m,
+  .mf-brandmark--animated .mf-brandmark__node {
+    animation-iteration-count: 1;
+  }
+}

@@ -18,6 +18,12 @@ from peft import PeftConfig
 from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
 from recommendation_engine.validation_models.recommendation import RecommendedModel
+import importlib.util
+
+
+# Liger kernels are an optional CUDA-only extra (`pip install modelforge-finetuning[gpu]`).
+# They are never installed on CPU or Windows, so probe before enabling them.
+LIGER_KERNEL_AVAILABLE = importlib.util.find_spec("liger_kernel") is not None
 
 
 class SFTRecommendedConfig(BaseModel):
@@ -285,7 +291,7 @@ class SFT(FinetuningStrategy):
             packing=True,
             packing_strategy="bfd",
             max_length=max_length,
-            use_liger_kernel=(raw_vram_gb > 0),  # Liger requires CUDA
+            use_liger_kernel=(raw_vram_gb > 0 and LIGER_KERNEL_AVAILABLE),  # Liger requires CUDA + the [gpu] extra
             activation_offloading=activation_offloading,
             bf16=bf16,
             fp16=fp16,
