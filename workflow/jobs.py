@@ -100,10 +100,20 @@ class TrainingJobManager:
         # destructively and nothing that already happened can be recovered.
         self._event_history: dict[int, deque[dict[str, Any]]] = {}
         self._lock = threading.Lock()
+        # Serializes admission of a new training job with playground inference.
+        self.resource_gate = threading.Lock()
         if recover_interrupted:
             self.ledger.mark_interrupted_runs()
 
     def start_run(self, request: TrainingRunRequest) -> dict[str, Any]:
+        if not self.resource_gate.acquire(blocking=False):
+            raise RuntimeError("Playground inference is using model resources. Wait for it to finish before starting training.")
+        try:
+            return self._start_run(request)
+        finally:
+            self.resource_gate.release()
+
+    def _start_run(self, request: TrainingRunRequest) -> dict[str, Any]:
         self._assert_capacity()
         recommendation = (
             self.workflow.recommendation_from_dict(request.recommendation)
@@ -265,6 +275,10 @@ class TrainingJobManager:
             live_threads = [thread for thread in self._threads.values() if thread.is_alive()]
             if len(live_threads) >= self.max_active_jobs:
                 raise RuntimeError("A training run is already active. Cancel or wait for it before starting another.")
+
+    def has_active_jobs(self) -> bool:
+        with self._lock:
+            return any(thread.is_alive() for thread in self._threads.values())
 
     def _checkpoint_belongs_to_run(self, run_id: int, checkpoint_path: str) -> bool:
         requested = str(Path(checkpoint_path))

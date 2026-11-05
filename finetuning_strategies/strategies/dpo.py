@@ -1,6 +1,6 @@
 from finetuning_strategies.tasks.task import FinetuningTask
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
-from finetuning_strategies.strategies.sft import LoraRecommendedConfig
+from finetuning_strategies.strategies.sft import LoraRecommendedConfig, LIGER_KERNEL_AVAILABLE
 from typing import List, Literal, Any, Dict, Optional, Callable, Union
 from finetuning_strategies.model_factory import TaskModels
 from datasets import IterableDataset, Dataset
@@ -11,20 +11,6 @@ from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 import warnings
-
-
-def _liger_kernel_available() -> bool:
-    """Liger needs CUDA *and* the optional liger-kernel package.
-
-    The package is not a declared dependency, and TRL raises rather than
-    falling back, so recommending it unconditionally on a CUDA box makes every
-    run fail at startup. Only ask for it when it can actually be used."""
-    from importlib.util import find_spec
-
-    try:
-        return find_spec("liger_kernel") is not None
-    except (ImportError, ValueError):
-        return False
 
 
 class DPORecommendedConfig(BaseModel):
@@ -269,7 +255,7 @@ class DPO(FinetuningStrategy):
             gradient_accumulation_steps=gradient_accumulation_steps,
             gradient_checkpointing=True,
             max_length=max_length,
-            use_liger_kernel=(raw_vram_gb > 0 and _liger_kernel_available()),
+            use_liger_kernel=(raw_vram_gb > 0 and LIGER_KERNEL_AVAILABLE),
             activation_offloading=activation_offloading,
             bf16=bf16,
             fp16=fp16,

@@ -16,7 +16,7 @@ dependencies = [
     "nvidia-ml-py>=13.595.45",
     "peft>=0.19.1",
     "platformdirs>=4.9.6",
-    "psutil>=5.9.0",
+    "psutil>=6.0",
     "pydantic>=2.13.4",
     "uvicorn>=0.38.0",
     "websockets>=13.0",
@@ -33,6 +33,11 @@ cli = [
     "rich>=13.0",
 ]
 notebook = []
+# Liger kernels: fused Triton kernels that cut VRAM on CUDA GPUs. No CPU or
+# Windows wheels, so this is opt-in and the strategies fall back when it is absent.
+gpu = [
+    "liger-kernel>=0.5.0",
+]
 dev = [
     "click>=8.1",
     "httpx>=0.28.0",
@@ -52,7 +57,7 @@ include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_s
 include-package-data = true
 
 [tool.setuptools.package-data]
-web = ["frontend_dist/index.html", "frontend_dist/*.svg", "frontend_dist/*.ico", "frontend_dist/*.png", "frontend_dist/*.jpg", "frontend_dist/assets/*"]
+web = ["frontend_dist/index.html", "frontend_dist/*.svg", "frontend_dist/*.ico", "frontend_dist/*.png", "frontend_dist/*.jpg", "frontend_dist/assets/*", "frontend_dist/landing-mock/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

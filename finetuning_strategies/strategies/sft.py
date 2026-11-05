@@ -18,20 +18,28 @@ from peft import PeftConfig
 from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
 from recommendation_engine.validation_models.recommendation import RecommendedModel
+import importlib.util
+
+
+# Liger kernels are an optional CUDA-only extra (`pip install modelforge-finetuning[gpu]`).
+# They are never installed on CPU or Windows, so probe before enabling them.
+LIGER_KERNEL_AVAILABLE = importlib.util.find_spec("liger_kernel") is not None
 
 
 def _liger_kernel_available() -> bool:
     """Liger needs CUDA *and* the optional liger-kernel package.
 
-    The package is not a declared dependency, and TRL raises rather than
-    falling back, so recommending it unconditionally on a CUDA box makes every
-    run fail at startup. Only ask for it when it can actually be used."""
+    TRL raises rather than falling back when the optional package is absent.
+    Only enable it when the package is installed."""
     from importlib.util import find_spec
 
     try:
         return find_spec("liger_kernel") is not None
     except (ImportError, ValueError):
         return False
+
+
+LIGER_KERNEL_AVAILABLE = _liger_kernel_available()
 
 
 class SFTRecommendedConfig(BaseModel):
