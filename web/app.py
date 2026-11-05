@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from utilities.database_manager import WebRunLedger
 from web.auth import TokenAuth
+from web.playground import InferenceRequest, Playground, PlaygroundError
 from workflow.jobs import TrainingJobManager
 from workflow.models import DatasetValidationRequest, RecommendationRequest, TrainingRunRequest
 from workflow.playground import PlaygroundManager, PlaygroundUnavailable
@@ -71,6 +72,8 @@ def create_app(
     app.state.workflow = workflow
     app.state.jobs = jobs
     app.state.ledger = ledger
+    playground = Playground(jobs, ledger)
+    app.state.playground = playground
 
     app.add_middleware(
         CORSMiddleware,
@@ -128,6 +131,13 @@ def create_app(
     @app.get("/api/runs", dependencies=[require_auth])
     async def list_runs(limit: int = 100):
         return {"runs": [_with_tensorboard_url(run) for run in ledger.list_runs(limit=limit)]}
+
+    @app.post("/api/playground/infer", dependencies=[require_auth])
+    def playground_infer(request: InferenceRequest):
+        try:
+            return playground.infer(request)
+        except PlaygroundError as exc:
+            raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
     @app.get("/api/runs/{run_id}", dependencies=[require_auth])
     async def get_run(run_id: int):
