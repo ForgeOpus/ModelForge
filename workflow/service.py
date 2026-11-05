@@ -11,6 +11,7 @@ from finetuning_strategies.strategies.strategy import FinetuningStrategy
 from providers.provider_factory import ProviderFactory
 from recommendation_engine.language_use_cases.use_case import LanguageUseCase
 from utilities.hardware_detector import HardwareDetector
+from utilities.parallelism_validator import validate_parallelism_compatibility
 from utilities.recommendation_engine import RecommendationEngine
 from utilities.recommendation_engine import OBJECTIVE_STRATEGY_MAP
 from utilities.training_objective import TrainingObjective
@@ -109,12 +110,14 @@ class WorkflowService:
     def recommend(self, request: RecommendationRequest):
         hardware = self.detect_hardware()
         filtered_hardware, _ = self.select_gpus(hardware, request.gpu_indices)
-        return RecommendationEngine.recommend(
+        recommendation = RecommendationEngine.recommend(
             request.use_case_slug,
             request.objective,
             filtered_hardware,
             n=request.n,
         )
+        validate_parallelism_compatibility(recommendation)
+        return recommendation
 
     def validate_dataset(self, request: DatasetValidationRequest) -> DatasetValidationResult:
         format_description = None

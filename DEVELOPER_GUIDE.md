@@ -41,7 +41,7 @@ ModelForge/
 ├── recommendation_engine/      # Maps user goals + hardware → training plan
 │   ├── language_use_cases/     # Translates human goals into technical parameters
 │   └── validation_models/      # Pydantic output types for recommendations
-├── utilities/                  # Shared helpers: hardware detection, DB, enums
+├── utilities/                  # Shared helpers: hardware detection, DB, enums, parallelism config
 ├── dataset_manager/            # Loads datasets from disk or HuggingFace Hub
 └── tests/unit_tests/           # All tests live here
 ```
@@ -239,7 +239,7 @@ This is the brain of the system. Given:
 
 It returns a `Recommendation` object that tells you exactly which models to try, which strategy to use, which PEFT tier fits your hardware, and why.
 
-### The 8-Step Pipeline
+### The Pipeline
 
 `RecommendationEngine.recommend()` runs these steps internally:
 
@@ -250,7 +250,8 @@ It returns a `Recommendation` object that tells you exactly which models to try,
 5. **Query HuggingFace Hub** — find models matching the use case's `hub_task_filter`
 6. **Select provider** — currently always `huggingface`
 7. **Build strategy config** — hardware-tuned `SFTRecommendedConfig`
-8. **Build rationale** — human-readable explanation of every decision
+8. **Select parallelism strategy** — `DATA_PARALLEL` vs `FSDP`, based on GPU count, the smallest GPU's VRAM, and the chosen model size (see Part 7)
+9. **Build rationale** — human-readable explanation of every decision (including a `parallelism_decision` line)
 
 ### PEFT Tier Logic
 
@@ -276,12 +277,55 @@ class Recommendation(BaseModel):
     recommended_models: list[RecommendedModel]
     strategy_config: SFTRecommendedConfig
     peft_config: LoraRecommendedConfig
+    parallelism_strategy: ParallelismStrategy  # DATA_PARALLEL (default) or FSDP
     rationale: Rationale
 ```
 
 ---
 
-## Part 7: Providers (`providers/`)
+## Part 7: Distributed Training (Parallelism Strategies)
+
+When training spans multiple GPUs, ModelForge supports two parallelism strategies. The recommendation engine picks one automatically (Part 6, step 8), and the user can override it.
+
+| Strategy | What it does | When it's chosen |
+|---|---|---|
+| `DATA_PARALLEL` | Each GPU holds a full model replica; gradients are synced. The default. | Single GPU, any PEFT tier, or multi-GPU when a full replica fits on the smallest GPU. |
+| `FSDP` | Fully Sharded Data Parallelism — shards weights, gradients, and optimizer state across GPUs, so models too big for one GPU can be trained. | ≥2 CUDA GPUs **and** full fine-tuning **and** a full replica does *not* fit on the smallest GPU. |
+
+Tensor parallelism and DeepSpeed/ZeRO are deliberately not implemented — PyTorch-native FSDP covers fine-tuning needs without a heavy extra dependency.
+
+### The three modules
+
+- `utilities/parallelism_strategy.py` — the `ParallelismStrategy` enum (`DATA_PARALLEL`, `FSDP`).
+- `utilities/fsdp_config.py` — `build_fsdp_config()` returns HuggingFace `TrainingArguments` overrides (`fsdp`, `fsdp_config`, …) that switch FSDP on.
+- `utilities/parallelism_validator.py` — `validate_parallelism_compatibility()` enforces the one hard rule below.
+
+### The one hard rule: FSDP requires full fine-tuning
+
+FSDP cannot shard LoRA/QLoRA adapter parameters, so it is only valid with `peft_approach == "full_finetune"`. `validate_parallelism_compatibility()` raises `ValueError` for any other combination. It runs in two places:
+
+- `WorkflowService.recommend()` — defense-in-depth, right after the engine produces a recommendation.
+- `TrainingJobManager.start_run()` — after applying any user override, before a training thread is spawned.
+
+### How FSDP is actually turned on
+
+FSDP **must** be driven through the Trainer's own `fsdp` / `fsdp_config` arguments — *not* by mutating `AcceleratorState`. The TRL/transformers Trainer builds its own `Accelerator` from those arguments (setting `ACCELERATE_USE_FSDP` internally); a plugin stashed on the shared state beforehand is silently overwritten, leaving the run quietly data-parallel.
+
+So `assemble_and_train()` (in `workflow/training.py`) merges `build_fsdp_config()` into the strategy config dict **before** `strategy.set_config(...)` — but only when the recommendation selected FSDP *and* the run actually has ≥2 processes (a stored or resumed recommendation may have been made against a different GPU set). The merged overrides:
+
+- enable `fsdp="full_shard auto_wrap"` with a size-based auto-wrap policy,
+- swap `gradient_checkpointing` for FSDP `activation_checkpointing` (enabling both raises in the Trainer and adds a redundant all-gather),
+- disable FSDP-incompatible options (`use_liger_kernel`, `activation_offloading`).
+
+Mixed precision is **not** set here — the Trainer derives it from the config's existing `bf16` / `fp16` flags.
+
+### Overriding the choice
+
+`TrainingRunRequest.parallelism_strategy_override` (`ParallelismStrategy | None`) lets a user force a strategy. When set, `start_run()` applies it to the recommendation via `model_copy(...)` and then re-validates, so an invalid combo (e.g. FSDP + LoRA) fails fast before any thread starts.
+
+---
+
+## Part 8: Providers (`providers/`)
 
 A **provider** knows how to load a model and tokenizer. The only current provider is `HuggingFaceProvider`.
 
@@ -295,7 +339,7 @@ Adding a new provider (e.g., for a private model hub) means subclassing `Provide
 
 ---
 
-## Part 8: Hardware Detection (`utilities/hardware_detector.py`)
+## Part 9: Hardware Detection (`utilities/hardware_detector.py`)
 
 `HardwareDetector.detect_hardware()` returns a `HardwareSpecs` Pydantic model with:
 
@@ -310,7 +354,7 @@ It uses `psutil` for CPU/RAM/disk and `pynvml` (nvidia-ml-py) for GPU VRAM. Appl
 
 ---
 
-## Part 9: Dataset Loading (`dataset_manager/dataset_factory.py`)
+## Part 10: Dataset Loading (`dataset_manager/dataset_factory.py`)
 
 `DatasetFactory.load(path_or_id)` handles all dataset loading in one place:
 
@@ -322,7 +366,7 @@ It auto-detects the format and returns a HuggingFace `Dataset` object.
 
 ---
 
-## Part 10: Database Tracking (`utilities/database_manager.py`)
+## Part 11: Database Tracking (`utilities/database_manager.py`)
 
 Two singletons track state in an SQLite database:
 
@@ -333,7 +377,7 @@ Both are singletons — only one instance exists per process. The `history` comm
 
 ---
 
-## Part 11: Tests (`tests/unit_tests/`)
+## Part 12: Tests (`tests/unit_tests/`)
 
 Tests use `pytest`. Each module covers one system. Run them with:
 
@@ -359,9 +403,12 @@ Test files:
 | `hardware_detector_test.py` | HardwareSpecs validation and detection logic |
 | `model_factory_test.py` | `TaskModels` factory methods |
 | `provider_test.py` | Provider registry and HuggingFace provider |
-| `recommendation_engine_test.py` | Full engine pipeline end-to-end |
+| `recommendation_engine_test.py` | Full engine pipeline end-to-end, incl. parallelism selection |
 | `sft_test.py` | SFT config building and data validation |
 | `strategy_factory_test.py` | `FinetuningStrategies` factory methods |
+| `fsdp_config_test.py` | `build_fsdp_config()` overrides and `SFTConfig` acceptance |
+| `parallelism_validator_test.py` | FSDP + PEFT compatibility validation |
+| `workflow_jobs_test.py` | Job manager lifecycle, parallelism override + validation |
 
 ---
 
@@ -381,6 +428,16 @@ Test files:
 3. Define: `name`, `slug`, `extra_model_copies`, `batch_multiplier`, `supported_tasks`
 4. Implement: `finetune()`, `build_recommended_config()`
 5. Import it in `finetuning_strategies/strategies/__init__.py`
+
+### Add a new parallelism strategy (e.g., tensor parallelism)
+
+Parallelism strategies are a small enum, not a registry. To add one:
+
+1. Add a member to `ParallelismStrategy` in `utilities/parallelism_strategy.py`
+2. Add a config builder (like `build_fsdp_config()`) in `utilities/fsdp_config.py` if it needs trainer-arg overrides
+3. Extend `RecommendationEngine._select_parallelism_strategy()` (and `_build_parallelism_decision()`) with the conditions that pick it
+4. Wire it into `assemble_and_train()` in `workflow/training.py`
+5. Add any compatibility rules to `utilities/parallelism_validator.py`
 
 ### Add a new task
 
@@ -406,7 +463,7 @@ Test files:
 | `transformers` | Loads models and tokenizers via `AutoModel*` / `AutoTokenizer` |
 | `trl` | `SFTTrainer` and `SFTConfig` for supervised fine-tuning |
 | `peft` | `LoraConfig` for parameter-efficient fine-tuning |
-| `accelerate` | Distributed training and device management |
+| `accelerate` | Distributed training (data parallel + FSDP), device management, `notebook_launcher` |
 | `bitsandbytes` | 4-bit and 8-bit quantization for low-VRAM hardware |
 | `huggingface_hub` | HF Hub API queries, login checks, model discovery |
 | `pydantic` | Validation for hardware specs, configs, recommendations |
@@ -429,6 +486,8 @@ Test files:
 | Add a new model task type | `finetuning_strategies/tasks/` |
 | Add a new use case | `recommendation_engine/language_use_cases/` |
 | Change recommendation logic | `utilities/recommendation_engine.py` |
+| Change parallelism (data parallel / FSDP) behavior | `utilities/parallelism_strategy.py`, `utilities/fsdp_config.py` |
+| Change FSDP/PEFT compatibility rules | `utilities/parallelism_validator.py` |
 | Change how models/tokenizers load | `providers/` |
 | Change dataset loading | `dataset_manager/dataset_factory.py` |
 | Change hardware detection | `utilities/hardware_detector.py` |

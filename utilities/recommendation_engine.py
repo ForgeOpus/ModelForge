@@ -15,6 +15,7 @@ from finetuning_strategies.tasks import FinetuningTask
 
 from utilities.training_objective import TrainingObjective
 from utilities.hardware_detector import HardwareDetector
+from utilities.parallelism_strategy import ParallelismStrategy
 from recommendation_engine.validation_models.recommendation import (
     RecommendedModel, Rationale, Recommendation, VramEstimate,
 )
@@ -113,6 +114,24 @@ class RecommendationEngine:
             strategy_config = None
             peft_config = None
 
+        # Step 7b — Parallelism strategy (needs the chosen model size to decide DP vs FSDP)
+        gpu_vram_list = [
+            g["total_memory_gb"]
+            for g in hardware.gpus
+            if isinstance(g["total_memory_gb"], (int, float))
+        ]
+        num_gpus = len(gpu_vram_list)
+        # The smallest card binds the per-GPU fit: a data-parallel replica must fit on every GPU,
+        # so use the minimum rather than the average to stay correct on heterogeneous setups.
+        per_gpu_vram_gb = min(gpu_vram_list) if gpu_vram_list else 0.0
+        chosen_num_params = recommended_models[0].num_parameters if recommended_models else None
+        parallelism_strategy = RecommendationEngine._select_parallelism_strategy(
+            num_gpus, per_gpu_vram_gb, peft_tier, chosen_num_params, is_cpu_only, is_mps
+        )
+        parallelism_decision = RecommendationEngine._build_parallelism_decision(
+            parallelism_strategy, num_gpus, per_gpu_vram_gb, peft_tier, is_cpu_only, is_mps
+        )
+
         # Step 8 — Rationale
         all_warnings = list(hub_warnings)  # copy
 
@@ -126,12 +145,16 @@ class RecommendationEngine:
                 "Apple MPS detected. bitsandbytes 4-bit and 8-bit quantisation are not supported on MPS. "
                 "bf16 support is partial. Capped at LoRA bf16."
             )
-        multi_gpu = sum(1 for g in hardware.gpus if isinstance(g["total_memory_gb"], (int, float))) > 1
+        multi_gpu = num_gpus > 1
         if multi_gpu:
-            all_warnings.append(
-                "Multi-GPU setup detected. VRAM has been summed across all GPUs. "
-                "This engine does not generate DeepSpeed ZeRO or FSDP configuration — configure manually."
-            )
+            if parallelism_strategy == ParallelismStrategy.FSDP:
+                all_warnings.append(
+                    f"Multi-GPU detected. FSDP auto-configured across {num_gpus} GPUs for full fine-tuning via Accelerate FullyShardedDataParallelPlugin."
+                )
+            else:
+                all_warnings.append(
+                    f"Multi-GPU detected ({num_gpus} GPUs). Data parallel selected. To use FSDP for full fine-tuning, set parallelism_strategy_override='fsdp' on your TrainingRunRequest."
+                )
         if not is_cpu_only and not is_mps:
             # Check for tight VRAM
             if max_params_by_tier.get("lora_bf16", 0) > 0 and peft_tier == "qlora_4bit":
@@ -200,6 +223,7 @@ class RecommendationEngine:
                 + (" Relaxed-retry applied (+50% param bound)." if used_relaxed_retry else "")
             ),
             warnings=all_warnings,
+            parallelism_decision=parallelism_decision,
         )
 
         bytes_per_param_by_tier = {
@@ -225,6 +249,7 @@ class RecommendationEngine:
             data_format=data_format,
             rationale=rationale,
             vram_estimate=vram_estimate,
+            parallelism_strategy=parallelism_strategy,
         )
 
     # ------------------------------------------------------------------
@@ -471,3 +496,74 @@ class RecommendationEngine:
                 )
 
         return results, used_relaxed, warnings
+
+    @staticmethod
+    def _select_parallelism_strategy(
+        num_gpus: int,
+        per_gpu_vram_gb: float,
+        peft_tier: str,
+        chosen_num_params: int | None,
+        is_cpu_only: bool,
+        is_mps: bool,
+    ) -> ParallelismStrategy:
+        """
+        Picks DATA_PARALLEL vs FSDP based on hardware and the chosen model.
+
+        Returns DATA_PARALLEL when:
+        - CPU-only or MPS (FSDP requires CUDA)
+        - Single GPU (FSDP requires >=2 GPUs)
+        - PEFT tier is not full_finetune (FSDP cannot shard LoRA/QLoRA adapters)
+        - No model was selected, or a full replica fits on the smallest GPU (sharding unnecessary)
+
+        Returns FSDP when:
+        - >=2 CUDA GPUs, full_finetune, and a full replica does NOT fit on the smallest GPU.
+        """
+        if is_cpu_only or is_mps or num_gpus <= 1:
+            return ParallelismStrategy.DATA_PARALLEL
+
+        if peft_tier != "full_finetune":
+            return ParallelismStrategy.DATA_PARALLEL
+
+        if not chosen_num_params:
+            return ParallelismStrategy.DATA_PARALLEL
+
+        # Full fine-tuning needs ~18 bytes/param per replica (weights + grads + optimizer state).
+        # Data parallel keeps a full replica on every GPU, so if it can't fit on the smallest card
+        # the model must be sharded with FSDP.
+        full_replica_gb = chosen_num_params * 18 / 1e9
+        if full_replica_gb + ACTIVATION_BUDGET_GB > per_gpu_vram_gb:
+            return ParallelismStrategy.FSDP
+
+        return ParallelismStrategy.DATA_PARALLEL
+
+    @staticmethod
+    def _build_parallelism_decision(
+        parallelism_strategy: ParallelismStrategy,
+        num_gpus: int,
+        per_gpu_vram_gb: float,
+        peft_tier: str,
+        is_cpu_only: bool,
+        is_mps: bool,
+    ) -> str:
+        """Returns a human-readable explanation of the parallelism strategy selection."""
+        if is_cpu_only:
+            return "DATA_PARALLEL selected: CPU-only training, FSDP requires CUDA GPUs."
+        if is_mps:
+            return "DATA_PARALLEL selected: Apple MPS detected, FSDP requires CUDA GPUs."
+        if num_gpus <= 1:
+            return "DATA_PARALLEL selected: single GPU detected, FSDP requires ≥2 GPUs."
+        if peft_tier != "full_finetune":
+            return (
+                f"DATA_PARALLEL selected: peft_approach='{peft_tier}' "
+                f"— FSDP is only compatible with full fine-tuning."
+            )
+        if parallelism_strategy == ParallelismStrategy.FSDP:
+            return (
+                f"FSDP selected: {num_gpus} GPUs detected, smallest-GPU VRAM ({per_gpu_vram_gb:.1f} GB) "
+                f"insufficient to hold a full-fine-tuning replica on a single GPU. "
+                f"Sharding across {num_gpus} GPUs."
+            )
+        return (
+            f"DATA_PARALLEL selected: {num_gpus} GPUs, model fits on each GPU individually. "
+            f"Sharding unnecessary."
+        )

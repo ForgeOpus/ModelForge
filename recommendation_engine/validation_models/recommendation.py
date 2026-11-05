@@ -4,6 +4,7 @@ from typing import Any, List
 from pydantic import BaseModel, Field, ConfigDict
 
 from recommendation_engine.language_use_cases.use_case import DataFormatSpec
+from utilities.parallelism_strategy import ParallelismStrategy
 
 
 class RecommendedModel(BaseModel):
@@ -26,6 +27,10 @@ class Rationale(BaseModel):
         ...,
         description="PEFT tier selected and the math behind it (P_max per tier, bootstrap reasoning)"
     )
+    parallelism_decision: str = Field(
+        default="",
+        description="Parallelism strategy selected and the reasoning (GPU count, per-GPU VRAM, PEFT approach constraints)"
+    )
     model_filter: str = Field(
         ...,
         description="Parameter range, Hub task filter used, sort order; relaxed-retry note if applicable"
@@ -41,6 +46,10 @@ class Rationale(BaseModel):
             f"Hardware:        {self.vram_summary}",
             f"Use Case:        {self.use_case_resolution}",
             f"PEFT Decision:   {self.peft_decision}",
+        ]
+        if self.parallelism_decision:
+            lines.append(f"Parallelism:      {self.parallelism_decision}")
+        lines += [
             f"Model Filter:    {self.model_filter}",
         ]
         if self.warnings:
@@ -87,6 +96,10 @@ class Recommendation(BaseModel):
     )
     data_format: DataFormatSpec = Field(
         ..., description="User-facing data format spec for the resolved (use case, objective) pair"
+    )
+    parallelism_strategy: ParallelismStrategy = Field(
+        default=ParallelismStrategy.DATA_PARALLEL,
+        description="Parallelism strategy selected by the recommendation engine or overridden by the user"
     )
     rationale: Rationale = Field(..., description="Structured explanation of all engine decisions")
     vram_estimate: VramEstimate | None = Field(

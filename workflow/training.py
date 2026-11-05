@@ -10,6 +10,8 @@ from peft import LoraConfig
 from finetuning_strategies.strategy_factory import FinetuningStrategies
 from providers.provider_factory import ProviderFactory
 from recommendation_engine.validation_models.recommendation import Recommendation
+from utilities.parallelism_strategy import ParallelismStrategy
+from utilities.fsdp_config import build_fsdp_config
 
 
 def _as_dict(config: Any) -> dict:
@@ -60,6 +62,8 @@ def assemble_and_train(
     provider_cls = ProviderFactory.get_provider(recommendation.provider_slug)
     provider = provider_cls()
 
+    num_processes = len(cuda_visible_devices.split(",")) if cuda_visible_devices else 1
+
     config_dict = {key: value for key, value in _as_dict(recommendation.strategy_config).items() if value is not None}
     if tensorboard_log_dir:
         Path(tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
@@ -67,6 +71,12 @@ def assemble_and_train(
             "report_to": ["tensorboard"],
             "logging_dir": tensorboard_log_dir,
         })
+    # FSDP is activated through the trainer's own fsdp/fsdp_config arguments so the Trainer's
+    # internal Accelerator actually enables it. Guarded on num_processes >= 2 because the engine's
+    # strategy choice may have been made against a different GPU set than this run (e.g. a stored
+    # recommendation replayed via resume, or a single-GPU subset selected at launch).
+    if recommendation.parallelism_strategy == ParallelismStrategy.FSDP and num_processes >= 2:
+        config_dict.update(build_fsdp_config())
     strategy.set_config({"output_dir": output_dir, **config_dict})
 
     if recommendation.peft_approach == "full_finetune" or recommendation.peft_config is None:
@@ -92,7 +102,7 @@ def assemble_and_train(
             callbacks=callbacks,
             resume_from_checkpoint=resume_from_checkpoint,
         ),
-        num_processes=len(cuda_visible_devices.split(",")) if cuda_visible_devices else 1,
+        num_processes=num_processes,
     )
 
     return output_dir

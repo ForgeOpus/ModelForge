@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 import warnings
-import torch
 
 
 def _liger_kernel_available() -> bool:
