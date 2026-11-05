@@ -1,1 +1,0 @@
-export { NeuralHero } from "./NeuralHero";
