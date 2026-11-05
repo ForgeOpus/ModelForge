@@ -27,6 +27,18 @@ class DPORecommendedConfig(BaseModel):
     beta: float
     loss_type: str
     learning_rate: Optional[float] = None
+    # Defaults mirror build_dpo_config(), so surfacing them changes nothing
+    # for a run that leaves them alone.
+    num_train_epochs: float = 3.0
+    per_device_eval_batch_size: int = 8
+    weight_decay: float = 0.0
+    warmup_ratio: float = 0.1
+    lr_scheduler_type: str = "cosine"
+    optim: str = "adamw_torch"
+    max_grad_norm: float = 1.0
+    logging_steps: int = 10
+    save_steps: int = 500
+    seed: int = 42
 
 
 class DPO(FinetuningStrategy):

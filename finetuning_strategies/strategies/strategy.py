@@ -13,7 +13,7 @@ import torch
 
 
 class FinetuningStrategy(ABC):
-    """Abstract base for all fine-tuning strategiesbug fix. Subclasses auto-register on definition.
+    """Abstract base for all fine-tuning strategies. Subclasses auto-register on definition.
 
     Required class attributes (validated in __init_subclass__):
         name: str — display name
@@ -153,10 +153,15 @@ class FinetuningStrategy(ABC):
 
         tensorboard = self._create_tensorboard_program()
         tensorboard.configure(
-            argv=["tensorboard"],
-            logdir=str(resolved_log_dir),
-            host=host,
-            port=port,
+            argv=[
+                "tensorboard",
+                "--logdir",
+                str(resolved_log_dir),
+                "--host",
+                host,
+                "--port",
+                str(port),
+            ]
         )
         url = tensorboard.launch()
         self._tensorboard_urls[process_key] = url

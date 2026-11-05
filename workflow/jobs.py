@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import queue
 import threading
+from collections import deque
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,27 @@ from utilities.tensorboard import default_log_dir
 from workflow.models import RecommendationRequest, TrainingEvent, TrainingRunRequest
 from workflow.service import WorkflowService
 from workflow.training import assemble_and_train
+
+
+_TASK_SLUG_TO_AUTO_CLASS = {
+    "causal_language_modeling": "AutoModelForCausalLM",
+    "seq2seq_modeling": "AutoModelForSeq2SeqLM",
+    "token_classification": "AutoModelForTokenClassification",
+}
+
+_TASK_SLUG_TO_PIPELINE = {
+    "causal_language_modeling": "text-generation",
+    "seq2seq_modeling": "summarization",
+    "token_classification": "token-classification",
+}
+
+
+def _directory_size(path: Path) -> int | None:
+    """Total bytes on disk, or None if the tree cannot be walked."""
+    try:
+        return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+    except OSError:
+        return None
 
 
 class CancelledTrainingError(RuntimeError):
@@ -59,13 +82,23 @@ class TrainingJobManager:
         ledger: WebRunLedger | None = None,
         max_active_jobs: int = 1,
         recover_interrupted: bool = True,
+        max_events_per_run: int = 5000,
+        max_history_runs: int = 20,
     ) -> None:
         self.workflow = workflow or WorkflowService()
         self.ledger = ledger or WebRunLedger()
         self.max_active_jobs = max_active_jobs
+        self.max_events_per_run = max_events_per_run
+        self.max_history_runs = max_history_runs
         self._threads: dict[int, threading.Thread] = {}
         self._cancel_events: dict[int, threading.Event] = {}
-        self._event_queues: dict[int, queue.Queue[dict[str, Any]]] = {}
+        # One list of live subscriber queues per run, so several browser tabs can
+        # watch the same run instead of stealing each other's events.
+        self._subscribers: dict[int, list[queue.Queue[dict[str, Any]]]] = {}
+        # Bounded replay buffer per run. Without this, reloading the page mid-run
+        # leaves the live view permanently blank -- the queue is drained
+        # destructively and nothing that already happened can be recovered.
+        self._event_history: dict[int, deque[dict[str, Any]]] = {}
         self._lock = threading.Lock()
         # Serializes admission of a new training job with playground inference.
         self.resource_gate = threading.Lock()
@@ -118,8 +151,10 @@ class TrainingJobManager:
             peft=recommendation.peft_approach,
         )
         with self._lock:
-            self._event_queues[run_id] = queue.Queue()
+            self._event_history[run_id] = deque(maxlen=self.max_events_per_run)
+            self._subscribers.setdefault(run_id, [])
             self._cancel_events[run_id] = threading.Event()
+            self._evict_stale_history()
         thread = threading.Thread(
             target=self._run_training,
             args=(run_id, request, recommendation, tensorboard_log_dir),
@@ -164,13 +199,72 @@ class TrainingJobManager:
             message=message,
             payload=payload or {},
         ).model_dump()
-        q = self._event_queues.get(run_id)
-        if q is not None:
-            q.put(event)
+        with self._lock:
+            history = self._event_history.setdefault(run_id, deque(maxlen=self.max_events_per_run))
+            history.append(event)
+            listeners = list(self._subscribers.get(run_id, ()))
+        for listener in listeners:
+            listener.put(event)
+
+    def subscribe(self, run_id: int) -> queue.Queue[dict[str, Any]]:
+        """Register a new listener for a run. Every subscriber sees every event."""
+        listener: queue.Queue[dict[str, Any]] = queue.Queue()
+        with self._lock:
+            self._subscribers.setdefault(run_id, []).append(listener)
+        return listener
+
+    def unsubscribe(self, run_id: int, listener: queue.Queue[dict[str, Any]]) -> None:
+        with self._lock:
+            listeners = self._subscribers.get(run_id)
+            if not listeners:
+                return
+            try:
+                listeners.remove(listener)
+            except ValueError:
+                pass
+
+    def get_event_history(self, run_id: int) -> list[dict[str, Any]]:
+        """Everything emitted for this run, oldest first.
+
+        Falls back to the archive written when the run finished, so reopening
+        an old run after a restart still shows its loss curve and timeline."""
+        with self._lock:
+            live = list(self._event_history.get(run_id, ()))
+        if live:
+            return live
+        raw = self.ledger.load_run_events(run_id)
+        if not raw:
+            return []
+        try:
+            return json.loads(raw)
+        except ValueError:
+            return []
+
+    def _archive_events(self, run_id: int) -> None:
+        """Persist the timeline once, at the end of a run."""
+        with self._lock:
+            events = list(self._event_history.get(run_id, ()))
+        if not events:
+            return
+        try:
+            self.ledger.save_run_events(run_id, json.dumps(events))
+        except Exception:  # noqa: BLE001 - archiving must never fail a run
+            pass
 
     def get_event_queue(self, run_id: int) -> queue.Queue[dict[str, Any]]:
-        with self._lock:
-            return self._event_queues.setdefault(run_id, queue.Queue())
+        """Kept for callers predating subscribe(); returns an independent listener."""
+        return self.subscribe(run_id)
+
+    def _evict_stale_history(self) -> None:
+        """Bound total memory: keep replay buffers for the most recent runs only.
+        Caller must hold the lock."""
+        if len(self._event_history) <= self.max_history_runs:
+            return
+        for stale_id in sorted(self._event_history)[: -self.max_history_runs]:
+            if self._subscribers.get(stale_id):
+                continue
+            self._event_history.pop(stale_id, None)
+            self._subscribers.pop(stale_id, None)
 
     def is_cancel_requested(self, run_id: int) -> bool:
         event = self._cancel_events.get(run_id)
@@ -211,18 +305,72 @@ class TrainingJobManager:
             )
             status = "cancelled" if self.is_cancel_requested(run_id) else "completed"
             self.ledger.update_run(run_id, status=status)
+            if status == "completed":
+                self._register_artifact(run_id, request, recommendation)
             self.emit(run_id, status, f"Training {status}.", {"output_dir": request.output_dir})
+            self._archive_events(run_id)
         except Exception as exc:
             if self.is_cancel_requested(run_id):
                 self.ledger.update_run(run_id, status="cancelled", error=str(exc))
                 self.emit(run_id, "cancelled", "Training cancelled.", {"error": str(exc)})
+                self._archive_events(run_id)
             else:
                 self.ledger.update_run(run_id, status="failed", error=str(exc))
                 self.emit(run_id, "error", str(exc), {"error": str(exc)})
+                self._archive_events(run_id)
         finally:
             with self._lock:
                 self._threads.pop(run_id, None)
                 self._cancel_events.pop(run_id, None)
+
+    def _register_artifact(self, run_id: int, request: TrainingRunRequest, recommendation) -> None:
+        """Record the finished model and describe it on disk.
+
+        modelforge_config.json is what lets the playground reload an adapter
+        later: a PEFT checkpoint records its base model, but not which
+        AutoModel class or pipeline task it was trained for."""
+        output_dir = Path(request.output_dir)
+        if not output_dir.is_dir():
+            # Training just finished, so the directory should exist. If it does
+            # not, something is wrong upstream -- don't paper over it by
+            # creating one.
+            self.emit(run_id, "log", f"Output directory not found, skipping registration: {output_dir}")
+            return
+        try:
+            (output_dir / "modelforge_config.json").write_text(
+                json.dumps(
+                    {
+                        "base_model": request.model_id,
+                        "task_slug": recommendation.task_slug,
+                        "use_case": request.use_case_slug,
+                        "objective": str(getattr(request.objective, "value", request.objective)),
+                        "strategy": recommendation.strategy_slug,
+                        "peft_approach": recommendation.peft_approach,
+                        "model_class": _TASK_SLUG_TO_AUTO_CLASS.get(recommendation.task_slug, "AutoModelForCausalLM"),
+                        "pipeline_task": _TASK_SLUG_TO_PIPELINE.get(recommendation.task_slug, "text-generation"),
+                        "modelforge_version": "4.0.0",
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            # Losing the descriptor should not fail an otherwise good run.
+            self.emit(run_id, "log", f"Could not write modelforge_config.json: {exc}")
+
+        try:
+            self.ledger.record_model(
+                run_id=run_id,
+                name=f"{request.model_id.split('/')[-1]}-{run_id}",
+                base_model=request.model_id,
+                model_path=str(output_dir),
+                task_slug=recommendation.task_slug,
+                use_case=request.use_case_slug,
+                peft_approach=recommendation.peft_approach,
+                size_bytes=_directory_size(output_dir),
+            )
+        except Exception as exc:
+            self.emit(run_id, "log", f"Could not register the trained model: {exc}")
 
     @staticmethod
     def _load_config_json(run: dict[str, Any]) -> dict[str, Any] | None:

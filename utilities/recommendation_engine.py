@@ -17,7 +17,7 @@ from utilities.training_objective import TrainingObjective
 from utilities.hardware_detector import HardwareDetector
 from utilities.parallelism_strategy import ParallelismStrategy
 from recommendation_engine.validation_models.recommendation import (
-    RecommendedModel, Rationale, Recommendation,
+    RecommendedModel, Rationale, Recommendation, VramEstimate,
 )
 
 # ---------------------------------------------------------------------------
@@ -226,6 +226,18 @@ class RecommendationEngine:
             parallelism_decision=parallelism_decision,
         )
 
+        bytes_per_param_by_tier = {
+            "full_finetune": 18.0, "lora_bf16": 2.0, "qlora_8bit": 1.0, "qlora_4bit": 0.5,
+        }
+        vram_estimate = VramEstimate(
+            raw_vram_gb=raw_vram_gb,
+            adjusted_vram_gb=adjusted_vram_gb,
+            activation_budget_gb=ACTIVATION_BUDGET_GB,
+            adapter_cost_gb=ADAPTER_COST_GB,
+            bytes_per_param=bytes_per_param_by_tier.get(peft_tier, 0.5),
+            max_params_by_tier=max_params_by_tier,
+        )
+
         return Recommendation(
             recommended_models=recommended_models,
             task_slug=task_slug,
@@ -236,6 +248,7 @@ class RecommendationEngine:
             peft_config=peft_config,
             data_format=data_format,
             rationale=rationale,
+            vram_estimate=vram_estimate,
             parallelism_strategy=parallelism_strategy,
         )
 

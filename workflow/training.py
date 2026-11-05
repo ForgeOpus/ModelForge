@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from accelerate import notebook_launcher
 from peft import LoraConfig
@@ -11,6 +12,28 @@ from providers.provider_factory import ProviderFactory
 from recommendation_engine.validation_models.recommendation import Recommendation
 from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.fsdp_config import build_fsdp_config
+
+
+def _as_dict(config: Any) -> dict:
+    """Normalise a config that may be a pydantic model or a plain dict.
+
+    A Recommendation built in-process carries typed config objects, but one
+    that has round-tripped through the web API is rebuilt from JSON into
+    dicts, because Recommendation types both config fields as Any. Both reach
+    this module, so both have to work."""
+    if config is None:
+        return {}
+    if hasattr(config, "model_dump"):
+        return config.model_dump()
+    return dict(config)
+
+
+def _get(config: Any, key: str, default: Any = None) -> Any:
+    if config is None:
+        return default
+    if isinstance(config, dict):
+        return config.get(key, default)
+    return getattr(config, key, default)
 
 
 _TASK_SLUG_TO_PEFT_TASK_TYPE = {
@@ -41,7 +64,7 @@ def assemble_and_train(
 
     num_processes = len(cuda_visible_devices.split(",")) if cuda_visible_devices else 1
 
-    config_dict = {key: value for key, value in recommendation.strategy_config.model_dump().items() if value is not None}
+    config_dict = {key: value for key, value in _as_dict(recommendation.strategy_config).items() if value is not None}
     if tensorboard_log_dir:
         Path(tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
         config_dict.update({
@@ -61,9 +84,9 @@ def assemble_and_train(
     else:
         task_type = _TASK_SLUG_TO_PEFT_TASK_TYPE[recommendation.task_slug]
         peft_config = LoraConfig(
-            r=recommendation.peft_config.r,
-            lora_alpha=recommendation.peft_config.lora_alpha,
-            target_modules=recommendation.peft_config.target_modules,
+            r=_get(recommendation.peft_config, "r"),
+            lora_alpha=_get(recommendation.peft_config, "lora_alpha"),
+            target_modules=_get(recommendation.peft_config, "target_modules"),
             task_type=task_type,
         )
 

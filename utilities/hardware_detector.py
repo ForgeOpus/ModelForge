@@ -9,7 +9,6 @@ This information can be used to optimize model loading, fine-tuning strategies,
 and resource management in ModelForge.
 '''
 
-from nt import stat
 from pydantic import BaseModel, Field, field_validator
 from pynvml import *
 import psutil
