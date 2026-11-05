@@ -11,6 +11,8 @@ from transformers import TrainerCallback
 
 from dataset_manager.dataset_factory import DatasetFactory
 from utilities.database_manager import WebRunLedger
+from utilities.parallelism_strategy import ParallelismStrategy
+from utilities.parallelism_validator import validate_parallelism_compatibility
 from utilities.tensorboard import default_log_dir
 from workflow.models import RecommendationRequest, TrainingEvent, TrainingRunRequest
 from workflow.service import WorkflowService
@@ -115,6 +117,11 @@ class TrainingJobManager:
                 )
             )
         )
+        if request.parallelism_strategy_override is not None:
+            recommendation = recommendation.model_copy(
+                update={"parallelism_strategy": request.parallelism_strategy_override}
+            )
+        validate_parallelism_compatibility(recommendation)
         tensorboard_log_dir = request.tensorboard_log_dir if request.tensorboard else None
         if request.tensorboard and tensorboard_log_dir is None:
             tensorboard_log_dir = default_log_dir(request.output_dir)
