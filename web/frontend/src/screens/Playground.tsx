@@ -31,15 +31,31 @@ export function Playground() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const refreshAvailability = useCallback(async () => {
+    try {
+      const status = await api.playgroundStatus();
+      setBlocked(status.available ? null : status.reason);
+    } catch {
+      // The model list has its own request and remains useful if this probe fails.
+    }
+  }, []);
+
   useEffect(() => {
     api.listModels().then(setModels).catch(() => setModels([]));
-    api.playgroundStatus()
-      .then((s) => setBlocked(s.available ? null : s.reason))
-      .catch(() => {});
-  }, []);
+    void refreshAvailability();
+  }, [refreshAvailability]);
+
+  // Training is the usual temporary blocker. Recheck while the warning is on
+  // screen so it clears on its own when that run finishes.
+  useEffect(() => {
+    if (!blocked) return;
+    const id = window.setInterval(() => void refreshAvailability(), 5000);
+    return () => window.clearInterval(id);
+  }, [blocked, refreshAvailability]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -105,23 +121,34 @@ export function Playground() {
         });
       } else if (data.type === "done") {
         setStreaming(false);
+        setStopping(false);
         socket.close();
       } else if (data.type === "error") {
         toast.error(data.message);
         setStreaming(false);
+        setStopping(false);
         socket.close();
       }
     };
     socket.onerror = () => {
       setStreaming(false);
+      setStopping(false);
       socket.close();
     };
-    socket.onclose = () => setStreaming(false);
+    socket.onclose = () => {
+      setStreaming(false);
+      setStopping(false);
+    };
   }, [sessionId, draft, streaming, messages, systemPrompt, temperature, topP, maxTokens]);
 
   function stop() {
-    socketRef.current?.send(JSON.stringify({ type: "stop" }));
-    setStreaming(false);
+    const socket = socketRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN || stopping) return;
+    socket.send(JSON.stringify({ type: "stop" }));
+    // Keep the composer locked until the server closes this generation. Dropping
+    // `streaming` here allowed a second generation to start against the same
+    // session before the stop request had been handled.
+    setStopping(true);
   }
 
   if (blocked) {
@@ -134,7 +161,7 @@ export function Playground() {
           <Link to="/app/run" className="underline underline-offset-4 hover:text-text">
             Watch the run
           </Link>{" "}
-          — the playground opens as soon as it finishes.
+          — this page checks again automatically when the run finishes.
         </p>
       </div>
     );
@@ -234,8 +261,8 @@ export function Playground() {
             placeholder="Send a message. Enter to send, Shift+Enter for a new line."
           />
           {streaming ? (
-            <Button variant="danger" onClick={stop}>
-              <Square /> Stop
+            <Button variant="danger" onClick={stop} disabled={stopping}>
+              <Square /> {stopping ? "Stopping…" : "Stop"}
             </Button>
           ) : (
             <Button variant="primary" onClick={send} disabled={!draft.trim()}>
@@ -268,12 +295,13 @@ export function Playground() {
         <Slider label="max_new_tokens" value={maxTokens} min={16} max={2048} step={16} onChange={setMaxTokens} />
 
         <div className="mt-auto flex flex-col gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setMessages([])}>
+          <Button size="sm" variant="ghost" onClick={() => setMessages([])} disabled={streaming}>
             Clear conversation
           </Button>
           <Button
             size="sm"
             variant="ghost"
+            disabled={streaming}
             onClick={async () => {
               await api.closePlayground(sessionId).catch(() => {});
               setSessionId(null);
