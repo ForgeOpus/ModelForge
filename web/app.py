@@ -65,16 +65,18 @@ def create_app(
         description="Browser interface for modelforge-finetuning.",
         version="4.0.0",
     )
-    playground = PlaygroundManager(jobs)
+    # These are deliberately two distinct playground implementations.  The
+    # request/response inference endpoint is kept for the original workbench,
+    # while the session manager backs the streaming playground UI.
+    session_playground = PlaygroundManager(jobs)
+    inference_playground = Playground(jobs, ledger)
 
     app.state.auth = auth
-    app.state.playground = playground
+    app.state.playground = session_playground
+    app.state.inference_playground = inference_playground
     app.state.workflow = workflow
     app.state.jobs = jobs
     app.state.ledger = ledger
-    playground = Playground(jobs, ledger)
-    app.state.playground = playground
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -135,7 +137,7 @@ def create_app(
     @app.post("/api/playground/infer", dependencies=[require_auth])
     def playground_infer(request: InferenceRequest):
         try:
-            return playground.infer(request)
+            return inference_playground.infer(request)
         except PlaygroundError as exc:
             raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
@@ -221,9 +223,17 @@ def create_app(
         if model is None:
             raise HTTPException(status_code=404, detail="Model not found.")
         if delete_files:
-            target = Path(model["model_path"])
+            target = Path(model["model_path"]).resolve()
             # Only ever remove a directory this ledger recorded, never a path
-            # supplied by the caller.
+            # supplied by the caller.  The ledger itself records a user-chosen
+            # output directory, so protect the filesystem roots a mistaken run
+            # configuration could otherwise turn into a recursive delete.
+            protected_paths = {Path("/"), Path.home().resolve(), Path.cwd().resolve()}
+            if target in protected_paths:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Refusing to remove a filesystem or workspace root.",
+                )
             if target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
         ledger.delete_model(model_id)
@@ -266,8 +276,8 @@ def create_app(
 
     @app.get("/api/playground/status", dependencies=[require_auth])
     async def playground_status():
-        available, reason = playground.availability()
-        current = playground.current
+        available, reason = session_playground.availability()
+        current = session_playground.current
         return {
             "available": available,
             "reason": reason,
@@ -278,7 +288,7 @@ def create_app(
     @app.post("/api/playground/sessions", dependencies=[require_auth])
     async def open_playground(request: PlaygroundOpenRequest):
         try:
-            session = await asyncio.to_thread(playground.open, request.model_path)
+            session = await asyncio.to_thread(session_playground.open, request.model_path)
         except PlaygroundUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
@@ -290,7 +300,7 @@ def create_app(
 
     @app.delete("/api/playground/sessions/{session_id}", dependencies=[require_auth])
     async def close_playground(session_id: str):
-        return {"closed": playground.close(session_id)}
+        return {"closed": session_playground.close(session_id)}
 
     @app.websocket("/api/playground/{session_id}/chat")
     async def playground_chat(websocket: WebSocket, session_id: str, token: str | None = None):
@@ -300,7 +310,7 @@ def create_app(
             await websocket.close(code=1008)
             return
         await websocket.accept()
-        session = playground.get(session_id)
+        session = session_playground.get(session_id)
         if session is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "That playground session has closed."}))
             await websocket.close()

@@ -94,6 +94,35 @@ def test_endpoint_requires_auth_and_valid_messages(tmp_path):
     assert client.post("/api/playground/infer", headers={"X-ModelForge-Token":"secret"}, json=body).status_code == 422
 
 
+def test_session_playground_routes_use_the_session_manager(tmp_path):
+    """The legacy inference service and websocket-session manager coexist."""
+    ledger = Ledger(tmp_path)
+    client = TestClient(create_app(auth=TokenAuth("secret"), job_manager=Jobs(ledger)))
+    response = client.get("/api/playground/status", headers={"X-ModelForge-Token": "secret"})
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+
+
+def test_session_holds_resource_gate_until_closed(monkeypatch, tmp_path):
+    from workflow.playground import PlaygroundManager
+
+    class FakeSession:
+        def __init__(self, session_id, model_path):
+            self.id = session_id
+            self.model_path = model_path
+            self.base_model = "base"
+        def close(self):
+            pass
+
+    monkeypatch.setattr("workflow.playground.PlaygroundSession", FakeSession)
+    jobs = Jobs(Ledger(tmp_path))
+    manager = PlaygroundManager(jobs)
+    session = manager.open(str(tmp_path / "model"))
+    assert jobs.resource_gate.locked()
+    assert manager.close(session.id) is True
+    assert not jobs.resource_gate.locked()
+
+
 def test_adapter_cpu_generation(tiny_model, tmp_path, monkeypatch):
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import AutoModelForCausalLM

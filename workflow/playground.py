@@ -35,6 +35,7 @@ class PlaygroundSession:
         self._lock = threading.Lock()
         self._model: Any = None
         self._tokenizer: Any = None
+        self._task_slug = "causal_language_modeling"
         self._stop = threading.Event()
         self._load()
 
@@ -54,22 +55,52 @@ class PlaygroundSession:
             except (OSError, ValueError):
                 descriptor = {}
 
+        self._task_slug = descriptor.get("task_slug", self._task_slug)
+        model_classes = {
+            "causal_language_modeling": "AutoModelForCausalLM",
+            "seq2seq_modeling": "AutoModelForSeq2SeqLM",
+            "token_classification": "AutoModelForTokenClassification",
+        }
+        if self._task_slug not in model_classes:
+            raise PlaygroundUnavailable(
+                f"The saved model has unsupported task '{self._task_slug}'."
+            )
+
         adapter_config = path / "adapter_config.json"
         try:
             if adapter_config.exists():
-                from peft import AutoPeftModelForCausalLM, PeftConfig
+                import peft
 
-                self.base_model = PeftConfig.from_pretrained(self.model_path).base_model_name_or_path
-                self._model = AutoPeftModelForCausalLM.from_pretrained(
+                self.base_model = peft.PeftConfig.from_pretrained(self.model_path).base_model_name_or_path
+                peft_class_name = {
+                    "causal_language_modeling": "AutoPeftModelForCausalLM",
+                    "seq2seq_modeling": "AutoPeftModelForSeq2SeqLM",
+                    "token_classification": "AutoPeftModelForTokenClassification",
+                }[self._task_slug]
+                peft_class = getattr(peft, peft_class_name, None)
+                if peft_class is None:
+                    raise PlaygroundUnavailable(
+                        f"This PEFT installation cannot load {self._task_slug} adapters."
+                    )
+                self._model = peft_class.from_pretrained(
                     self.model_path,
                     dtype="auto",
                     device_map="auto",
                 )
             else:
-                from transformers import AutoModelForCausalLM
+                from transformers import (
+                    AutoModelForCausalLM,
+                    AutoModelForSeq2SeqLM,
+                    AutoModelForTokenClassification,
+                )
 
                 self.base_model = descriptor.get("base_model") or self.model_path
-                self._model = AutoModelForCausalLM.from_pretrained(
+                model_class = {
+                    "causal_language_modeling": AutoModelForCausalLM,
+                    "seq2seq_modeling": AutoModelForSeq2SeqLM,
+                    "token_classification": AutoModelForTokenClassification,
+                }[self._task_slug]
+                self._model = model_class.from_pretrained(
                     self.model_path,
                     dtype="auto",
                     device_map="auto",
@@ -105,7 +136,7 @@ class PlaygroundSession:
     ) -> Iterator[str]:
         """Yield generated text incrementally, so the UI can stream it."""
         import torch
-        from transformers import TextIteratorStreamer
+        from transformers import StoppingCriteria, StoppingCriteriaList, TextIteratorStreamer
 
         with self._lock:
             self._stop.clear()
@@ -119,6 +150,26 @@ class PlaygroundSession:
                 prompt = "\n\n".join(m["content"] for m in messages) + "\n"
 
             inputs = tokenizer(prompt, return_tensors="pt").to(self._model.device)
+            if self._task_slug == "token_classification":
+                with torch.no_grad():
+                    logits = self._model(**inputs).logits[0]
+                labels = getattr(self._model.config, "id2label", {})
+                ids = logits.argmax(dim=-1).tolist()
+                tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist())
+                text = "\n".join(
+                    f"{token}: {labels.get(label, str(label))}"
+                    for token, label in zip(tokens, ids)
+                    if token not in tokenizer.all_special_tokens
+                )
+                if not self._stop.is_set() and text:
+                    yield text
+                return
+
+            class StopOnRequest(StoppingCriteria):
+                def __call__(self, input_ids, scores, **kwargs):
+                    return self_stop.is_set()
+
+            self_stop = self._stop
             streamer = TextIteratorStreamer(
                 tokenizer, skip_prompt=True, skip_special_tokens=True
             )
@@ -131,10 +182,20 @@ class PlaygroundSession:
                 temperature=max(temperature, 1e-5),
                 top_p=top_p,
                 pad_token_id=tokenizer.pad_token_id,
+                stopping_criteria=StoppingCriteriaList([StopOnRequest()]),
             )
 
+            errors: list[Exception] = []
+
+            def run_generation() -> None:
+                try:
+                    self._model.generate(**kwargs)
+                except Exception as exc:  # Let the websocket surface generation failures.
+                    errors.append(exc)
+                    streamer.on_finalized_text("", stream_end=True)
+
             thread = threading.Thread(
-                target=lambda: self._model.generate(**kwargs), daemon=True
+                target=run_generation, daemon=True
             )
             with torch.no_grad():
                 thread.start()
@@ -143,12 +204,20 @@ class PlaygroundSession:
                         break
                     if chunk:
                         yield chunk
-            thread.join(timeout=1)
+            # Do not unload a session while its generation worker still owns
+            # model tensors.  StoppingCriteria makes a user stop request end
+            # at the next decoding step.
+            thread.join()
+            if errors:
+                raise errors[0]
 
     def close(self) -> None:
         self.stop()
-        self._model = None
-        self._tokenizer = None
+        # `generate()` holds this lock until its worker has stopped.  Waiting
+        # here avoids clearing model state while a cancellation is in flight.
+        with self._lock:
+            self._model = None
+            self._tokenizer = None
         try:
             import torch
 
@@ -165,6 +234,11 @@ class PlaygroundManager:
         self._jobs = jobs
         self._session: PlaygroundSession | None = None
         self._lock = threading.Lock()
+        self._holds_resource_gate = False
+
+    @property
+    def _resource_gate(self):
+        return getattr(self._jobs, "resource_gate", None)
 
     def _training_active(self) -> bool:
         threads = getattr(self._jobs, "_threads", {})
@@ -176,21 +250,45 @@ class PlaygroundManager:
                 "A training run is using the GPU. Loading a model beside it would run the "
                 "card out of memory, so the playground stays closed until the run finishes."
             )
+        with self._lock:
+            if self._session is not None:
+                return True, None
+        gate = self._resource_gate
+        if gate is not None and not gate.acquire(blocking=False):
+            return False, "Model resources are busy. Try again when the current request finishes."
+        if gate is not None:
+            gate.release()
         return True, None
 
     def open(self, model_path: str) -> PlaygroundSession:
-        available, reason = self.availability()
-        if not available:
-            raise PlaygroundUnavailable(reason or "The playground is unavailable.")
         with self._lock:
             if self._session is not None:
                 if self._session.model_path == model_path:
                     return self._session
                 self._session.close()
                 self._session = None
-            session = PlaygroundSession(uuid.uuid4().hex, model_path)
-            self._session = session
-            return session
+                self._release_resource_gate()
+
+            gate = self._resource_gate
+            if gate is not None and not gate.acquire(blocking=False):
+                raise PlaygroundUnavailable(
+                    "Model resources are busy. Try again when the current request finishes."
+                )
+            # Record ownership immediately so every failure path below releases
+            # the admission lock, including a training-race detected here.
+            self._holds_resource_gate = gate is not None
+            try:
+                if self._training_active():
+                    raise PlaygroundUnavailable(
+                        "A training run is using the GPU. Loading a model beside it would run the "
+                        "card out of memory, so the playground stays closed until the run finishes."
+                    )
+                session = PlaygroundSession(uuid.uuid4().hex, model_path)
+                self._session = session
+                return session
+            except Exception:
+                self._release_resource_gate()
+                raise
 
     def get(self, session_id: str) -> PlaygroundSession | None:
         session = self._session
@@ -205,5 +303,14 @@ class PlaygroundManager:
             if self._session and self._session.id == session_id:
                 self._session.close()
                 self._session = None
+                self._release_resource_gate()
                 return True
             return False
+
+    def _release_resource_gate(self) -> None:
+        if not self._holds_resource_gate:
+            return
+        gate = self._resource_gate
+        self._holds_resource_gate = False
+        if gate is not None:
+            gate.release()
