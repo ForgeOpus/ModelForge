@@ -17,6 +17,7 @@ from trl import SFTTrainer, SFTConfig
 from peft import PeftConfig
 from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
+from utilities.precision import training_precision
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 import importlib.util
 
@@ -318,6 +319,7 @@ class SFT(FinetuningStrategy):
             fp16 = False
             model_init_kwargs = {}
 
+        bf16, fp16 = training_precision(hardware)
         strategy_config = SFTRecommendedConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=gradient_accumulation_steps,
