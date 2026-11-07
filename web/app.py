@@ -300,7 +300,7 @@ def create_app(
 
     @app.delete("/api/playground/sessions/{session_id}", dependencies=[require_auth])
     async def close_playground(session_id: str):
-        return {"closed": session_playground.close(session_id)}
+        return {"closed": await asyncio.to_thread(session_playground.close, session_id)}
 
     @app.websocket("/api/playground/{session_id}/chat")
     async def playground_chat(websocket: WebSocket, session_id: str, token: str | None = None):
@@ -344,15 +344,36 @@ def create_app(
                         finally:
                             chunks.put(sentinel)
 
-                    threading.Thread(target=produce, daemon=True).start()
-                    while True:
-                        piece = await asyncio.to_thread(chunks.get)
-                        if piece is sentinel:
-                            break
-                        if isinstance(piece, Exception):
-                            raise piece
-                        await websocket.send_text(json.dumps({"type": "token", "text": piece}))
+                    worker = threading.Thread(target=produce, daemon=True)
+                    worker.start()
+                    async def receive_controls():
+                        while True:
+                            control = json.loads(await websocket.receive_text())
+                            if control.get("type") == "stop":
+                                session.stop()
+
+                    controls = asyncio.create_task(receive_controls())
+                    try:
+                        while True:
+                            if controls.done():
+                                controls.result()
+                            try:
+                                piece = await asyncio.to_thread(chunks.get, True, 0.1)
+                            except queue.Empty:
+                                continue
+                            if piece is sentinel:
+                                break
+                            if isinstance(piece, Exception):
+                                raise piece
+                            await websocket.send_text(json.dumps({"type": "token", "text": piece}))
+                    finally:
+                        controls.cancel()
+                        await asyncio.gather(controls, return_exceptions=True)
+                        session.stop()
+                        await asyncio.to_thread(worker.join)
                     await websocket.send_text(json.dumps({"type": "done"}))
+                except WebSocketDisconnect:
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         except WebSocketDisconnect:
