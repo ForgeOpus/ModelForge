@@ -84,7 +84,7 @@ export interface Recommendation {
   peft_approach: PeftApproach;
   provider_slug: string;
   strategy_config: Record<string, unknown>;
-  peft_config: { r: number; lora_alpha: number; target_modules: string[] } | null;
+  peft_config: { r: number; lora_alpha: number; target_modules: string[] | string } | null;
   data_format: DataFormatSpec;
   rationale: Rationale;
   vram_estimate?: VramEstimate;

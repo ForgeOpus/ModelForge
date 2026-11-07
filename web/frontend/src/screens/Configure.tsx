@@ -633,7 +633,9 @@ function PlanColumn({
                 />
                 <Fact
                   label="Targets"
-                  value={recommendation.peft_config.target_modules.join(", ")}
+                  value={Array.isArray(recommendation.peft_config.target_modules)
+                    ? recommendation.peft_config.target_modules.join(", ")
+                    : recommendation.peft_config.target_modules}
                 />
               </>
             )}
