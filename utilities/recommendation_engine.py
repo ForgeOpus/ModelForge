@@ -213,7 +213,7 @@ class RecommendationEngine:
             ),
             peft_decision=(
                 f"Selected tier: {peft_tier} (P_max={max_params / 1e9:.2f}B). "
-                f"Bootstrap: assumed qlora_4bit (0.5 B/param) to estimate model weight overhead before tier is known. "
+                f"Budget reserves extra activations and shares remaining memory across model copies. "
                 f"Per-tier P_max:\n{tier_math}"
             ),
             model_filter=(
@@ -333,37 +333,15 @@ class RecommendationEngine:
         extra_model_copies: int,
         batch_multiplier: float,
     ) -> float:
+        """Reserve extra activations, then share the remaining budget across copies.
+
+        Each copy conservatively receives an entire baseline training budget,
+        including optimizer overhead. Subtracting a hypothetical model sized to
+        fill all raw VRAM would instead consume virtually the entire budget
+        before any actual candidate model was selected.
         """
-        Applies strategy overhead to produce an adjusted VRAM budget (in GB).
-
-        Uses BOOTSTRAP_TIER ("qlora_4bit", 0.5 bytes/param) to break the circular dependency
-        between model size and tier selection. This is intentionally pessimistic (lower bound on
-        adjusted VRAM), which makes tier selection conservative.
-
-        Bootstrap math (from spec Step 3):
-            P_bootstrap = (raw_vram_bytes - ACT_BUDGET_bytes - ADAPTER_bytes) / 0.5
-            estimated_model_weight_gb = (0.5 X P_bootstrap) / 1e9
-
-        Adjustment:
-            adjusted = raw_vram_gb
-                     - (extra_model_copies X estimated_model_weight_gb)
-                     - ((batch_multiplier - 1.0) X ACTIVATION_BUDGET_GB)
-        """
-        act_bytes = ACTIVATION_BUDGET_GB * 1e9
-        adapter_bytes = ADAPTER_COST_GB * 1e9
-        raw_bytes = raw_vram_gb * 1e9
-
-        p_bootstrap = (raw_bytes - act_bytes - adapter_bytes) / 0.5
-        if p_bootstrap < 0:
-            p_bootstrap = 0.0
-        estimated_weight_gb = (0.5 * p_bootstrap) / 1e9
-
-        adjusted = (
-            raw_vram_gb
-            - (extra_model_copies * estimated_weight_gb)
-            - ((batch_multiplier - 1.0) * ACTIVATION_BUDGET_GB)
-        )
-        return adjusted
+        extra_activations = (batch_multiplier - 1.0) * ACTIVATION_BUDGET_GB
+        return (raw_vram_gb - extra_activations) / (1 + extra_model_copies)
 
     @staticmethod
     def _select_peft_tier(

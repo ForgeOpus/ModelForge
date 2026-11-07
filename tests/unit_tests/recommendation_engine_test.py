@@ -95,6 +95,14 @@ class TestComputeAdjustedVram:
         result = RecommendationEngine._compute_adjusted_vram(24.0, 1, 1.0)
         assert result < 24.0
 
+    def test_dpo_budget_grows_with_hardware(self):
+        small = RecommendationEngine._compute_adjusted_vram(24.0, 1, 2.0)
+        large = RecommendationEngine._compute_adjusted_vram(48.0, 1, 2.0)
+        assert small == pytest.approx(11.0)
+        assert large == pytest.approx(23.0)
+        _, max_params, _ = RecommendationEngine._select_peft_tier(small, False, False, 64)
+        assert max_params > 400_000_000
+
     def test_batch_multiplier_reduces_budget(self):
         # batch_multiplier=2.0 → subtract (2.0 - 1.0) * ACTIVATION_BUDGET_GB
         result_base = RecommendationEngine._compute_adjusted_vram(24.0, 0, 1.0)
