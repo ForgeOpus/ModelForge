@@ -33,6 +33,7 @@ export function Playground() {
   const [streaming, setStreaming] = useState(false);
   const [stopping, setStopping] = useState(false);
   const socketRef = useRef<WebSocket | null>(null);
+  const sessionRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const refreshAvailability = useCallback(async () => {
@@ -61,13 +62,17 @@ export function Playground() {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
-  useEffect(() => () => socketRef.current?.close(), []);
+  useEffect(() => () => {
+    socketRef.current?.close();
+    if (sessionRef.current) void api.closePlayground(sessionRef.current).catch(() => {});
+  }, []);
 
   const openSession = useCallback(async (model: SavedModel) => {
     setLoading(true);
     setBlocked(null);
     try {
       const session = await api.openPlayground(model.model_path);
+      sessionRef.current = session.session_id;
       setSessionId(session.session_id);
       setSelected(model);
       setMessages([]);
@@ -306,6 +311,7 @@ export function Playground() {
             disabled={streaming}
             onClick={async () => {
               await api.closePlayground(sessionId).catch(() => {});
+              sessionRef.current = null;
               setSessionId(null);
               setSelected(null);
               setMessages([]);
