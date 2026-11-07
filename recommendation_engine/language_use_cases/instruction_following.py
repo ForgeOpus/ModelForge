@@ -13,7 +13,11 @@ class InstructionFollowingUseCase(LanguageUseCase):
     )
     task_slug = "causal_language_modeling"
     hub_task_filter = "text-generation"
-    compatible_objectives = [TrainingObjective.SUPERVISED, TrainingObjective.PREFERENCE]
+    compatible_objectives = [
+        TrainingObjective.SUPERVISED,
+        TrainingObjective.PREFERENCE,
+        TrainingObjective.REINFORCEMENT,
+    ]
     data_formats = {
         TrainingObjective.SUPERVISED: DataFormatSpec(
             user_facing_description=(
@@ -34,6 +38,17 @@ class InstructionFollowingUseCase(LanguageUseCase):
                 "instruction": "prompt",
                 "preferred_response": "chosen",
                 "dispreferred_response": "rejected",
+            },
+        ),
+        TrainingObjective.REINFORCEMENT: DataFormatSpec(
+            user_facing_description=(
+                "A dataset with a 'prompt' column (the instruction) and an 'answer' column "
+                "(the exact ideal response). ModelForge awards a reward of 1 only when a "
+                "generated response exactly matches the answer, ignoring surrounding whitespace."
+            ),
+            column_aliases={
+                "instruction": "prompt",
+                "ideal_answer": "answer",
             },
         ),
     }
