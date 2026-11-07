@@ -244,9 +244,10 @@ class WorkflowService:
 
             pipeline_tag = getattr(info, "pipeline_tag", None)
             expected_pipeline_tags = {
-                "causal_language_modeling": {"text-generation", "text2text-generation"},
+                "causal_language_modeling": {"text-generation"},
                 "seq2seq_modeling": {"summarization", "translation", "text2text-generation"},
                 "token_classification": {"token-classification"},
+                "question_answering": {"question-answering"},
             }
             expected = expected_pipeline_tags.get(task_slug or "")
             if expected and pipeline_tag and pipeline_tag not in expected:
