@@ -41,6 +41,7 @@ _TASK_SLUG_TO_PEFT_TASK_TYPE = {
     "causal_language_modeling": "CAUSAL_LM",
     "seq2seq_modeling": "SEQ_2_SEQ_LM",
     "token_classification": "TOKEN_CLS",
+    "question_answering": "QUESTION_ANS",
 }
 
 

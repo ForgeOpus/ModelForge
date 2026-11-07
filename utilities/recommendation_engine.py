@@ -304,7 +304,7 @@ class RecommendationEngine:
 
         # Step 3: Resolve task and strategy slugs
         task_slug = use_case_cls.task_slug
-        strategy_slug = OBJECTIVE_STRATEGY_MAP[training_objective]
+        strategy_slug = getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP[training_objective]
 
         # Step 4: Look up strategy
         if strategy_slug not in FinetuningStrategy._registry:

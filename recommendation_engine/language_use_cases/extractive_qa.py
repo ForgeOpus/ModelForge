@@ -11,7 +11,8 @@ class ExtractiveQAUseCase(LanguageUseCase):
         "Train a model to identify and extract answer spans from a context passage given a question. "
         "Suitable for reading comprehension and document-grounded QA tasks."
     )
-    task_slug = "token_classification"
+    task_slug = "question_answering"
+    strategy_slug = "qa"
     hub_task_filter = "question-answering"
     compatible_objectives = [TrainingObjective.SUPERVISED]
     data_formats = {
