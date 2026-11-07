@@ -320,6 +320,8 @@ class SFT(FinetuningStrategy):
             model_init_kwargs = {}
 
         bf16, fp16 = training_precision(hardware)
+        if raw_vram_gb == 0:
+            activation_offloading = False
         strategy_config = SFTRecommendedConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=gradient_accumulation_steps,
@@ -437,6 +439,20 @@ class SFT(FinetuningStrategy):
         from transformers import DataCollatorForSeq2Seq, Seq2SeqTrainer, Seq2SeqTrainingArguments
         from peft import get_peft_model
 
+        required = {"prompt", "completion"}
+        missing = required - set(dataset.column_names)
+        if missing:
+            raise ValueError(
+                "Seq2seq training requires prompt and completion columns. "
+                f"Missing: {', '.join(sorted(missing))}."
+            )
+        if eval_dataset is not None:
+            missing = required - set(eval_dataset.column_names)
+            if missing:
+                raise ValueError(
+                    "Seq2seq evaluation requires prompt and completion columns. "
+                    f"Missing: {', '.join(sorted(missing))}."
+                )
         max_length = sft_config.max_length or 1024
 
         def tokenize(batch):
@@ -476,6 +492,8 @@ class SFT(FinetuningStrategy):
             dataloader_num_workers=sft_config.dataloader_num_workers,
             remove_unused_columns=True,
             max_grad_norm=sft_config.max_grad_norm,
+            fsdp=getattr(sft_config, "fsdp", ""),
+            fsdp_config=getattr(sft_config, "fsdp_config", None),
         )
         trainer = Seq2SeqTrainer(
             model=model,
