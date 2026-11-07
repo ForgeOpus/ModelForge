@@ -10,6 +10,7 @@ from peft import LoraConfig
 from finetuning_strategies.strategy_factory import FinetuningStrategies
 from providers.provider_factory import ProviderFactory
 from recommendation_engine.validation_models.recommendation import Recommendation
+from dataset_manager.dataset_factory import DatasetFactory
 from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.fsdp_config import build_fsdp_config
 
@@ -58,6 +59,14 @@ def assemble_and_train(
 
     strategy_cls = FinetuningStrategies.get_strategy_class(recommendation.strategy_slug)
     strategy = strategy_cls()
+
+    # The use-case contract describes user-facing names (for example
+    # document/summary). Trainers consume canonical names instead. Normalize
+    # once at the shared execution boundary so all launch surfaces train the
+    # same data that validation accepted.
+    dataset = DatasetFactory.normalize_columns(
+        dataset, recommendation.data_format.column_aliases
+    )
 
     provider_cls = ProviderFactory.get_provider(recommendation.provider_slug)
     provider = provider_cls()

@@ -56,7 +56,7 @@ class DPO(FinetuningStrategy):
     This provides a lower memory overhead compared to reinforcement learning approaches, while still effectively leveraging preference data for fine-tuning.
     """
 
-    supported_providers = ["huggingface", "unsloth"]
+    supported_providers = ["huggingface"]
     supported_tasks = ["causal_language_modeling"]
     # PEFT: ref model is the frozen base implicitly managed by DPOTrainer — no extra copy.
     # Full fine-tune: a separate ref_model is explicitly loaded, so 1 extra copy is required.
@@ -68,7 +68,7 @@ class DPO(FinetuningStrategy):
     @staticmethod
     def validate_data_format(iterable_dataset: IterableDataset) -> None:
         required_columns = {"chosen", "rejected"}
-        column_names = {c.lower() for c in iterable_dataset.column_names}
+        column_names = set(iterable_dataset.column_names)
         if "prompt" not in column_names:
             warnings.warn(
                 "Dataset is missing 'prompt' column. Using implicit formatting where 'chosen' and "
@@ -286,7 +286,7 @@ class DPO(FinetuningStrategy):
         peft_config = LoraRecommendedConfig(
             r=rank,
             lora_alpha=rank * 2,
-            target_modules=target_modules,
+            target_modules="all-linear",
         )
         return strategy_config, peft_config
 

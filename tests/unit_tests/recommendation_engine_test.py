@@ -205,12 +205,13 @@ class TestResolveUseCaseAndStrategy:
         assert strategy_slug == "sft"
         assert data_format is not None
 
-    def test_instruction_following_preference_raises_strategy_not_registered(self):
-        # DPO is not registered — should raise ValueError
-        with pytest.raises(ValueError, match="dpo"):
-            RecommendationEngine._resolve_use_case_and_strategy(
-                "instruction_following", TrainingObjective.PREFERENCE
-            )
+    def test_instruction_following_preference_resolves_dpo(self):
+        _, strategy_cls, task_slug, strategy_slug, _ = RecommendationEngine._resolve_use_case_and_strategy(
+            "instruction_following", TrainingObjective.PREFERENCE
+        )
+        assert strategy_cls.slug == "dpo"
+        assert task_slug == "causal_language_modeling"
+        assert strategy_slug == "dpo"
 
     def test_unknown_use_case_raises(self):
         with pytest.raises(ValueError, match="Unknown use case slug"):

@@ -10,15 +10,14 @@ from rich import print as rprint
 from utilities.hardware_detector import HardwareDetector
 from utilities.training_objective import TrainingObjective
 from recommendation_engine.language_use_cases.use_case import LanguageUseCase
-import recommendation_engine.language_use_cases  # triggers subclass registration
 from finetuning_strategies.strategies.strategy import FinetuningStrategy
-import finetuning_strategies.strategies.sft  # triggers SFT registration
-from finetuning_strategies.strategies.sft import SFT
 from recommendation_engine.validation_models.recommendation import Recommendation
 from dataset_manager.dataset_factory import DatasetFactory
 from datasets import IterableDataset, DatasetDict
+from workflow.registries import load_core_registries
 
 console = Console()
+load_core_registries()
 
 
 def check_hf_login() -> None:
@@ -188,7 +187,11 @@ def validate_and_load_dataset(path: str, is_remote: bool, recommendation: Recomm
         split = dataset
 
     try:
-        SFT.validate_data_format(split)
+        split = DatasetFactory.normalize_columns(split, recommendation.data_format.column_aliases)
+        strategy_cls = FinetuningStrategy._registry.get(recommendation.strategy_slug)
+        if strategy_cls is None:
+            raise ValueError(f"Training strategy '{recommendation.strategy_slug}' is unavailable.")
+        strategy_cls.validate_data_format(split)
     except ValueError:
         rprint(f"\n[red]Dataset format invalid.[/red]")
         rprint(recommendation.data_format.user_facing_description)
