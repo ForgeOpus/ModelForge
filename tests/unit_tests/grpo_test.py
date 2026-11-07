@@ -56,3 +56,21 @@ def test_instruction_following_reinforcement_resolves_grpo():
     assert task_slug == "causal_language_modeling"
     assert strategy_slug == "grpo"
     assert data_format.column_aliases["ideal_answer"] == "answer"
+
+
+def test_real_grpo_training_saves_model(tmp_path):
+    from types import SimpleNamespace
+    from tokenizers import Tokenizer
+    from tokenizers.models import WordLevel
+    from tokenizers.pre_tokenizers import Whitespace
+    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
+    tokenizer = Tokenizer(WordLevel({"[UNK]": 0, "[PAD]": 1, "[EOS]": 2, "hello": 3, "world": 4}, unk_token="[UNK]"))
+    tokenizer.pre_tokenizer = Whitespace()
+    fast = PreTrainedTokenizerFast(tokenizer_object=tokenizer, unk_token="[UNK]", pad_token="[PAD]", eos_token="[EOS]")
+    model = GPT2LMHeadModel(GPT2Config(vocab_size=5, n_positions=64, n_embd=8, n_layer=1, n_head=1, eos_token_id=2, pad_token_id=1))
+    provider = SimpleNamespace(load_model=lambda *args, **kwargs: model, load_tokenizer=lambda *args: fast)
+    strategy = GRPO()
+    strategy.set_config({"output_dir": str(tmp_path), "bf16": False, "fp16": False, "max_completion_length": 2, "num_generations": 2, "gradient_accumulation_steps": 2, "num_train_epochs": 1, "gradient_checkpointing": False, "report_to": "none", "save_steps": 100})
+    trainer = strategy.finetune("tiny", Dataset.from_dict({"prompt": ["hello", "world"], "answer": ["world", "hello"]}), "causal_language_modeling", provider, "full_finetune", str(tmp_path))
+    assert trainer.state.global_step >= 1
+    assert (tmp_path / "config.json").is_file()
