@@ -9,6 +9,7 @@ from trl import DPOTrainer, DPOConfig
 from peft import PeftConfig
 from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
+from utilities.precision import training_precision
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 import warnings
 
@@ -250,6 +251,7 @@ class DPO(FinetuningStrategy):
         else:
             learning_rate = 1e-7
 
+        bf16, fp16 = training_precision(hardware)
         strategy_config = DPORecommendedConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=gradient_accumulation_steps,
