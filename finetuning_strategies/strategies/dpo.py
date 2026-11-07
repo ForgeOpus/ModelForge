@@ -252,6 +252,8 @@ class DPO(FinetuningStrategy):
             learning_rate = 1e-7
 
         bf16, fp16 = training_precision(hardware)
+        if raw_vram_gb == 0:
+            activation_offloading = False
         strategy_config = DPORecommendedConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=gradient_accumulation_steps,
