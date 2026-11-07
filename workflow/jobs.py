@@ -21,12 +21,14 @@ from workflow.training import assemble_and_train
 
 
 _TASK_SLUG_TO_AUTO_CLASS = {
+    "question_answering": "AutoModelForQuestionAnswering",
     "causal_language_modeling": "AutoModelForCausalLM",
     "seq2seq_modeling": "AutoModelForSeq2SeqLM",
     "token_classification": "AutoModelForTokenClassification",
 }
 
 _TASK_SLUG_TO_PIPELINE = {
+    "question_answering": "question-answering",
     "causal_language_modeling": "text-generation",
     "seq2seq_modeling": "summarization",
     "token_classification": "token-classification",

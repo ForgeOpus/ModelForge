@@ -217,7 +217,9 @@ export function Playground() {
         <div ref={scrollRef} className="flex-1 overflow-auto px-6 py-5">
           {messages.length === 0 ? (
             <p className="py-10 text-center text-[13px] text-faint">
-              Loaded {selected?.name}. Say something to start.
+              Loaded {selected?.name}. {selected?.task_slug === "question_answering"
+                ? 'Send JSON with "question" and "context" strings to extract an answer span.'
+                : "Say something to start."}
             </p>
           ) : (
             <div className="mx-auto flex max-w-3xl flex-col gap-4">

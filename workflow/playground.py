@@ -57,6 +57,7 @@ class PlaygroundSession:
 
         self._task_slug = descriptor.get("task_slug", self._task_slug)
         model_classes = {
+            "question_answering": "AutoModelForQuestionAnswering",
             "causal_language_modeling": "AutoModelForCausalLM",
             "seq2seq_modeling": "AutoModelForSeq2SeqLM",
             "token_classification": "AutoModelForTokenClassification",
@@ -73,6 +74,7 @@ class PlaygroundSession:
 
                 self.base_model = peft.PeftConfig.from_pretrained(self.model_path).base_model_name_or_path
                 peft_class_name = {
+                    "question_answering": "AutoPeftModelForQuestionAnswering",
                     "causal_language_modeling": "AutoPeftModelForCausalLM",
                     "seq2seq_modeling": "AutoPeftModelForSeq2SeqLM",
                     "token_classification": "AutoPeftModelForTokenClassification",
@@ -89,6 +91,7 @@ class PlaygroundSession:
                 )
             else:
                 from transformers import (
+                    AutoModelForQuestionAnswering,
                     AutoModelForCausalLM,
                     AutoModelForSeq2SeqLM,
                     AutoModelForTokenClassification,
@@ -96,6 +99,7 @@ class PlaygroundSession:
 
                 self.base_model = descriptor.get("base_model") or self.model_path
                 model_class = {
+                    "question_answering": AutoModelForQuestionAnswering,
                     "causal_language_modeling": AutoModelForCausalLM,
                     "seq2seq_modeling": AutoModelForSeq2SeqLM,
                     "token_classification": AutoModelForTokenClassification,
@@ -141,6 +145,18 @@ class PlaygroundSession:
         with self._lock:
             self._stop.clear()
             tokenizer = self._tokenizer
+
+            if self._task_slug == "question_answering":
+                from utilities.qa_inference import parse_question, decode_answer
+                question, context = parse_question(messages[-1]["content"])
+                limit = min(tokenizer.model_max_length, getattr(self._model.config, "max_position_embeddings", 4096), 4096)
+                encoding = tokenizer(question, context, return_tensors="pt", return_offsets_mapping=True,
+                                     truncation="only_second", max_length=limit)
+                inputs = {key: value.to(self._model.device) for key, value in encoding.items() if key != "offset_mapping"}
+                with torch.inference_mode():
+                    result = self._model(**inputs)
+                yield decode_answer(result, encoding, context)
+                return
 
             try:
                 prompt = tokenizer.apply_chat_template(
