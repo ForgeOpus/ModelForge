@@ -11,7 +11,6 @@ from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
 from utilities.precision import training_precision
 from recommendation_engine.validation_models.recommendation import RecommendedModel
-import warnings
 
 
 class DPORecommendedConfig(BaseModel):
@@ -69,12 +68,6 @@ class DPO(FinetuningStrategy):
     def validate_data_format(iterable_dataset: IterableDataset) -> None:
         required_columns = {"chosen", "rejected"}
         column_names = set(iterable_dataset.column_names)
-        if "prompt" not in column_names:
-            warnings.warn(
-                "Dataset is missing 'prompt' column. Using implicit formatting where 'chosen' and "
-                "'rejected' samples are directly compared without a shared prompt. Having a 'prompt' "
-                "column is recommended for better performance."
-            )
         if not required_columns.issubset(column_names):
             raise ValueError(
                 f"Dataset must contain the following columns: {required_columns}. "

@@ -187,7 +187,11 @@ def validate_and_load_dataset(path: str, is_remote: bool, recommendation: Recomm
         split = dataset
 
     try:
-        split = DatasetFactory.normalize_columns(split, recommendation.data_format.column_aliases)
+        split = DatasetFactory.normalize_columns(
+            split,
+            recommendation.data_format.column_aliases,
+            recommendation.data_format.optional_column_aliases,
+        )
         strategy_cls = FinetuningStrategy._registry.get(recommendation.strategy_slug)
         if strategy_cls is None:
             raise ValueError(f"Training strategy '{recommendation.strategy_slug}' is unavailable.")
