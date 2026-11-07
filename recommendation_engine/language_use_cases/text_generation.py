@@ -13,7 +13,11 @@ class TextGenerationUseCase(LanguageUseCase):
     )
     task_slug = "causal_language_modeling"
     hub_task_filter = "text-generation"
-    compatible_objectives = [TrainingObjective.SUPERVISED]
+    compatible_objectives = [
+        TrainingObjective.SUPERVISED,
+        TrainingObjective.PREFERENCE,
+        TrainingObjective.REINFORCEMENT,
+    ]
     data_formats = {
         TrainingObjective.SUPERVISED: DataFormatSpec(
             user_facing_description=(
@@ -23,6 +27,29 @@ class TextGenerationUseCase(LanguageUseCase):
             column_aliases={
                 "input_text": "prompt",
                 "generated_text": "completion",
+            },
+        ),
+        TrainingObjective.PREFERENCE: DataFormatSpec(
+            user_facing_description=(
+                "A dataset with a 'prompt' column (the text prefix), a 'chosen' column "
+                "(the preferred continuation), and a 'rejected' column (a less-preferred "
+                "continuation)."
+            ),
+            column_aliases={
+                "input_text": "prompt",
+                "preferred_continuation": "chosen",
+                "rejected_continuation": "rejected",
+            },
+        ),
+        TrainingObjective.REINFORCEMENT: DataFormatSpec(
+            user_facing_description=(
+                "A dataset with a 'prompt' column (the text prefix) and an 'answer' column "
+                "(the exact desired continuation). ModelForge's built-in reward is 1 only "
+                "when a generated continuation matches the answer after trimming whitespace."
+            ),
+            column_aliases={
+                "input_text": "prompt",
+                "ideal_continuation": "answer",
             },
         ),
     }
