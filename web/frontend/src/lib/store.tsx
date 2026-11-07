@@ -47,6 +47,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setUnauthorised(false);
     try {
       // Hardware detection can fail independently of everything else; don't let
       // it take the whole app down.
