@@ -94,7 +94,7 @@ class WorkflowService:
         available: list[TrainingObjective] = []
         unavailable: dict[str, str] = {}
         for objective in use_case_cls.compatible_objectives:
-            strategy_slug = OBJECTIVE_STRATEGY_MAP.get(objective)
+            strategy_slug = getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP.get(objective)
             strategy_cls = FinetuningStrategy._registry.get(strategy_slug)
             if strategy_cls is None:
                 unavailable[objective.value] = (
@@ -170,7 +170,7 @@ class WorkflowService:
                 reason = unavailable.get(request.objective.value, "This objective is not executable.")
                 return DatasetValidationResult(False, request.path, request.remote, [], error=reason)
             format_description = use_case_cls.data_formats[request.objective].user_facing_description
-            strategy_cls = FinetuningStrategy._registry.get(OBJECTIVE_STRATEGY_MAP[request.objective])
+            strategy_cls = FinetuningStrategy._registry.get(getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP[request.objective])
 
         try:
             if not request.remote:

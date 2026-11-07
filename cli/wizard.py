@@ -105,7 +105,7 @@ def select_use_case() -> type:
 def select_objective(use_case_cls: type) -> TrainingObjective:
     valid = [
         obj for obj in use_case_cls.compatible_objectives
-        if _OBJECTIVE_TO_SLUG.get(obj) in FinetuningStrategy._registry
+        if (getattr(use_case_cls, "strategy_slug", None) or _OBJECTIVE_TO_SLUG.get(obj)) in FinetuningStrategy._registry
     ]
 
     if len(valid) == 1:

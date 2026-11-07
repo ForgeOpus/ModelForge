@@ -155,6 +155,11 @@ class ExtractiveQA(FinetuningStrategy):
         doc_stride = self.config.get("doc_stride", 128)
         prepare = lambda batch: self._prepare_features(tokenizer, batch, max_length, doc_stride)
         dataset = dataset.map(prepare, batched=True, remove_columns=dataset.column_names)
+        if peft_config is not None:
+            from peft import get_peft_model, prepare_model_for_kbit_training
+            if getattr(model, "is_loaded_in_4bit", False) or getattr(model, "is_loaded_in_8bit", False):
+                model = prepare_model_for_kbit_training(model)
+            model = get_peft_model(model, peft_config)
         args = TrainingArguments(
             output_dir=output_dir,
             per_device_train_batch_size=self.config.get("per_device_train_batch_size", 4),
@@ -168,10 +173,13 @@ class ExtractiveQA(FinetuningStrategy):
             fp16=self.config.get("fp16", False),
             report_to=self.config.get("report_to", "none"),
             logging_dir=self.config.get("logging_dir"),
+            fsdp=self.config.get("fsdp", ""),
+            fsdp_config=self.config.get("fsdp_config"),
         )
         trainer = Trainer(model=model, args=args, train_dataset=dataset,
-                          tokenizer=tokenizer, data_collator=DataCollatorWithPadding(tokenizer),
+                          processing_class=tokenizer, data_collator=DataCollatorWithPadding(tokenizer),
                           callbacks=callbacks)
+        self.launch_tensorboard(args)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         trainer.save_model(output_dir)
         return trainer
