@@ -7,7 +7,8 @@ supplying both an alias and its canonical column is rejected as ambiguous.
 ## Supervised training
 
 Instruction following uses `prompt` and `completion` (`instruction` and `response`
-are accepted aliases). Text generation accepts a `text` column.
+are accepted aliases). Text generation uses `prompt` and `completion` (`input_text`
+and `generated_text` are accepted aliases).
 
 Summarization accepts `document` and `summary`, normalized to `prompt` and
 `completion`. It uses a native encoder-decoder trainer rather than TRL's causal
@@ -15,14 +16,17 @@ language-model trainer.
 
 ## Preference training
 
-Instruction following with the preference objective uses DPO. Supply `prompt`,
-`chosen`, and `rejected`, using those exact column names, or the documented aliases
-`instruction`, `preferred_response`, and `dispreferred_response`.
+Instruction following and Text Generation with the preference objective use DPO.
+Both require `chosen` and `rejected`; a shared `prompt` is optional when the pair
+already contains its context. Instruction Following accepts `instruction`,
+`preferred_response`, and `dispreferred_response` aliases. Text Generation accepts
+`input_text`, `preferred_continuation`, and `rejected_continuation` aliases.
 
 ## Reinforcement training
 
-Instruction following with the reinforcement objective uses GRPO. Supply `prompt`
-and `answer` strings; `instruction` and `ideal_answer` are accepted aliases.
+Instruction Following and Text Generation with the reinforcement objective use GRPO.
+Supply `prompt` and `answer` strings. Instruction Following accepts `instruction`
+and `ideal_answer`; Text Generation accepts `input_text` and `ideal_continuation`.
 The built-in reward gives 1 for a completion matching the reference answer after
 trimming surrounding whitespace, and 0 otherwise. It does not score general
 helpfulness. Use tasks with objectively checkable reference answers. Streaming

@@ -182,8 +182,9 @@ class WorkflowService:
                 return DatasetValidationResult(True, request.path, request.remote, [], format_description)
             split = next(iter(dataset.values())) if isinstance(dataset, DatasetDict) else dataset
             if request.use_case_slug:
+                data_format = use_case_cls.data_formats[request.objective]
                 split = DatasetFactory.normalize_columns(
-                    split, use_case_cls.data_formats[request.objective].column_aliases
+                    split, data_format.column_aliases, data_format.optional_column_aliases
                 )
             columns = list(getattr(split, "column_names", []) or getattr(split, "features", {}).keys())
             if strategy_cls is not None:

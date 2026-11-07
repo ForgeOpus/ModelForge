@@ -1,5 +1,6 @@
 from datasets import Dataset
 from unittest.mock import patch
+import pytest
 
 from recommendation_engine.language_use_cases.use_case import LanguageUseCase
 from recommendation_engine.validation_models.recommendation import RecommendedModel
@@ -19,9 +20,11 @@ def test_text_generation_exposes_preference_and_reinforcement_contracts():
         TrainingObjective.REINFORCEMENT,
     ]
     assert use_case.data_formats[TrainingObjective.PREFERENCE].column_aliases == {
-        "input_text": "prompt",
         "preferred_continuation": "chosen",
         "rejected_continuation": "rejected",
+    }
+    assert use_case.data_formats[TrainingObjective.PREFERENCE].optional_column_aliases == {
+        "input_text": "prompt",
     }
     assert use_case.data_formats[TrainingObjective.REINFORCEMENT].column_aliases == {
         "input_text": "prompt",
@@ -60,6 +63,26 @@ def test_shared_dataset_validation_normalizes_text_generation_preference_aliases
 
     assert result.valid is True
     assert result.columns == ["prompt", "chosen", "rejected"]
+
+
+@pytest.mark.parametrize("use_case_slug", ["instruction_following", "text_generation"])
+def test_shared_dataset_validation_accepts_implicit_prompt_preference_pairs(monkeypatch, use_case_slug):
+    service = WorkflowService()
+    dataset = Dataset.from_dict({
+        "chosen": ["The preferred continuation."],
+        "rejected": ["The rejected continuation."],
+    })
+    monkeypatch.setattr("workflow.service.DatasetFactory.load", lambda *args, **kwargs: dataset)
+
+    result = service.validate_dataset(DatasetValidationRequest(
+        path="unused.jsonl",
+        remote=True,
+        use_case_slug=use_case_slug,
+        objective=TrainingObjective.PREFERENCE,
+    ))
+
+    assert result.valid is True
+    assert result.columns == ["chosen", "rejected"]
 
 
 def test_text_generation_preference_recommendation_has_nonzero_gpu_budget():

@@ -43,6 +43,32 @@ class TestNormalizeColumns:
                 dataset, {"document": "prompt", "summary": "completion"}
             )
 
+    def test_accepts_dpo_implicit_prompt_pairs(self):
+        dataset = RenameableDataset(["chosen", "rejected"])
+
+        assert DatasetFactory.normalize_columns(
+            dataset,
+            {"preferred_response": "chosen", "dispreferred_response": "rejected"},
+            {"instruction": "prompt"},
+        ) is dataset
+        assert dataset.renamed is None
+
+    def test_renames_optional_dpo_prompt_alias_when_present(self):
+        dataset = RenameableDataset(["instruction", "preferred_response", "dispreferred_response"])
+
+        result = DatasetFactory.normalize_columns(
+            dataset,
+            {"preferred_response": "chosen", "dispreferred_response": "rejected"},
+            {"instruction": "prompt"},
+        )
+
+        assert result is dataset
+        assert dataset.renamed == {
+            "instruction": "prompt",
+            "preferred_response": "chosen",
+            "dispreferred_response": "rejected",
+        }
+
 
 # ---------------------------------------------------------------------------
 # handle_json

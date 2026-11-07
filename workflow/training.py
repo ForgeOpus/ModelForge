@@ -66,7 +66,9 @@ def assemble_and_train(
     # once at the shared execution boundary so all launch surfaces train the
     # same data that validation accepted.
     dataset = DatasetFactory.normalize_columns(
-        dataset, recommendation.data_format.column_aliases
+        dataset,
+        recommendation.data_format.column_aliases,
+        recommendation.data_format.optional_column_aliases,
     )
 
     provider_cls = ProviderFactory.get_provider(recommendation.provider_slug)

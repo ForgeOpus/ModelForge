@@ -13,7 +13,11 @@ _EXT_NORMALIZE = {"jsonl": "json", "txt": "text"}
 class DatasetFactory:
 
     @staticmethod
-    def normalize_columns(dataset, column_aliases: dict[str, str] | None):
+    def normalize_columns(
+        dataset,
+        column_aliases: dict[str, str] | None,
+        optional_column_aliases: dict[str, str] | None = None,
+    ):
         """Rename a use-case's documented source columns to trainer columns.
 
         ``DataFormatSpec.column_aliases`` is a source-to-destination map.  Do
@@ -21,10 +25,15 @@ class DatasetFactory:
         ``document`` and ``prompt``, for example, is ambiguous and must be
         corrected by its author rather than guessing which content to train on.
         """
-        aliases = column_aliases or {}
+        aliases = {**(column_aliases or {}), **(optional_column_aliases or {})}
+        optional_sources = set((optional_column_aliases or {}).keys())
         columns = list(getattr(dataset, "column_names", []) or getattr(dataset, "features", {}).keys())
         rename = {source: destination for source, destination in aliases.items() if source in columns and source != destination}
-        missing = [source for source in aliases if source not in columns and aliases[source] not in columns]
+        missing = [
+            source
+            for source in aliases
+            if source not in optional_sources and source not in columns and aliases[source] not in columns
+        ]
         if missing:
             raise ValueError(
                 "Dataset is missing required column(s): " + ", ".join(sorted(missing)) + "."

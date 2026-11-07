@@ -31,15 +31,16 @@ class TextGenerationUseCase(LanguageUseCase):
         ),
         TrainingObjective.PREFERENCE: DataFormatSpec(
             user_facing_description=(
-                "A dataset with a 'prompt' column (the text prefix), a 'chosen' column "
-                "(the preferred continuation), and a 'rejected' column (a less-preferred "
-                "continuation)."
+                "A dataset with a 'chosen' column (the preferred continuation) and a 'rejected' "
+                "column (a less-preferred continuation). Include a shared 'prompt' column (or "
+                "'input_text' alias) when your continuations do not already contain the context; "
+                "DPO also accepts implicit-prompt pairs."
             ),
             column_aliases={
-                "input_text": "prompt",
                 "preferred_continuation": "chosen",
                 "rejected_continuation": "rejected",
             },
+            optional_column_aliases={"input_text": "prompt"},
         ),
         TrainingObjective.REINFORCEMENT: DataFormatSpec(
             user_facing_description=(

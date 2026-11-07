@@ -31,14 +31,16 @@ class InstructionFollowingUseCase(LanguageUseCase):
         ),
         TrainingObjective.PREFERENCE: DataFormatSpec(
             user_facing_description=(
-                "A dataset with a 'prompt' column (the instruction), a 'chosen' column "
-                "(the preferred response), and a 'rejected' column (the less preferred response)."
+                "A dataset with a 'chosen' column (the preferred response) and a 'rejected' "
+                "column (the less preferred response). Include a shared 'prompt' column (or "
+                "'instruction' alias) when your responses do not already contain the context; "
+                "DPO also accepts implicit-prompt pairs."
             ),
             column_aliases={
-                "instruction": "prompt",
                 "preferred_response": "chosen",
                 "dispreferred_response": "rejected",
             },
+            optional_column_aliases={"instruction": "prompt"},
         ),
         TrainingObjective.REINFORCEMENT: DataFormatSpec(
             user_facing_description=(
