@@ -239,13 +239,14 @@ class TestResolveUseCaseAndStrategy:
         assert task_slug == "seq2seq_modeling"
         assert strategy_slug == "sft"
 
-    def test_extractive_qa_supervised_raises_misconfiguration(self):
-        # extractive_qa maps to task_slug='token_classification', which SFT does not support.
-        # This exposes a real misconfiguration in the use case / strategy definitions.
-        with pytest.raises(ValueError, match="does not support task"):
-            RecommendationEngine._resolve_use_case_and_strategy(
-                "extractive_qa", TrainingObjective.SUPERVISED
-            )
+    def test_extractive_qa_supervised_resolves_native_qa_strategy(self):
+        _, strategy_cls, task_slug, strategy_slug, data_format = RecommendationEngine._resolve_use_case_and_strategy(
+            "extractive_qa", TrainingObjective.SUPERVISED
+        )
+        assert strategy_cls.slug == "qa"
+        assert task_slug == "question_answering"
+        assert strategy_slug == "qa"
+        assert set(data_format.column_aliases) == {"context", "question", "answers"}
 
 
 # ---------------------------------------------------------------------------

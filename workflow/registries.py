@@ -11,4 +11,6 @@ def load_core_registries() -> None:
     import finetuning_strategies.tasks  # noqa: F401
     import finetuning_strategies.strategies.sft  # noqa: F401
     import finetuning_strategies.strategies.dpo  # noqa: F401
+    import finetuning_strategies.strategies.grpo  # noqa: F401
+    import finetuning_strategies.strategies.qa  # noqa: F401
     import providers.huggingface  # noqa: F401
