@@ -1,6 +1,7 @@
 import pytest
 from finetuning_strategies.strategy_factory import FinetuningStrategies, StrategyResponse
 from finetuning_strategies.strategies.sft import SFT
+from finetuning_strategies.strategies.dpo import DPO
 
 
 class TestFinetuningStrategies:
@@ -8,9 +9,12 @@ class TestFinetuningStrategies:
         result = FinetuningStrategies.get_strategy_class("sft")
         assert result is SFT
 
+    def test_get_strategy_class_dpo(self):
+        assert FinetuningStrategies.get_strategy_class("dpo") is DPO
+
     def test_get_strategy_class_unknown_raises(self):
-        with pytest.raises(ValueError, match="dpo"):
-            FinetuningStrategies.get_strategy_class("dpo")
+        with pytest.raises(ValueError, match="unknown"):
+            FinetuningStrategies.get_strategy_class("unknown")
 
     def test_list_strategies_non_empty(self):
         strategies = FinetuningStrategies.list_strategies()
