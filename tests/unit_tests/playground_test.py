@@ -296,3 +296,136 @@ def test_adapter_loading_ignores_stale_full_model_in_checkpoint(tiny_model, tmp_
     assert sources == [str(tiny_model)]
     assert 'MISMATCH' not in caplog.text
     assert (path / 'model.safetensors').exists()  # never repair artifacts by deleting them
+class _LiveThread:
+    def is_alive(self):
+        return True
+
+
+class _StubSession:
+    def __init__(self, session_id, model_path):
+        self.id = session_id
+        self.model_path = model_path
+        self.base_model = "stub-base"
+        self.device_note = "stub note"
+        self.stopped = False
+
+    def close(self):
+        self.stopped = True
+
+    def stop(self):
+        self.stopped = True
+
+    def generate(self, messages, **sampling):
+        yield "hello"
+
+
+def _route_client(tmp_path, *, active=False, threads=None):
+    ledger = Ledger(tmp_path)
+    jobs = Jobs(ledger, active=active)
+    if threads is not None:
+        jobs._threads = threads
+    app = create_app(auth=TokenAuth("secret"), job_manager=jobs)
+    return TestClient(app), app
+
+
+def test_playground_routes_use_distinct_services(tmp_path, monkeypatch):
+    monkeypatch.setattr("workflow.playground.PlaygroundSession", _StubSession)
+    client, app = _route_client(tmp_path)
+    headers = {"X-ModelForge-Token": "secret"}
+    from workflow.playground import PlaygroundManager
+
+    assert isinstance(app.state.session_manager, PlaygroundManager)
+    assert isinstance(app.state.inference_playground, Playground)
+    assert app.state.session_manager is not app.state.inference_playground
+    assert not hasattr(app.state, "playground")
+
+    for response in (
+        client.get("/api/playground/status"),
+        client.post("/api/playground/sessions", json={"model_path": str(tmp_path)}),
+        client.delete("/api/playground/sessions/missing"),
+        client.post("/api/playground/infer", json={"run_id": 1, "messages": [{"role": "user", "content": "hello"}]}),
+    ):
+        assert response.status_code == 401
+
+    status = client.get("/api/playground/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json() == {"available": True, "reason": None, "session_id": None, "model_path": None}
+
+    opened = client.post("/api/playground/sessions", headers=headers, json={"model_path": str(tmp_path)})
+    assert opened.status_code == 200
+    body = opened.json()
+    assert body["model_path"] == str(tmp_path)
+    assert body["base_model"] == "stub-base"
+    assert body["note"] == "stub note"
+    session_id = body["session_id"]
+
+    status = client.get("/api/playground/status", headers=headers)
+    assert status.json()["session_id"] == session_id
+    assert status.json()["model_path"] == str(tmp_path)
+
+    closed = client.delete(f"/api/playground/sessions/{session_id}", headers=headers)
+    assert closed.status_code == 200
+    assert closed.json() == {"closed": True}
+
+    inferred = client.post(
+        "/api/playground/infer",
+        headers=headers,
+        json={"run_id": 99, "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert inferred.status_code == 404
+    assert inferred.json()["detail"] == "Run not found."
+
+    again = client.delete(f"/api/playground/sessions/{session_id}", headers=headers)
+    assert again.json() == {"closed": False}
+    assert client.get("/api/playground/status", headers=headers).json()["session_id"] is None
+
+
+def test_training_active_refuses_session_without_breaking_infer(tmp_path):
+    client, app = _route_client(tmp_path, active=True, threads={1: _LiveThread()})
+    app.state.inference_playground.ledger.run["status"] = "running"
+    headers = {"X-ModelForge-Token": "secret"}
+
+    status = client.get("/api/playground/status", headers=headers)
+    assert status.status_code == 200
+    assert status.json()["available"] is False
+    assert status.json()["session_id"] is None
+    assert "training" in status.json()["reason"].lower()
+
+    opened = client.post("/api/playground/sessions", headers=headers, json={"model_path": str(tmp_path)})
+    assert opened.status_code == 409
+    assert "training run" in opened.json()["detail"].lower()
+    assert app.state.session_manager.current is None
+
+    inferred = client.post(
+        "/api/playground/infer",
+        headers=headers,
+        json={"run_id": 1, "messages": [{"role": "user", "content": "hello"}]},
+    )
+    assert inferred.status_code == 409
+    assert "completed run" in inferred.json()["detail"]
+
+
+def test_playground_websocket_auth_and_session_lookup(tmp_path, monkeypatch):
+    from starlette.websockets import WebSocketDisconnect
+
+    monkeypatch.setattr("workflow.playground.PlaygroundSession", _StubSession)
+    client, _app = _route_client(tmp_path)
+    headers = {"X-ModelForge-Token": "secret"}
+
+    with pytest.raises(WebSocketDisconnect) as rejected:
+        with client.websocket_connect("/api/playground/missing/chat?token=wrong") as socket:
+            socket.receive_text()
+    assert rejected.value.code == 1008
+
+    with client.websocket_connect("/api/playground/missing/chat?token=secret") as socket:
+        missing = socket.receive_json()
+        assert missing["type"] == "error"
+        assert "closed" in missing["message"]
+
+    opened = client.post("/api/playground/sessions", headers=headers, json={"model_path": str(tmp_path)})
+    session_id = opened.json()["session_id"]
+    with client.websocket_connect(f"/api/playground/{session_id}/chat?token=secret") as socket:
+        socket.send_json({"messages": [{"role": "user", "content": "hi"}], "max_new_tokens": 4})
+        assert socket.receive_json() == {"type": "start"}
+        assert socket.receive_json() == {"type": "token", "text": "hello"}
+        assert socket.receive_json() == {"type": "done"}
