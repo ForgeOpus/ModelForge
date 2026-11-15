@@ -121,7 +121,10 @@ def assert_installed_package() -> Path:
 def _console_script(name: str) -> str:
     """Find an installed entry point without requiring the venv to be activated."""
     suffix = ".exe" if os.name == "nt" else ""
-    candidate = Path(sys.executable).resolve().parent / f"{name}{suffix}"
+    # Do not resolve the interpreter symlink: in a venv it commonly points to
+    # the global Python, while console scripts live beside the symlink in the
+    # venv's own bin/Scripts directory.
+    candidate = Path(sys.executable).parent / f"{name}{suffix}"
     if candidate.is_file():
         return str(candidate)
     found = shutil.which(name)
