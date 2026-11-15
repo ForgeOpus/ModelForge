@@ -11,10 +11,14 @@ import type {
 
 const TOKEN_KEY = "modelforge_token";
 
+let token = "";
+
 /* The launcher opens /app?token=… . Capture it, then strip it from the URL so
    the bearer token doesn't sit in the address bar and browser history for the
-   rest of the session. */
-function captureToken(): string {
+   rest of the session. Safe to call again after a client navigation or a
+   refresh: a missing query token leaves the stored one in place. */
+export function captureStartupToken(): string {
+  if (typeof window === "undefined") return token;
   const params = new URLSearchParams(window.location.search);
   const fromUrl = params.get("token");
   if (fromUrl) {
@@ -27,10 +31,11 @@ function captureToken(): string {
       window.location.pathname + (qs ? `?${qs}` : "") + window.location.hash,
     );
   }
-  return localStorage.getItem(TOKEN_KEY) ?? "";
+  token = localStorage.getItem(TOKEN_KEY) ?? "";
+  return token;
 }
 
-let token = captureToken();
+captureStartupToken();
 
 export function getToken(): string {
   return token;

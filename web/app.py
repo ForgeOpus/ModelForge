@@ -65,15 +65,14 @@ def create_app(
         description="Browser interface for modelforge-finetuning.",
         version="4.0.0",
     )
-    playground = PlaygroundManager(jobs)
-
     app.state.auth = auth
-    app.state.playground = playground
     app.state.workflow = workflow
     app.state.jobs = jobs
     app.state.ledger = ledger
-    playground = Playground(jobs, ledger)
-    app.state.playground = playground
+    # Session chat is the canonical playground. One-shot infer stays on its own
+    # service so these contracts cannot overwrite each other.
+    app.state.session_manager = PlaygroundManager(jobs)
+    app.state.inference_playground = Playground(jobs, ledger)
 
     app.add_middleware(
         CORSMiddleware,
@@ -132,10 +131,18 @@ def create_app(
     async def list_runs(limit: int = 100):
         return {"runs": [_with_tensorboard_url(run) for run in ledger.list_runs(limit=limit)]}
 
-    @app.post("/api/playground/infer", dependencies=[require_auth])
+    @app.post(
+        "/api/playground/infer",
+        dependencies=[require_auth],
+        summary="One-shot inference (compatibility)",
+        description=(
+            "Compatibility layer for clients that have not migrated to the "
+            "session-based playground. Does not share state with session chat."
+        ),
+    )
     def playground_infer(request: InferenceRequest):
         try:
-            return playground.infer(request)
+            return app.state.inference_playground.infer(request)
         except PlaygroundError as exc:
             raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
@@ -261,13 +268,14 @@ def create_app(
         }
 
     # ------------------------------------------------------------------
-    # Playground
+    # Playground (canonical session manager)
     # ------------------------------------------------------------------
 
     @app.get("/api/playground/status", dependencies=[require_auth])
     async def playground_status():
-        available, reason = playground.availability()
-        current = playground.current
+        manager = app.state.session_manager
+        available, reason = manager.availability()
+        current = manager.current
         return {
             "available": available,
             "reason": reason,
@@ -278,7 +286,7 @@ def create_app(
     @app.post("/api/playground/sessions", dependencies=[require_auth])
     async def open_playground(request: PlaygroundOpenRequest):
         try:
-            session = await asyncio.to_thread(playground.open, request.model_path)
+            session = await asyncio.to_thread(app.state.session_manager.open, request.model_path)
         except PlaygroundUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
@@ -290,7 +298,7 @@ def create_app(
 
     @app.delete("/api/playground/sessions/{session_id}", dependencies=[require_auth])
     async def close_playground(session_id: str):
-        return {"closed": playground.close(session_id)}
+        return {"closed": app.state.session_manager.close(session_id)}
 
     @app.websocket("/api/playground/{session_id}/chat")
     async def playground_chat(websocket: WebSocket, session_id: str, token: str | None = None):
@@ -300,7 +308,7 @@ def create_app(
             await websocket.close(code=1008)
             return
         await websocket.accept()
-        session = playground.get(session_id)
+        session = app.state.session_manager.get(session_id)
         if session is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "That playground session has closed."}))
             await websocket.close()

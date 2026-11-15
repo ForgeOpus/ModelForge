@@ -13,11 +13,19 @@
     <link rel="alternate icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <script>
-      // Pre-paint theme: avoid a flash before React mounts.
-      try {
-        var t = localStorage.getItem("modelforge_theme");
-        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-      } catch (e) {}
+    // Pre-paint theme: match ThemeProvider so the redesigned palette is correct
+    // before React mounts. Dark is the default unless light is stored or preferred.
+    try {
+      var stored = localStorage.getItem("modelforge_theme");
+      var theme =
+        stored === "light" || stored === "dark"
+          ? stored
+          : window.matchMedia("(prefers-color-scheme: light)").matches
+            ? "light"
+            : "dark";
+      document.documentElement.classList.toggle("dark", theme === "dark");
+      document.documentElement.style.colorScheme = theme;
+    } catch (e) {}
     </script>
   </head>
   <body>

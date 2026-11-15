@@ -66,17 +66,61 @@ def test_api_accepts_startup_token(tmp_path):
     assert response.json()["package"] == "modelforge-finetuning"
 
 
-def test_frontend_is_served_without_api_token(tmp_path, monkeypatch):
+SPA_ROUTES = (
+    "/",
+    "/app",
+    "/app/run",
+    "/app/run/7",
+    "/app/history",
+    "/app/models",
+    "/app/playground",
+    "/app/system",
+    "/app/docs",
+    "/app/artifacts",
+    "/app/settings",
+    "/app/live",
+    "/app/runs/7",
+)
+
+
+def _client_with_spa(tmp_path, monkeypatch):
     dist = tmp_path / "frontend_dist"
     dist.mkdir()
-    (dist / "index.html").write_text("<title>ModelForge</title>", encoding="utf-8")
+    (dist / "index.html").write_text("<!doctype html><title>ModelForge</title>", encoding="utf-8")
+    (dist / "logo.svg").write_text("<svg id='logo'></svg>", encoding="utf-8")
     monkeypatch.setattr("web.app.frontend_dist_path", lambda: dist)
-    client = make_client(tmp_path)
+    return make_client(tmp_path)
+
+
+def test_frontend_is_served_without_api_token(tmp_path, monkeypatch):
+    client = _client_with_spa(tmp_path, monkeypatch)
 
     response = client.get("/app")
 
     assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
     assert "ModelForge" in response.text
+
+
+def test_spa_fallback_serves_landing_and_workbench_routes(tmp_path, monkeypatch):
+    client = _client_with_spa(tmp_path, monkeypatch)
+
+    bodies = []
+    for path in SPA_ROUTES:
+        response = client.get(path)
+        assert response.status_code == 200, path
+        assert "text/html" in response.headers["content-type"]
+        assert "ModelForge" in response.text
+        bodies.append(response.text)
+    assert len(set(bodies)) == 1
+
+    static = client.get("/logo.svg")
+    assert static.status_code == 200
+    assert "<svg" in static.text
+
+    health = client.get("/api/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "healthy"
 
 
 def test_run_errors_are_http_responses(tmp_path):
