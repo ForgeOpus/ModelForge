@@ -421,11 +421,13 @@ Both are singletons — only one instance exists per process. The `history` comm
 
 ## Part 12: Tests (`tests/unit_tests/`)
 
-Tests use `pytest`. Each module covers one system. Run them with:
+Tests use `pytest`. Each module covers one system. The command CI runs is:
 
 ```bash
-pytest tests/
+uv run pytest
 ```
+
+That is equivalent to `pytest tests/` after the locked dev environment in the next section is installed.
 
 Key things to know:
 
@@ -451,6 +453,45 @@ Test files:
 | `fsdp_config_test.py` | `build_fsdp_config()` overrides and `SFTConfig` acceptance |
 | `parallelism_validator_test.py` | FSDP + PEFT compatibility validation |
 | `workflow_jobs_test.py` | Job manager lifecycle, parallelism override + validation |
+
+---
+
+## Continuous integration
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every push to `main`. The three jobs are independent. They install from the committed lockfiles, cache dependencies by those lockfiles, and stay CPU-only: the optional `gpu` extra is not installed, CUDA devices are hidden, and Hugging Face Hub downloads are disabled. Third-party actions are pinned to commit SHAs.
+
+These are the exact local commands those jobs run. Run the Python and distribution commands from the repository root.
+
+Python tests use the version in `.python-version` and `uv.lock`. The installed-wheel test builds the frontend from a clean tree, so Node from `.node-version` must be on `PATH`; the CI job installs it. `uv sync` does not install pip, and that test uses `uv build` when the environment has no pip module.
+
+```bash
+uv sync --frozen --extra dev
+uv run pytest
+```
+
+Frontend type-checking, production Vite build, and frontend tests use the version in `.node-version` and `web/frontend/package-lock.json`. `npm run build` is `tsc && vite build`, so a strict TypeScript error fails the build. `npm test` runs the Vitest route/auth smoke tests and the Unix-second ETA unit test.
+
+```bash
+cd web/frontend
+npm ci
+npm run build
+npm test
+```
+
+The distribution job uses `scripts/build_distribution.sh` as its CI wrapper around the packaging path above. That script checks Node, runs the locked frontend build, then runs `uv build`, which runs the frontend build again through `setup.py` before packing the wheel. Install that wheel into a clean environment locked to `uv.lock` and smoke-test it:
+
+```bash
+bash scripts/build_distribution.sh
+req="$(mktemp)"
+uv export --frozen --no-dev --no-emit-project --output-file "$req"
+uv venv --python "$(tr -d '[:space:]' < .python-version)" /tmp/modelforge-wheel
+uv pip install --python /tmp/modelforge-wheel/bin/python --requirement "$req"
+uv pip install --python /tmp/modelforge-wheel/bin/python --no-deps dist/*.whl
+root="$PWD"
+( cd /tmp && /tmp/modelforge-wheel/bin/python "$root/scripts/distribution_smoke.py" )
+```
+
+The last command must be started from a directory other than the checkout so Python imports the installed package. It does not require the clean environment to be activated: console scripts are resolved next to that interpreter. It checks `modelforge` and `modelforge-nb`, confirms the installed package contains the frontend bundle, and starts `modelforge run` to verify `/`, `/app`, and an authenticated `/api/use-cases` request.
 
 ---
 

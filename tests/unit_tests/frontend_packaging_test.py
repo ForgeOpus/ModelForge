@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import site
 import socket
 import subprocess
 import sys
@@ -100,6 +101,117 @@ def _referenced_assets(html: str) -> list[str]:
     return refs
 
 
+def _has_pip(python: str, env: dict[str, str]) -> bool:
+    return (
+        subprocess.run(
+            [python, "-m", "pip", "--version"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+def _build_wheel(source: Path, wheel_dir: Path, python: str, env: dict[str, str]) -> None:
+    """Build a wheel. uv environments have no pip, so fall back to ``uv build``."""
+    if _has_pip(python, env):
+        subprocess.check_call(
+            [
+                python,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--no-cache-dir",
+                "--wheel-dir",
+                str(wheel_dir),
+                str(source),
+            ],
+            cwd=source,
+            env=env,
+        )
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        raise AssertionError(
+            f"{python} has no pip module, and uv is not on PATH. "
+            "uv-created environments do not include pip."
+        )
+    subprocess.check_call(
+        [uv, "build", "--python", python, "--wheel", "--out-dir", str(wheel_dir)],
+        cwd=source,
+        env=env,
+    )
+
+
+def _install_wheel(python: str, wheel: Path, env: dict[str, str]) -> None:
+    """Install only the project wheel; CI already has its locked dependencies.
+
+    Reinstalling the full PyTorch/CUDA dependency graph in a nested environment
+    can exhaust a GitHub runner's disk before the packaging assertions run.
+    """
+    if _has_pip(python, env):
+        subprocess.check_call(
+            [python, "-m", "pip", "install", "--no-deps", "--no-cache-dir", str(wheel)],
+            env=env,
+        )
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        raise AssertionError(
+            f"{python} has no pip module, and uv is not on PATH. "
+            "Cannot install the wheel into the clean environment."
+        )
+    subprocess.check_call(
+        [uv, "pip", "install", "--python", python, "--no-deps", str(wheel)],
+        env=env,
+    )
+
+
+def test_wheel_build_uses_uv_when_the_environment_has_no_pip(tmp_path, monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(sys.modules[__name__], "_has_pip", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+
+    def capture(command, **_kwargs):
+        calls.append(list(command))
+
+    monkeypatch.setattr(subprocess, "check_call", capture)
+    source = tmp_path / "source"
+    source.mkdir()
+    _build_wheel(source, tmp_path / "wheels", sys.executable, {})
+
+    assert calls == [
+        ["/usr/bin/uv", "build", "--python", sys.executable, "--wheel", "--out-dir", str(tmp_path / "wheels")]
+    ]
+
+
+def test_wheel_install_does_not_reinstall_locked_dependencies(tmp_path, monkeypatch):
+    calls: list[list[str]] = []
+    wheel = tmp_path / "modelforge.whl"
+    wheel.write_bytes(b"placeholder")
+
+    monkeypatch.setattr(sys.modules[__name__], "_has_pip", lambda *_args, **_kwargs: True)
+
+    def capture(command, **_kwargs):
+        calls.append(list(command))
+
+    monkeypatch.setattr(subprocess, "check_call", capture)
+    _install_wheel(sys.executable, wheel, {})
+
+    assert calls == [[
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "--no-cache-dir",
+        str(wheel),
+    ]]
+
+
 def test_installed_wheel_serves_frontend(tmp_path):
     """Build a wheel from a tree with no prebuilt UI, install it, and serve it."""
     source = tmp_path / "source"
@@ -110,21 +222,7 @@ def test_installed_wheel_serves_frontend(tmp_path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
 
-    subprocess.check_call(
-        [
-            python,
-            "-m",
-            "pip",
-            "wheel",
-            "--no-deps",
-            "--no-cache-dir",
-            "--wheel-dir",
-            str(wheel_dir),
-            str(source),
-        ],
-        cwd=source,
-        env=env,
-    )
+    _build_wheel(source, wheel_dir, python, env)
     wheels = list(wheel_dir.glob("*.whl"))
     assert len(wheels) == 1, wheels
     wheel = wheels[0]
@@ -149,10 +247,13 @@ def test_installed_wheel_serves_frontend(tmp_path):
     _create_venv(python, venv, env)
     bindir = venv / ("Scripts" if os.name == "nt" else "bin")
     venv_python = bindir / ("python.exe" if os.name == "nt" else "python")
-    subprocess.check_call(
-        [str(venv_python), "-m", "pip", "install", "--no-cache-dir", str(wheel)],
-        env=env,
-    )
+    _install_wheel(str(venv_python), wheel, env)
+    # Reuse the dependencies from the pytest environment without reinstalling
+    # the multi-gigabyte ML/CUDA graph. The project itself still comes from the
+    # wheel installed in the isolated venv.
+    dependency_paths = [path for path in site.getsitepackages() if Path(path).is_dir()]
+    assert dependency_paths
+    env["PYTHONPATH"] = os.pathsep.join(dependency_paths)
     modelforge = bindir / ("modelforge.exe" if os.name == "nt" else "modelforge")
     assert modelforge.is_file()
 
