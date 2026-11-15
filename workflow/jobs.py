@@ -13,19 +13,22 @@ from dataset_manager.dataset_factory import DatasetFactory
 from utilities.database_manager import WebRunLedger
 from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.parallelism_validator import validate_parallelism_compatibility
-from utilities.tensorboard import default_log_dir
+from utilities.recommendation_engine import RecommendationEngine
+from utilities.tensorboard import default_log_dir, isolated_log_dir
 from workflow.models import RecommendationRequest, TrainingEvent, TrainingRunRequest
 from workflow.service import WorkflowService
 from workflow.training import assemble_and_train
 
 
 _TASK_SLUG_TO_AUTO_CLASS = {
+    "question_answering": "AutoModelForQuestionAnswering",
     "causal_language_modeling": "AutoModelForCausalLM",
     "seq2seq_modeling": "AutoModelForSeq2SeqLM",
     "token_classification": "AutoModelForTokenClassification",
 }
 
 _TASK_SLUG_TO_PIPELINE = {
+    "question_answering": "question-answering",
     "causal_language_modeling": "text-generation",
     "seq2seq_modeling": "summarization",
     "token_classification": "token-classification",
@@ -124,6 +127,7 @@ class TrainingJobManager:
                     objective=request.objective,
                     gpu_indices=request.gpu_indices,
                     n=5,
+                    model_id=request.model_id,
                 )
             )
         )
@@ -132,6 +136,32 @@ class TrainingJobManager:
                 update={"parallelism_strategy": request.parallelism_strategy_override}
             )
         validate_parallelism_compatibility(recommendation)
+        if request.recommendation:
+            _, strategy_cls, task_slug, strategy_slug, _ = RecommendationEngine._resolve_use_case_and_strategy(
+                request.use_case_slug, request.objective
+            )
+            if recommendation.task_slug != task_slug or recommendation.strategy_slug != strategy_slug:
+                raise ValueError("Recommendation does not match the selected use case and objective.")
+            if recommendation.provider_slug not in strategy_cls.supported_providers:
+                raise ValueError("Recommendation provider is not supported by this strategy.")
+            if recommendation.peft_approach not in {"full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"}:
+                raise ValueError("Unknown fine-tuning approach.")
+            candidates = recommendation.recommended_models
+            if not candidates or request.model_id != candidates[0].model_id:
+                chosen = next((model for model in candidates if model.model_id == request.model_id), None)
+                if chosen is None:
+                    from recommendation_engine.validation_models.recommendation import RecommendedModel
+                    result = self.workflow.validate_model_id(request.model_id, task_slug)
+                    if not result["valid"] or not result.get("num_parameters"):
+                        raise ValueError("Cannot safely configure this model without valid parameter metadata.")
+                    chosen = RecommendedModel(model_id=request.model_id, num_parameters=result["num_parameters"], downloads=0)
+                hardware, _ = self.workflow.select_gpus(self.workflow.detect_hardware(), request.gpu_indices)
+                recommendation = RecommendationEngine.recommend(
+                    request.use_case_slug, request.objective, hardware, selected_model=chosen,
+                )
+                if request.parallelism_strategy_override is not None:
+                    recommendation = recommendation.model_copy(update={"parallelism_strategy": request.parallelism_strategy_override})
+                validate_parallelism_compatibility(recommendation)
         tensorboard_log_dir = request.tensorboard_log_dir if request.tensorboard else None
         if request.tensorboard and tensorboard_log_dir is None:
             tensorboard_log_dir = default_log_dir(request.output_dir)
@@ -144,8 +174,12 @@ class TrainingJobManager:
             tensorboard_log_dir=tensorboard_log_dir,
             config_json=recommendation.model_dump_json(),
         )
+        if tensorboard_log_dir:
+            tensorboard_log_dir = isolated_log_dir(tensorboard_log_dir, run_id)
         self.ledger.update_run(
             run_id,
+            tensorboard_log_dir=tensorboard_log_dir,
+            launch_json=json.dumps({"gpu_indices": request.gpu_indices, "dataset_remote": request.dataset_remote}),
             task_slug=recommendation.task_slug,
             strategy=recommendation.strategy_slug,
             peft=recommendation.peft_approach,
@@ -179,11 +213,14 @@ class TrainingJobManager:
             raise ValueError(f"No run found with id {run_id}.")
         if not self._checkpoint_belongs_to_run(run_id, checkpoint_path):
             raise ValueError(f"Checkpoint is not registered for run {run_id}: {checkpoint_path}")
+        launch = json.loads(run.get("launch_json") or "{}")
         request = TrainingRunRequest(
             use_case_slug=run["use_case"],
             objective=run["objective"],
             model_id=run["model_id"],
             dataset_path=run["dataset"],
+            dataset_remote=launch.get("dataset_remote", False),
+            gpu_indices=launch.get("gpu_indices", []),
             output_dir=run["output_dir"],
             tensorboard=bool(run.get("tensorboard_log_dir")),
             tensorboard_log_dir=run.get("tensorboard_log_dir"),

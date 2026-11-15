@@ -12,6 +12,44 @@ _EXT_NORMALIZE = {"jsonl": "json", "txt": "text"}
 
 class DatasetFactory:
 
+    @staticmethod
+    def normalize_columns(
+        dataset,
+        column_aliases: dict[str, str] | None,
+        optional_column_aliases: dict[str, str] | None = None,
+    ):
+        """Rename a use-case's documented source columns to trainer columns.
+
+        ``DataFormatSpec.column_aliases`` is a source-to-destination map.  Do
+        not silently overwrite a canonical column: a dataset containing both
+        ``document`` and ``prompt``, for example, is ambiguous and must be
+        corrected by its author rather than guessing which content to train on.
+        """
+        aliases = {**(column_aliases or {}), **(optional_column_aliases or {})}
+        optional_sources = set((optional_column_aliases or {}).keys())
+        columns = list(getattr(dataset, "column_names", []) or getattr(dataset, "features", {}).keys())
+        rename = {source: destination for source, destination in aliases.items() if source in columns and source != destination}
+        missing = [
+            source
+            for source in aliases
+            if source not in optional_sources and source not in columns and aliases[source] not in columns
+        ]
+        if missing:
+            raise ValueError(
+                "Dataset is missing required column(s): " + ", ".join(sorted(missing)) + "."
+            )
+        collisions = [
+            f"{source!r} -> {destination!r}"
+            for source, destination in rename.items()
+            if destination in columns
+        ]
+        if collisions:
+            raise ValueError(
+                "Dataset contains both an alias and its canonical training column: "
+                + ", ".join(collisions) + ". Remove or rename one explicitly."
+            )
+        return dataset.rename_columns(rename) if rename else dataset
+
     @classmethod
     def _detect_dir_type(cls, path: str) -> tuple[str, list[str]]:
         """Scan a directory and return (normalized_type, sorted_file_list) for the dominant extension."""

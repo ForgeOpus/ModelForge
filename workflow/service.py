@@ -64,24 +64,64 @@ class WorkflowService:
         return hardware.model_copy(update={"gpus": chosen}), ",".join(str(i) for i in gpu_indices)
 
     def list_use_cases(self) -> list[dict[str, Any]]:
-        return [
-            {
+        available = []
+        for slug in LanguageUseCase.get_use_cases():
+            use_case_cls = LanguageUseCase.get_use_case_by_slug(slug)
+            objectives, unavailable = self._available_objectives(use_case_cls)
+            # A use case that has no executable objective is deliberately
+            # omitted from selection APIs.  Its reason remains in system_info
+            # so the limitation is visible to API consumers and operators.
+            if not objectives:
+                continue
+            available.append({
                 "name": use_case_cls.name,
                 "slug": use_case_cls.slug,
                 "description": use_case_cls.description,
                 "task_slug": use_case_cls.task_slug,
                 "hub_task_filter": use_case_cls.hub_task_filter,
-                "compatible_objectives": [objective.value for objective in use_case_cls.compatible_objectives],
+                "compatible_objectives": [objective.value for objective in objectives],
+                "unavailable_objectives": unavailable,
                 "data_formats": {
                     objective.value: spec.model_dump()
                     for objective, spec in use_case_cls.data_formats.items()
                 },
-            }
-            for use_case_cls in (
-                LanguageUseCase.get_use_case_by_slug(slug)
-                for slug in LanguageUseCase.get_use_cases()
-            )
-        ]
+            })
+        return available
+
+    @staticmethod
+    def _available_objectives(use_case_cls: type) -> tuple[list[TrainingObjective], dict[str, str]]:
+        """Return objectives with a registered, task-compatible implementation."""
+        available: list[TrainingObjective] = []
+        unavailable: dict[str, str] = {}
+        for objective in use_case_cls.compatible_objectives:
+            strategy_slug = getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP.get(objective)
+            strategy_cls = FinetuningStrategy._registry.get(strategy_slug)
+            if strategy_cls is None:
+                unavailable[objective.value] = (
+                    f"{objective.value.title()} is unavailable because strategy "
+                    f"'{strategy_slug}' is not implemented or registered."
+                )
+            elif use_case_cls.task_slug not in strategy_cls.supported_tasks:
+                unavailable[objective.value] = (
+                    f"{objective.value.title()} is unavailable because strategy "
+                    f"'{strategy_slug}' does not support task '{use_case_cls.task_slug}'."
+                )
+            else:
+                available.append(objective)
+        return available, unavailable
+
+    def list_unavailable_use_cases(self) -> list[dict[str, Any]]:
+        unavailable = []
+        for slug in LanguageUseCase.get_use_cases():
+            use_case_cls = LanguageUseCase.get_use_case_by_slug(slug)
+            objectives, reasons = self._available_objectives(use_case_cls)
+            if not objectives:
+                unavailable.append({
+                    "name": use_case_cls.name,
+                    "slug": use_case_cls.slug,
+                    "reasons": reasons,
+                })
+        return unavailable
 
     def list_strategies(self) -> list[dict[str, Any]]:
         return [
@@ -105,16 +145,26 @@ class WorkflowService:
             "providers": ProviderFactory.get_available_providers(),
             "strategies": self.list_strategies(),
             "use_cases": self.list_use_cases(),
+            "unavailable_use_cases": self.list_unavailable_use_cases(),
         }
 
     def recommend(self, request: RecommendationRequest):
         hardware = self.detect_hardware()
         filtered_hardware, _ = self.select_gpus(hardware, request.gpu_indices)
+        selected_model = None
+        if request.model_id:
+            from recommendation_engine.validation_models.recommendation import RecommendedModel
+            _, _, task_slug, _, _ = RecommendationEngine._resolve_use_case_and_strategy(request.use_case_slug, request.objective)
+            result = self.validate_model_id(request.model_id, task_slug)
+            if not result["valid"] or not result.get("num_parameters"):
+                raise ValueError(result.get("error") or "Cannot configure this model without parameter metadata.")
+            selected_model = RecommendedModel(model_id=request.model_id, num_parameters=result["num_parameters"], downloads=0)
         recommendation = RecommendationEngine.recommend(
             request.use_case_slug,
             request.objective,
             filtered_hardware,
             n=request.n,
+            **({"selected_model": selected_model} if selected_model is not None else {}),
         )
         validate_parallelism_compatibility(recommendation)
         return recommendation
@@ -124,8 +174,12 @@ class WorkflowService:
         strategy_cls = None
         if request.use_case_slug:
             use_case_cls = LanguageUseCase.get_use_case_by_slug(request.use_case_slug)
+            available, unavailable = self._available_objectives(use_case_cls)
+            if request.objective not in available:
+                reason = unavailable.get(request.objective.value, "This objective is not executable.")
+                return DatasetValidationResult(False, request.path, request.remote, [], error=reason)
             format_description = use_case_cls.data_formats[request.objective].user_facing_description
-            strategy_cls = FinetuningStrategy._registry.get(OBJECTIVE_STRATEGY_MAP[request.objective])
+            strategy_cls = FinetuningStrategy._registry.get(getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP[request.objective])
 
         try:
             if not request.remote:
@@ -136,6 +190,11 @@ class WorkflowService:
             if isinstance(dataset, IterableDataset):
                 return DatasetValidationResult(True, request.path, request.remote, [], format_description)
             split = next(iter(dataset.values())) if isinstance(dataset, DatasetDict) else dataset
+            if request.use_case_slug:
+                data_format = use_case_cls.data_formats[request.objective]
+                split = DatasetFactory.normalize_columns(
+                    split, data_format.column_aliases, data_format.optional_column_aliases
+                )
             columns = list(getattr(split, "column_names", []) or getattr(split, "features", {}).keys())
             if strategy_cls is not None:
                 strategy_cls.validate_data_format(split)
@@ -193,11 +252,31 @@ class WorkflowService:
             if safetensors is not None:
                 num_parameters = getattr(safetensors, "total", None)
 
+            pipeline_tag = getattr(info, "pipeline_tag", None)
+            expected_pipeline_tags = {
+                "causal_language_modeling": {"text-generation"},
+                "seq2seq_modeling": {"summarization", "translation", "text2text-generation"},
+                "token_classification": {"token-classification"},
+                "question_answering": {"question-answering"},
+            }
+            expected = expected_pipeline_tags.get(task_slug or "")
+            if expected and pipeline_tag and pipeline_tag not in expected:
+                return {
+                    "valid": False,
+                    "model_id": model_id,
+                    "num_parameters": num_parameters,
+                    "pipeline_tag": pipeline_tag,
+                    "error": (
+                        f"This model is tagged '{pipeline_tag}', which is incompatible with "
+                        f"task '{task_slug}'. Expected one of: {', '.join(sorted(expected))}."
+                    ),
+                }
+
             return {
                 "valid": True,
                 "model_id": model_id,
                 "num_parameters": num_parameters,
-                "pipeline_tag": getattr(info, "pipeline_tag", None),
+                "pipeline_tag": pipeline_tag,
                 "error": None,
             }
         except Exception:  # noqa: BLE001

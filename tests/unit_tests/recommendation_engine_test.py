@@ -95,6 +95,14 @@ class TestComputeAdjustedVram:
         result = RecommendationEngine._compute_adjusted_vram(24.0, 1, 1.0)
         assert result < 24.0
 
+    def test_dpo_budget_grows_with_hardware(self):
+        small = RecommendationEngine._compute_adjusted_vram(24.0, 1, 2.0)
+        large = RecommendationEngine._compute_adjusted_vram(48.0, 1, 2.0)
+        assert small == pytest.approx(11.0)
+        assert large == pytest.approx(23.0)
+        _, max_params, _ = RecommendationEngine._select_peft_tier(small, False, False, 64)
+        assert max_params > 400_000_000
+
     def test_batch_multiplier_reduces_budget(self):
         # batch_multiplier=2.0 → subtract (2.0 - 1.0) * ACTIVATION_BUDGET_GB
         result_base = RecommendationEngine._compute_adjusted_vram(24.0, 0, 1.0)
@@ -205,12 +213,13 @@ class TestResolveUseCaseAndStrategy:
         assert strategy_slug == "sft"
         assert data_format is not None
 
-    def test_instruction_following_preference_raises_strategy_not_registered(self):
-        # DPO is not registered — should raise ValueError
-        with pytest.raises(ValueError, match="dpo"):
-            RecommendationEngine._resolve_use_case_and_strategy(
-                "instruction_following", TrainingObjective.PREFERENCE
-            )
+    def test_instruction_following_preference_resolves_dpo(self):
+        _, strategy_cls, task_slug, strategy_slug, _ = RecommendationEngine._resolve_use_case_and_strategy(
+            "instruction_following", TrainingObjective.PREFERENCE
+        )
+        assert strategy_cls.slug == "dpo"
+        assert task_slug == "causal_language_modeling"
+        assert strategy_slug == "dpo"
 
     def test_unknown_use_case_raises(self):
         with pytest.raises(ValueError, match="Unknown use case slug"):
@@ -238,13 +247,14 @@ class TestResolveUseCaseAndStrategy:
         assert task_slug == "seq2seq_modeling"
         assert strategy_slug == "sft"
 
-    def test_extractive_qa_supervised_raises_misconfiguration(self):
-        # extractive_qa maps to task_slug='token_classification', which SFT does not support.
-        # This exposes a real misconfiguration in the use case / strategy definitions.
-        with pytest.raises(ValueError, match="does not support task"):
-            RecommendationEngine._resolve_use_case_and_strategy(
-                "extractive_qa", TrainingObjective.SUPERVISED
-            )
+    def test_extractive_qa_supervised_resolves_native_qa_strategy(self):
+        _, strategy_cls, task_slug, strategy_slug, data_format = RecommendationEngine._resolve_use_case_and_strategy(
+            "extractive_qa", TrainingObjective.SUPERVISED
+        )
+        assert strategy_cls.slug == "qa"
+        assert task_slug == "question_answering"
+        assert strategy_slug == "qa"
+        assert set(data_format.column_aliases) == {"context", "question", "answers"}
 
 
 # ---------------------------------------------------------------------------
@@ -429,6 +439,17 @@ class TestRecommend:
 # ---------------------------------------------------------------------------
 
 class TestQueryHub:
+    def test_excludes_internal_testing_and_random_models(self):
+        candidates = [
+            self._make_hub_model("trl-internal-testing/tiny-Qwen3ForCausalLM", 2_457_640, 9_000_000),
+            self._make_hub_model("other/tiny-random-gpt2", 100_000, 8_000_000),
+            self._make_hub_model("org/pretrained-instruct", 135_000_000, 1000),
+        ]
+        with patch("utilities.recommendation_engine.HfApi") as api:
+            api.return_value.list_models.return_value = candidates
+            results, _, _ = RecommendationEngine._query_hub("text-generation", 300_000_000, 5, 300_000_000)
+        assert [model.model_id for model in results] == ["org/pretrained-instruct"]
+
     def _make_hub_model(self, model_id, total_params, downloads):
         m = MagicMock()
         m.id = model_id

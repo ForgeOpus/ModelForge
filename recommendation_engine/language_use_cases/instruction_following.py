@@ -13,7 +13,11 @@ class InstructionFollowingUseCase(LanguageUseCase):
     )
     task_slug = "causal_language_modeling"
     hub_task_filter = "text-generation"
-    compatible_objectives = [TrainingObjective.SUPERVISED, TrainingObjective.PREFERENCE]
+    compatible_objectives = [
+        TrainingObjective.SUPERVISED,
+        TrainingObjective.PREFERENCE,
+        TrainingObjective.REINFORCEMENT,
+    ]
     data_formats = {
         TrainingObjective.SUPERVISED: DataFormatSpec(
             user_facing_description=(
@@ -27,13 +31,26 @@ class InstructionFollowingUseCase(LanguageUseCase):
         ),
         TrainingObjective.PREFERENCE: DataFormatSpec(
             user_facing_description=(
-                "A dataset with a 'prompt' column (the instruction), a 'chosen' column "
-                "(the preferred response), and a 'rejected' column (the less preferred response)."
+                "A dataset with a 'chosen' column (the preferred response) and a 'rejected' "
+                "column (the less preferred response). Include a shared 'prompt' column (or "
+                "'instruction' alias) when your responses do not already contain the context; "
+                "DPO also accepts implicit-prompt pairs."
+            ),
+            column_aliases={
+                "preferred_response": "chosen",
+                "dispreferred_response": "rejected",
+            },
+            optional_column_aliases={"instruction": "prompt"},
+        ),
+        TrainingObjective.REINFORCEMENT: DataFormatSpec(
+            user_facing_description=(
+                "A dataset with a 'prompt' column (the instruction) and an 'answer' column "
+                "(the exact ideal response). ModelForge awards a reward of 1 only when a "
+                "generated response exactly matches the answer, ignoring surrounding whitespace."
             ),
             column_aliases={
                 "instruction": "prompt",
-                "preferred_response": "chosen",
-                "dispreferred_response": "rejected",
+                "ideal_answer": "answer",
             },
         ),
     }

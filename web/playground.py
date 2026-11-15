@@ -101,7 +101,7 @@ class Playground:
         if not path.is_dir():
             raise PlaygroundError("The saved model directory is unavailable.", 404)
         task = run.get("task_slug")
-        if task not in {"causal_language_modeling", "seq2seq_modeling", "token_classification"}:
+        if task not in {"causal_language_modeling", "seq2seq_modeling", "token_classification", "question_answering"}:
             raise PlaygroundError("This run's model task is not supported by the playground.")
         return run, path, task
 
@@ -130,9 +130,9 @@ class Playground:
         import psutil
         import torch
         from accelerate import init_empty_weights, infer_auto_device_map
-        from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModelForTokenClassification, AutoTokenizer
+        from transformers import AutoConfig, AutoModelForCausalLM, AutoModelForSeq2SeqLM, AutoModelForTokenClassification, AutoModelForQuestionAnswering, AutoTokenizer
 
-        classes = {"causal_language_modeling": AutoModelForCausalLM, "seq2seq_modeling": AutoModelForSeq2SeqLM, "token_classification": AutoModelForTokenClassification}
+        classes = {"causal_language_modeling": AutoModelForCausalLM, "seq2seq_modeling": AutoModelForSeq2SeqLM, "token_classification": AutoModelForTokenClassification, "question_answering": AutoModelForQuestionAnswering}
         cls = classes[task]
         adapter_file = path / "adapter_config.json"
         adapter = adapter_file.is_file()
@@ -197,29 +197,46 @@ class Playground:
             token_limit = getattr(tokenizer, "model_max_length", None)
             limits = [v for v in (model_limit, token_limit) if isinstance(v, int) and 0 < v < 10_000_000]
             context_limit = min([request.context_window, *limits])
-            if task == "token_classification":
-                prompt = request.messages[-1].content
-            elif getattr(tokenizer, "chat_template", None):
-                prompt = tokenizer.apply_chat_template([m.model_dump() for m in request.messages], tokenize=False, add_generation_prompt=True)
+            prompt = request.messages[-1].content
+            encoding = None
+            if task == "question_answering":
+                from utilities.qa_inference import parse_question, decode_answer
+                try:
+                    question, context = parse_question(request.messages[-1].content)
+                except ValueError as exc:
+                    raise PlaygroundError(str(exc), 422) from exc
+                encoding = tokenizer(question, context, return_tensors="pt", return_offsets_mapping=True, truncation=False)
+                inputs = {key: value for key, value in encoding.items() if key != "offset_mapping"}
+            elif task == "causal_language_modeling":
+                from utilities.chat_format import chat_inputs
+                inputs = chat_inputs(tokenizer, [m.model_dump() for m in request.messages], truncation=False)
             else:
-                prompt = "\n\n".join(f"{m.role.title()}: {m.content}" for m in request.messages) + "\n\nAssistant:"
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=False)
+                inputs = tokenizer(prompt, return_tensors="pt", truncation=False)
             input_tokens = inputs["input_ids"].shape[-1]
             conversation_tokens = input_tokens
             if task == "token_classification":
                 history = "\n".join(message.content for message in request.messages)
                 conversation_tokens = tokenizer(history, return_tensors="pt", truncation=False)["input_ids"].shape[-1]
-            needed = conversation_tokens + (0 if task == "token_classification" else request.max_new_tokens)
+            needed = conversation_tokens + (0 if task in {"token_classification", "question_answering"} else request.max_new_tokens)
             if needed > context_limit:
                 raise PlaygroundError(f"This conversation needs {needed} tokens, exceeding the {context_limit}-token limit. Start a new chat or choose a larger supported context.", 422)
             offload = tempfile.TemporaryDirectory(prefix="modelforge-offload-", dir=offload_root) if uses_disk else None
             offload_path = offload.name if offload else None
-            model = cls.from_pretrained(str(path) if adapter else source, trust_remote_code=False, torch_dtype=torch.float32, device_map=device_map, offload_folder=offload_path)
+            # Load the declared base explicitly. Reused output folders can
+            # contain a stale full-model config/weights alongside a new adapter;
+            # passing that mixed directory to AutoModel can load the old model.
+            model = cls.from_pretrained(source, config=config, trust_remote_code=False, torch_dtype=torch.float32, device_map=device_map, offload_folder=offload_path)
+            if adapter:
+                model.load_adapter(str(path), is_trainable=False,
+                                   device_map=device_map, disk_offload_folder=offload_path)
             model.eval()
             placement, device = placement_description(getattr(model, "hf_device_map", device_map))
             inputs = {key: value.to(device) for key, value in inputs.items()}
             with torch.inference_mode():
-                if task == "token_classification":
+                if task == "question_answering":
+                    result = model(**inputs)
+                    text = decode_answer(result, encoding, context)
+                elif task == "token_classification":
                     logits = model(**inputs).logits[0]
                     ids = logits.argmax(dim=-1).tolist()
                     tokens = tokenizer.convert_ids_to_tokens(inputs["input_ids"][0].tolist())

@@ -389,6 +389,9 @@ class WebRunLedger:
                 )
                 """
             )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(web_runs)")}
+            if "launch_json" not in columns:
+                conn.execute("ALTER TABLE web_runs ADD COLUMN launch_json TEXT NOT NULL DEFAULT '{}'")
             conn.commit()
 
     @staticmethod
@@ -436,6 +439,7 @@ class WebRunLedger:
             return
         fields["updated_at"] = self._now()
         allowed = {
+            "launch_json",
             "status",
             "task_slug",
             "strategy",

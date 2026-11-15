@@ -186,3 +186,19 @@ def test_start_run_fsdp_lora_override_raises(tmp_path, monkeypatch):
         manager.start_run(request)
 
     assert spawned["count"] == 0, "No training thread should be spawned when validation fails"
+
+
+def test_tensorboard_logs_are_isolated_for_each_launch_and_resume(tmp_path, monkeypatch):
+    from pathlib import Path
+    from utilities.tensorboard import viewer_log_dir
+    ledger = WebRunLedger(tmp_path / 'runs.db')
+    manager = TrainingJobManager(workflow=FakeWorkflow(), ledger=ledger, recover_interrupted=False)
+    monkeypatch.setattr('workflow.jobs.threading.Thread.start', lambda self: None)
+    request = make_request().model_copy(update={'tensorboard': True, 'output_dir': str(tmp_path / 'out')})
+    first = manager.start_run(request)
+    manager._threads.clear()
+    second = manager.start_run(request.model_copy(update={'tensorboard_log_dir': first['tensorboard_log_dir']}))
+    assert Path(first['tensorboard_log_dir']).name == f"run-{first['id']}"
+    assert Path(second['tensorboard_log_dir']).name == f"run-{second['id']}"
+    assert first['tensorboard_log_dir'] != second['tensorboard_log_dir']
+    assert viewer_log_dir(first['tensorboard_log_dir']) == viewer_log_dir(second['tensorboard_log_dir']) == str(tmp_path / 'out' / 'tensorboard')

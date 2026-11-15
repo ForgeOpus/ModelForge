@@ -49,6 +49,11 @@ def tiny_model(tmp_path):
 
 
 def test_actual_cpu_generation_and_model_context_limit(tiny_model, monkeypatch):
+    # Exercise the CPU placement branch explicitly; the CI/desktop host may
+    # legitimately have a CUDA device available.
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr("psutil.virtual_memory", lambda: SimpleNamespace(available=128 * 1024**3))
     ledger = Ledger(tiny_model)
     service = Playground(Jobs(ledger), ledger)
@@ -92,6 +97,35 @@ def test_endpoint_requires_auth_and_valid_messages(tmp_path):
     body = {"run_id": 1, "messages": [{"role":"assistant", "content":"bad"}]}
     assert client.post("/api/playground/infer", json=body).status_code == 401
     assert client.post("/api/playground/infer", headers={"X-ModelForge-Token":"secret"}, json=body).status_code == 422
+
+
+def test_session_playground_routes_use_the_session_manager(tmp_path):
+    """The legacy inference service and websocket-session manager coexist."""
+    ledger = Ledger(tmp_path)
+    client = TestClient(create_app(auth=TokenAuth("secret"), job_manager=Jobs(ledger)))
+    response = client.get("/api/playground/status", headers={"X-ModelForge-Token": "secret"})
+    assert response.status_code == 200
+    assert response.json()["available"] is True
+
+
+def test_session_holds_resource_gate_until_closed(monkeypatch, tmp_path):
+    from workflow.playground import PlaygroundManager
+
+    class FakeSession:
+        def __init__(self, session_id, model_path):
+            self.id = session_id
+            self.model_path = model_path
+            self.base_model = "base"
+        def close(self):
+            pass
+
+    monkeypatch.setattr("workflow.playground.PlaygroundSession", FakeSession)
+    jobs = Jobs(Ledger(tmp_path))
+    manager = PlaygroundManager(jobs)
+    session = manager.open(str(tmp_path / "model"))
+    assert jobs.resource_gate.locked()
+    assert manager.close(session.id) is True
+    assert not jobs.resource_gate.locked()
 
 
 def test_adapter_cpu_generation(tiny_model, tmp_path, monkeypatch):
@@ -238,6 +272,30 @@ def test_automatic_disk_placement(tiny_model, tmp_path, monkeypatch):
     assert not list(tmp_path.glob("modelforge-offload-*"))
 
 
+
+def test_adapter_loading_ignores_stale_full_model_in_checkpoint(tiny_model, tmp_path, monkeypatch, caplog):
+    from peft import LoraConfig, TaskType, get_peft_model
+    from transformers import AutoModelForCausalLM, GPT2Config, GPT2LMHeadModel
+    monkeypatch.setattr('psutil.virtual_memory', lambda: SimpleNamespace(available=128 * 1024**3))
+    path = tmp_path / 'mixed-checkpoint'
+    # Simulate a reused checkpoint folder holding weights with incompatible
+    # dimensions, plus a newer adapter trained against the declared base.
+    GPT2LMHeadModel(GPT2Config(vocab_size=7, n_positions=64, n_embd=16, n_layer=2, n_head=1)).save_pretrained(path)
+    base = AutoModelForCausalLM.from_pretrained(tiny_model)
+    get_peft_model(base, LoraConfig(task_type=TaskType.CAUSAL_LM, r=2, lora_alpha=4, target_modules=['c_attn'])).save_pretrained(path)
+    original = AutoModelForCausalLM.from_pretrained
+    sources = []
+    def load(source, *args, **kwargs):
+        sources.append(str(source))
+        return original(source, *args, **kwargs)
+    monkeypatch.setattr(AutoModelForCausalLM, 'from_pretrained', load)
+    ledger = Ledger(path)
+    ledger.run['model_id'] = str(tiny_model)
+    result = Playground(Jobs(ledger, active=True), ledger).infer(request())
+    assert isinstance(result['reply'], str)
+    assert sources == [str(tiny_model)]
+    assert 'MISMATCH' not in caplog.text
+    assert (path / 'model.safetensors').exists()  # never repair artifacts by deleting them
 class _LiveThread:
     def is_alive(self):
         return True
@@ -305,6 +363,10 @@ def test_playground_routes_use_distinct_services(tmp_path, monkeypatch):
     assert status.json()["session_id"] == session_id
     assert status.json()["model_path"] == str(tmp_path)
 
+    closed = client.delete(f"/api/playground/sessions/{session_id}", headers=headers)
+    assert closed.status_code == 200
+    assert closed.json() == {"closed": True}
+
     inferred = client.post(
         "/api/playground/infer",
         headers=headers,
@@ -313,9 +375,6 @@ def test_playground_routes_use_distinct_services(tmp_path, monkeypatch):
     assert inferred.status_code == 404
     assert inferred.json()["detail"] == "Run not found."
 
-    closed = client.delete(f"/api/playground/sessions/{session_id}", headers=headers)
-    assert closed.status_code == 200
-    assert closed.json() == {"closed": True}
     again = client.delete(f"/api/playground/sessions/{session_id}", headers=headers)
     assert again.json() == {"closed": False}
     assert client.get("/api/playground/status", headers=headers).json()["session_id"] is None
@@ -370,4 +429,3 @@ def test_playground_websocket_auth_and_session_lookup(tmp_path, monkeypatch):
         assert socket.receive_json() == {"type": "start"}
         assert socket.receive_json() == {"type": "token", "text": "hello"}
         assert socket.receive_json() == {"type": "done"}
-

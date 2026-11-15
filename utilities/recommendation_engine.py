@@ -6,6 +6,7 @@ and typed config parameters.
 from __future__ import annotations
 
 from typing import Dict, List, Tuple
+import re
 from huggingface_hub import HfApi
 
 
@@ -26,7 +27,6 @@ from recommendation_engine.validation_models.recommendation import (
 
 ACTIVATION_BUDGET_GB: float = 2.0   # conservative midpoint 1-4 GB with gradient_checkpointing
 ADAPTER_COST_GB: float = 0.1        # ~10x headroom over rank-16 LoRA; also covers QLoRA dequant buffers
-BOOTSTRAP_TIER: str = "qlora_4bit"  # pessimistic upper bound for Step 3 bootstrap
 
 OBJECTIVE_STRATEGY_MAP: Dict[TrainingObjective, str] = {
     TrainingObjective.SUPERVISED:    "sft",
@@ -48,6 +48,7 @@ class RecommendationEngine:
         training_objective: TrainingObjective,
         hardware: HardwareDetector.HardwareSpecs,
         n: int = 5,
+        selected_model: RecommendedModel | None = None,
     ) -> Recommendation:
         """
         Run the full recommendation pipeline and return a Recommendation.
@@ -87,18 +88,49 @@ class RecommendationEngine:
                 f"for any viable model size. Adjusted VRAM: {adjusted_vram_gb:.2f} GB."
             )
 
-        # Step 4 — PEFT tier
-        peft_tier, max_params, max_params_by_tier = RecommendationEngine._select_peft_tier(
+        # Compute every tier's capacity before selecting a model. Full FT may
+        # shard across GPUs; adapter replicas must fit on the smallest GPU.
+        peft_tier, _, max_params_by_tier = RecommendationEngine._select_peft_tier(
             adjusted_vram_gb, is_cpu_only, is_mps, hardware.ram_gb,
         )
+        if not is_cpu_only and not is_mps:
+            smallest_gpu = min(g["total_memory_gb"] for g in hardware.gpus
+                               if isinstance(g["total_memory_gb"], (int, float)))
+            adapter_budget = RecommendationEngine._compute_adjusted_vram(
+                smallest_gpu, strategy_cls.extra_model_copies, strategy_cls.batch_multiplier,
+            )
+            _, _, adapter_limits = RecommendationEngine._select_peft_tier(
+                adapter_budget, False, False, hardware.ram_gb,
+            )
+            for tier in ("lora_bf16", "qlora_8bit", "qlora_4bit"):
+                max_params_by_tier[tier] = adapter_limits[tier]
 
-        # Step 5 — Hub query
-        recommended_models, used_relaxed_retry, hub_warnings = RecommendationEngine._query_hub(
-            hub_task_filter=use_case_cls.hub_task_filter,
-            max_params=max_params,
-            n=n,
-            tier_p_max=max_params_by_tier[peft_tier],
-        )
+        search_limit = max(max_params_by_tier.values())
+        if selected_model is None:
+            candidates, used_relaxed_retry, hub_warnings = RecommendationEngine._query_hub(
+                hub_task_filter=use_case_cls.hub_task_filter,
+                max_params=search_limit,
+                n=n,
+                tier_p_max=search_limit,
+                instruction_only=(use_case_slug == "instruction_following"),
+            )
+        else:
+            if selected_model.num_parameters <= 0 or selected_model.num_parameters > search_limit:
+                raise ValueError("Selected model exceeds the available training memory budget.")
+            candidates, used_relaxed_retry, hub_warnings = [selected_model], False, []
+        # Compare popular candidates across all feasible training methods. Prefer
+        # capacity among this shortlist, then the least quantized method that
+        # fits that model. A tiny full-FT model must not hide larger adapters.
+        feasible = [model for model in candidates if model.num_parameters <= search_limit]
+        feasible.sort(key=lambda model: (model.num_parameters, model.downloads), reverse=True)
+        if feasible:
+            chosen_model = feasible[0]
+            peft_tier = next(tier for tier, limit in max_params_by_tier.items()
+                             if chosen_model.num_parameters <= limit)
+        max_params = max_params_by_tier[peft_tier]
+        if peft_tier != "full_finetune" and not is_cpu_only and not is_mps:
+            adjusted_vram_gb = adapter_budget
+        recommended_models = [model for model in feasible if model.num_parameters <= max_params]
 
         # Step 6 — Provider
         provider_slug = "huggingface"
@@ -134,6 +166,11 @@ class RecommendationEngine:
 
         # Step 8 — Rationale
         all_warnings = list(hub_warnings)  # copy
+        if training_objective == TrainingObjective.PREFERENCE:
+            all_warnings.append(
+                "DPO aligns existing behavior. For instruction following, choose an instruction/chat-trained "
+                "checkpoint, or run supervised fine-tuning first; adding a chat template does not teach a base model to chat."
+            )
 
         if is_cpu_only:
             all_warnings.append(
@@ -158,7 +195,7 @@ class RecommendationEngine:
         if not is_cpu_only and not is_mps:
             # Check for tight VRAM
             if max_params_by_tier.get("lora_bf16", 0) > 0 and peft_tier == "qlora_4bit":
-                all_warnings.append("VRAM is tight. QLoRA 4-bit was selected as the only viable tier.")
+                all_warnings.append("QLoRA 4-bit was selected because the chosen model exceeds the unquantized and 8-bit training budgets.")
         if peft_tier == "qlora_4bit" and max_params == 0:
             all_warnings.append(
                 "No single-GPU tier is viable for this hardware. Even QLoRA 4-bit may OOM. "
@@ -213,12 +250,15 @@ class RecommendationEngine:
             ),
             peft_decision=(
                 f"Selected tier: {peft_tier} (P_max={max_params / 1e9:.2f}B). "
-                f"Bootstrap: assumed qlora_4bit (0.5 B/param) to estimate model weight overhead before tier is known. "
+                f"Compared popular candidates across all feasible tiers; selected the largest shortlisted model "
+                f"and the least quantized training method that fits it. "
+                f"Memory estimates reserve activations and model copies; adapter replicas fit the smallest GPU. "
                 f"Per-tier P_max:\n{tier_math}"
             ),
             model_filter=(
                 f"Queried Hub: pipeline_tag='{use_case_cls.hub_task_filter}', "
-                f"sort=downloads desc, max_params={max_params / 1e9:.2f}B. "
+                f"sort=downloads desc, search_max_params={search_limit / 1e9:.2f}B, "
+                f"selected_tier_max_params={max_params / 1e9:.2f}B. "
                 f"Found {len(recommended_models)} model(s)."
                 + (" Relaxed-retry applied (+50% param bound)." if used_relaxed_retry else "")
             ),
@@ -304,7 +344,7 @@ class RecommendationEngine:
 
         # Step 3: Resolve task and strategy slugs
         task_slug = use_case_cls.task_slug
-        strategy_slug = OBJECTIVE_STRATEGY_MAP[training_objective]
+        strategy_slug = getattr(use_case_cls, "strategy_slug", None) or OBJECTIVE_STRATEGY_MAP[training_objective]
 
         # Step 4: Look up strategy
         if strategy_slug not in FinetuningStrategy._registry:
@@ -333,37 +373,15 @@ class RecommendationEngine:
         extra_model_copies: int,
         batch_multiplier: float,
     ) -> float:
+        """Reserve extra activations, then share the remaining budget across copies.
+
+        Each copy conservatively receives an entire baseline training budget,
+        including optimizer overhead. Subtracting a hypothetical model sized to
+        fill all raw VRAM would instead consume virtually the entire budget
+        before any actual candidate model was selected.
         """
-        Applies strategy overhead to produce an adjusted VRAM budget (in GB).
-
-        Uses BOOTSTRAP_TIER ("qlora_4bit", 0.5 bytes/param) to break the circular dependency
-        between model size and tier selection. This is intentionally pessimistic (lower bound on
-        adjusted VRAM), which makes tier selection conservative.
-
-        Bootstrap math (from spec Step 3):
-            P_bootstrap = (raw_vram_bytes - ACT_BUDGET_bytes - ADAPTER_bytes) / 0.5
-            estimated_model_weight_gb = (0.5 X P_bootstrap) / 1e9
-
-        Adjustment:
-            adjusted = raw_vram_gb
-                     - (extra_model_copies X estimated_model_weight_gb)
-                     - ((batch_multiplier - 1.0) X ACTIVATION_BUDGET_GB)
-        """
-        act_bytes = ACTIVATION_BUDGET_GB * 1e9
-        adapter_bytes = ADAPTER_COST_GB * 1e9
-        raw_bytes = raw_vram_gb * 1e9
-
-        p_bootstrap = (raw_bytes - act_bytes - adapter_bytes) / 0.5
-        if p_bootstrap < 0:
-            p_bootstrap = 0.0
-        estimated_weight_gb = (0.5 * p_bootstrap) / 1e9
-
-        adjusted = (
-            raw_vram_gb
-            - (extra_model_copies * estimated_weight_gb)
-            - ((batch_multiplier - 1.0) * ACTIVATION_BUDGET_GB)
-        )
-        return adjusted
+        extra_activations = (batch_multiplier - 1.0) * ACTIVATION_BUDGET_GB
+        return (raw_vram_gb - extra_activations) / (1 + extra_model_copies)
 
     @staticmethod
     def _select_peft_tier(
@@ -439,6 +457,7 @@ class RecommendationEngine:
         max_params: float,
         n: int,
         tier_p_max: float,
+        instruction_only: bool = False,
     ) -> Tuple[List[RecommendedModel], bool, List[str]]:
         """
         Query HuggingFace Hub for candidate models.
@@ -460,9 +479,20 @@ class RecommendationEngine:
             for model in api.list_models(
                 pipeline_tag=hub_task_filter,
                 sort="downloads",
-                expand=["safetensors", "downloads"],
+                expand=["safetensors", "downloads", "tags"],
                 limit=fetch_limit,
             ):
+                # CI fixtures are downloaded often enough to rank alongside real
+                # pretrained models, but cannot learn language through DPO.
+                owner, _, name = model.id.lower().partition("/")
+                if "internal-testing" in owner or re.search(r"(^|[-_])(tiny|random|dummy)([-_]|$)", name):
+                    continue
+                tags = getattr(model, "tags", None)
+                conversational = isinstance(tags, list) and "conversational" in tags
+                if instruction_only and not (conversational or re.search(
+                    r"(^|[-_.])(instruct|instruction|chat|it)([-_.]|$)", name,
+                )):
+                    continue
                 if model.safetensors is None or model.safetensors.total is None:
                     missing_metadata_count += 1
                     continue

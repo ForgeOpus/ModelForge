@@ -65,15 +65,18 @@ def create_app(
         description="Browser interface for modelforge-finetuning.",
         version="4.0.0",
     )
+    # These are deliberately two distinct playground implementations.  The
+    # request/response inference endpoint is kept for the original workbench,
+    # while the session manager backs the streaming playground UI.
+    session_playground = PlaygroundManager(jobs)
+    inference_playground = Playground(jobs, ledger)
+
     app.state.auth = auth
+    app.state.session_manager = session_playground
+    app.state.inference_playground = inference_playground
     app.state.workflow = workflow
     app.state.jobs = jobs
     app.state.ledger = ledger
-    # Session chat is the canonical playground. One-shot infer stays on its own
-    # service so these contracts cannot overwrite each other.
-    app.state.session_manager = PlaygroundManager(jobs)
-    app.state.inference_playground = Playground(jobs, ledger)
-
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -111,7 +114,10 @@ def create_app(
 
     @app.post("/api/recommendations", dependencies=[require_auth])
     async def recommendations(request: RecommendationRequest):
-        recommendation = workflow.recommend(request)
+        try:
+            recommendation = workflow.recommend(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return recommendation.model_dump()
 
     @app.post("/api/datasets/validate", dependencies=[require_auth])
@@ -131,15 +137,7 @@ def create_app(
     async def list_runs(limit: int = 100):
         return {"runs": [_with_tensorboard_url(run) for run in ledger.list_runs(limit=limit)]}
 
-    @app.post(
-        "/api/playground/infer",
-        dependencies=[require_auth],
-        summary="One-shot inference (compatibility)",
-        description=(
-            "Compatibility layer for clients that have not migrated to the "
-            "session-based playground. Does not share state with session chat."
-        ),
-    )
+    @app.post("/api/playground/infer", dependencies=[require_auth])
     def playground_infer(request: InferenceRequest):
         try:
             return app.state.inference_playground.infer(request)
@@ -228,9 +226,17 @@ def create_app(
         if model is None:
             raise HTTPException(status_code=404, detail="Model not found.")
         if delete_files:
-            target = Path(model["model_path"])
+            target = Path(model["model_path"]).resolve()
             # Only ever remove a directory this ledger recorded, never a path
-            # supplied by the caller.
+            # supplied by the caller.  The ledger itself records a user-chosen
+            # output directory, so protect the filesystem roots a mistaken run
+            # configuration could otherwise turn into a recursive delete.
+            protected_paths = {Path("/"), Path.home().resolve(), Path.cwd().resolve()}
+            if target in protected_paths:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Refusing to remove a filesystem or workspace root.",
+                )
             if target.is_dir():
                 shutil.rmtree(target, ignore_errors=True)
         ledger.delete_model(model_id)
@@ -268,14 +274,13 @@ def create_app(
         }
 
     # ------------------------------------------------------------------
-    # Playground (canonical session manager)
+    # Playground
     # ------------------------------------------------------------------
 
     @app.get("/api/playground/status", dependencies=[require_auth])
     async def playground_status():
-        manager = app.state.session_manager
-        available, reason = manager.availability()
-        current = manager.current
+        available, reason = app.state.session_manager.availability()
+        current = app.state.session_manager.current
         return {
             "available": available,
             "reason": reason,
@@ -298,7 +303,7 @@ def create_app(
 
     @app.delete("/api/playground/sessions/{session_id}", dependencies=[require_auth])
     async def close_playground(session_id: str):
-        return {"closed": app.state.session_manager.close(session_id)}
+        return {"closed": await asyncio.to_thread(app.state.session_manager.close, session_id)}
 
     @app.websocket("/api/playground/{session_id}/chat")
     async def playground_chat(websocket: WebSocket, session_id: str, token: str | None = None):
@@ -342,15 +347,36 @@ def create_app(
                         finally:
                             chunks.put(sentinel)
 
-                    threading.Thread(target=produce, daemon=True).start()
-                    while True:
-                        piece = await asyncio.to_thread(chunks.get)
-                        if piece is sentinel:
-                            break
-                        if isinstance(piece, Exception):
-                            raise piece
-                        await websocket.send_text(json.dumps({"type": "token", "text": piece}))
+                    worker = threading.Thread(target=produce, daemon=True)
+                    worker.start()
+                    async def receive_controls():
+                        while True:
+                            control = json.loads(await websocket.receive_text())
+                            if control.get("type") == "stop":
+                                session.stop()
+
+                    controls = asyncio.create_task(receive_controls())
+                    try:
+                        while True:
+                            if controls.done():
+                                controls.result()
+                            try:
+                                piece = await asyncio.to_thread(chunks.get, True, 0.1)
+                            except queue.Empty:
+                                continue
+                            if piece is sentinel:
+                                break
+                            if isinstance(piece, Exception):
+                                raise piece
+                            await websocket.send_text(json.dumps({"type": "token", "text": piece}))
+                    finally:
+                        controls.cancel()
+                        await asyncio.gather(controls, return_exceptions=True)
+                        session.stop()
+                        await asyncio.to_thread(worker.join)
                     await websocket.send_text(json.dumps({"type": "done"}))
+                except WebSocketDisconnect:
+                    raise
                 except Exception as exc:  # noqa: BLE001
                     await websocket.send_text(json.dumps({"type": "error", "message": str(exc)}))
         except WebSocketDisconnect:

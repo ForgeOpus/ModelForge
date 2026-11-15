@@ -8,6 +8,7 @@ from utilities.tensorboard import (
     DEFAULT_TENSORBOARD_HOST,
     DEFAULT_TENSORBOARD_PORT,
     default_log_dir,
+    viewer_log_dir,
 )
 import torch
 
@@ -126,6 +127,7 @@ class FinetuningStrategy(ABC):
         port: int = DEFAULT_TENSORBOARD_PORT,
         enabled: bool | None = None,
         open_browser: bool = True,
+        trainer: Any | None = None,
     ) -> str | None:
         """Launch TensorBoard via its Python API and return the served URL."""
         if not self._is_main_process():
@@ -144,7 +146,17 @@ class FinetuningStrategy(ABC):
             resolved_log_dir = default_log_dir(output_dir)
 
         Path(resolved_log_dir).mkdir(parents=True, exist_ok=True)
-        process_key = f"{host}:{port}:{Path(resolved_log_dir).resolve()}"
+        if trainer is not None:
+            # Transformers 5's TensorBoardCallback ignores args.logging_dir.
+            # Set the run's callback directly, avoiding process-global env vars
+            # that could leak into a later run.
+            from transformers.integrations import TensorBoardCallback
+
+            for callback in trainer.callback_handler.callbacks:
+                if isinstance(callback, TensorBoardCallback):
+                    callback.logging_dir = str(Path(resolved_log_dir).resolve())
+        viewer_dir = viewer_log_dir(str(resolved_log_dir))
+        process_key = f"{host}:{port}:{Path(viewer_dir).resolve()}"
         existing_url = self._tensorboard_urls.get(process_key)
         if existing_url is not None:
             if open_browser:
@@ -156,7 +168,7 @@ class FinetuningStrategy(ABC):
             argv=[
                 "tensorboard",
                 "--logdir",
-                str(resolved_log_dir),
+                viewer_dir,
                 "--host",
                 host,
                 "--port",

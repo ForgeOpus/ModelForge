@@ -1,5 +1,5 @@
 from typing import Dict, List
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from utilities.training_objective import TrainingObjective
 
 
@@ -7,6 +7,11 @@ class DataFormatSpec(BaseModel):
     """User-facing description of what data to prepare for a given (use case, objective) pair."""
     user_facing_description: str
     column_aliases: Dict[str, str]
+    # Some trainer formats support a useful canonical column that is not
+    # required for every valid record (DPO's shared prompt is one example).
+    # Keep those aliases separate so normalization does not mistake an optional
+    # convenience for a required source field.
+    optional_column_aliases: Dict[str, str] = Field(default_factory=dict)
 
 
 class LanguageUseCase:

@@ -5,6 +5,71 @@ from dataset_manager.dataset_factory import DatasetFactory
 MOCK_DS = MagicMock()
 
 
+class RenameableDataset:
+    def __init__(self, columns):
+        self.column_names = columns
+        self.features = {column: object() for column in columns}
+        self.renamed = None
+
+    def rename_columns(self, columns):
+        self.renamed = columns
+        return self
+
+
+class TestNormalizeColumns:
+    def test_renames_documented_aliases(self):
+        dataset = RenameableDataset(["document", "summary"])
+
+        result = DatasetFactory.normalize_columns(
+            dataset, {"document": "prompt", "summary": "completion"}
+        )
+
+        assert result is dataset
+        assert dataset.renamed == {"document": "prompt", "summary": "completion"}
+
+    def test_accepts_already_normalized_columns(self):
+        dataset = RenameableDataset(["prompt", "completion"])
+
+        assert DatasetFactory.normalize_columns(
+            dataset, {"document": "prompt", "summary": "completion"}
+        ) is dataset
+        assert dataset.renamed is None
+
+    def test_rejects_ambiguous_alias_and_canonical_column(self):
+        dataset = RenameableDataset(["document", "prompt", "summary"])
+
+        with pytest.raises(ValueError, match="both an alias"):
+            DatasetFactory.normalize_columns(
+                dataset, {"document": "prompt", "summary": "completion"}
+            )
+
+    def test_accepts_dpo_implicit_prompt_pairs(self):
+        dataset = RenameableDataset(["chosen", "rejected"])
+
+        assert DatasetFactory.normalize_columns(
+            dataset,
+            {"preferred_response": "chosen", "dispreferred_response": "rejected"},
+            {"instruction": "prompt"},
+        ) is dataset
+        assert dataset.renamed is None
+
+    def test_renames_optional_dpo_prompt_alias_when_present(self):
+        dataset = RenameableDataset(["instruction", "preferred_response", "dispreferred_response"])
+
+        result = DatasetFactory.normalize_columns(
+            dataset,
+            {"preferred_response": "chosen", "dispreferred_response": "rejected"},
+            {"instruction": "prompt"},
+        )
+
+        assert result is dataset
+        assert dataset.renamed == {
+            "instruction": "prompt",
+            "preferred_response": "chosen",
+            "dispreferred_response": "rejected",
+        }
+
+
 # ---------------------------------------------------------------------------
 # handle_json
 # ---------------------------------------------------------------------------

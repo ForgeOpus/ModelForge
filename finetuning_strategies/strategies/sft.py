@@ -17,6 +17,7 @@ from trl import SFTTrainer, SFTConfig
 from peft import PeftConfig
 from pydantic import BaseModel
 from utilities.hardware_detector import HardwareDetector
+from utilities.precision import training_precision
 from recommendation_engine.validation_models.recommendation import RecommendedModel
 import importlib.util
 
@@ -79,7 +80,7 @@ class LoraRecommendedConfig(BaseModel):
     """Recommended LoRA adapter configuration."""
     r: int
     lora_alpha: int
-    target_modules: list[str]
+    target_modules: list[str] | str
 
 
 class SFT(FinetuningStrategy):
@@ -96,7 +97,7 @@ class SFT(FinetuningStrategy):
     examples of the desired behavior. 
     This strategy uses a highly-curated high-quality dataset that is often smaller in size compared to the datasets used for pre-training.
     """
-    supported_providers = ["huggingface", "unsloth"]
+    supported_providers = ["huggingface"]
     supported_tasks = ["causal_language_modeling", "seq2seq_modeling"]
     extra_model_copies = 0
     batch_multiplier = 1.0
@@ -299,11 +300,11 @@ class SFT(FinetuningStrategy):
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_8bit":
-            model_init_kwargs = {"load_in_8bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_8bit": True}}
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_4bit":
-            model_init_kwargs = {"load_in_4bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True}}
             bf16 = True
             fp16 = False
         else:
@@ -318,6 +319,9 @@ class SFT(FinetuningStrategy):
             fp16 = False
             model_init_kwargs = {}
 
+        bf16, fp16 = training_precision(hardware)
+        if raw_vram_gb == 0:
+            activation_offloading = False
         strategy_config = SFTRecommendedConfig(
             per_device_train_batch_size=1,
             gradient_accumulation_steps=gradient_accumulation_steps,
@@ -353,7 +357,7 @@ class SFT(FinetuningStrategy):
         peft_config = LoraRecommendedConfig(
             r=rank,
             lora_alpha=rank * 2,
-            target_modules=target_modules,
+            target_modules="all-linear",
         )
         return strategy_config, peft_config
 
@@ -386,6 +390,19 @@ class SFT(FinetuningStrategy):
             tokenizer.pad_token = tokenizer.eos_token
             tokenizer.pad_token_id = tokenizer.eos_token_id
 
+        if task_slug == "seq2seq_modeling":
+            return self._finetune_seq2seq(
+                model, tokenizer, dataset, sft_config, output_dir, peft_config,
+                eval_dataset, callbacks, resume_from_checkpoint,
+            )
+
+        from utilities.chat_format import ensure_chat_template, normalize_supervised, map_evaluation
+        if formatting_func is None and "text" not in dataset.column_names:
+            ensure_chat_template(tokenizer)
+            if "prompt" in dataset.column_names and "completion" in dataset.column_names:
+                dataset = dataset.map(normalize_supervised)
+                eval_dataset = map_evaluation(eval_dataset, normalize_supervised)
+
         trainer = SFTTrainer(
             model=model,
             args=sft_config,
@@ -398,7 +415,7 @@ class SFT(FinetuningStrategy):
             formatting_func=formatting_func,
         )
 
-        self.launch_tensorboard(sft_config)
+        self.launch_tensorboard(sft_config, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
@@ -406,4 +423,97 @@ class SFT(FinetuningStrategy):
         else:
             trainer.save_model(output_dir)
 
+        tokenizer.save_pretrained(output_dir)
+        return trainer
+
+    def _finetune_seq2seq(
+        self,
+        model,
+        tokenizer,
+        dataset,
+        sft_config,
+        output_dir: str,
+        peft_config,
+        eval_dataset,
+        callbacks,
+        resume_from_checkpoint,
+    ):
+        """Run the documented prompt/completion contract with Seq2SeqTrainer.
+
+        TRL's SFTTrainer is designed for causal LMs; passing an encoder-decoder
+        model to it produces invalid labels.  Keep the SFT public strategy but
+        route the seq2seq task through Transformers' native trainer.
+        """
+        from transformers import DataCollatorForSeq2Seq, Seq2SeqTrainer, Seq2SeqTrainingArguments
+        from peft import get_peft_model
+
+        required = {"prompt", "completion"}
+        missing = required - set(dataset.column_names)
+        if missing:
+            raise ValueError(
+                "Seq2seq training requires prompt and completion columns. "
+                f"Missing: {', '.join(sorted(missing))}."
+            )
+        if eval_dataset is not None:
+            missing = required - set(eval_dataset.column_names)
+            if missing:
+                raise ValueError(
+                    "Seq2seq evaluation requires prompt and completion columns. "
+                    f"Missing: {', '.join(sorted(missing))}."
+                )
+        max_length = sft_config.max_length or 1024
+
+        def tokenize(batch):
+            inputs = tokenizer(batch["prompt"], truncation=True, max_length=max_length)
+            labels = tokenizer(text_target=batch["completion"], truncation=True, max_length=max_length)
+            inputs["labels"] = labels["input_ids"]
+            return inputs
+
+        dataset = dataset.map(tokenize, batched=True, remove_columns=dataset.column_names)
+        if eval_dataset is not None:
+            eval_dataset = eval_dataset.map(tokenize, batched=True, remove_columns=eval_dataset.column_names)
+        if peft_config is not None:
+            model = get_peft_model(model, peft_config)
+
+        # Only pass arguments common to the installed Transformers trainer;
+        # SFT-only options such as packing must not leak into it.
+        args = Seq2SeqTrainingArguments(
+            output_dir=output_dir,
+            num_train_epochs=sft_config.num_train_epochs,
+            per_device_train_batch_size=sft_config.per_device_train_batch_size,
+            per_device_eval_batch_size=sft_config.per_device_eval_batch_size,
+            gradient_accumulation_steps=sft_config.gradient_accumulation_steps,
+            learning_rate=sft_config.learning_rate,
+            weight_decay=sft_config.weight_decay,
+            warmup_ratio=sft_config.warmup_ratio,
+            warmup_steps=sft_config.warmup_steps,
+            lr_scheduler_type=sft_config.lr_scheduler_type,
+            optim=sft_config.optim,
+            logging_steps=sft_config.logging_steps,
+            save_steps=sft_config.save_steps,
+            gradient_checkpointing=sft_config.gradient_checkpointing,
+            bf16=sft_config.bf16,
+            fp16=sft_config.fp16,
+            report_to=sft_config.report_to,
+            logging_dir=sft_config.logging_dir,
+            seed=sft_config.seed,
+            dataloader_num_workers=sft_config.dataloader_num_workers,
+            remove_unused_columns=True,
+            max_grad_norm=sft_config.max_grad_norm,
+            fsdp=getattr(sft_config, "fsdp", ""),
+            fsdp_config=getattr(sft_config, "fsdp_config", None),
+        )
+        trainer = Seq2SeqTrainer(
+            model=model,
+            args=args,
+            train_dataset=dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),
+            callbacks=callbacks,
+        )
+        self.launch_tensorboard(args, trainer=trainer)
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        trainer.save_model(output_dir)
+        tokenizer.save_pretrained(output_dir)
         return trainer

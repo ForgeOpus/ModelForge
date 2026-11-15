@@ -130,3 +130,27 @@ def test_run_errors_are_http_responses(tmp_path):
 
     assert response.status_code == 404
     assert "No active job" in response.text
+
+
+def test_websocket_stop_is_processed_during_generation(tmp_path):
+    import threading
+    client = make_client(tmp_path)
+    stopped = threading.Event()
+
+    class Session:
+        def generate(self, messages, **sampling):
+            yield "first"
+            if not stopped.wait(2):
+                raise RuntimeError("Stop was never delivered during generation")
+
+        def stop(self):
+            stopped.set()
+
+    client.app.state.session_manager.get = lambda session_id: Session()
+    with client.websocket_connect("/api/playground/test/chat?token=test-token") as socket:
+        socket.send_json({"messages": [{"role": "user", "content": "hello"}]})
+        assert socket.receive_json()["type"] == "start"
+        assert socket.receive_json()["type"] == "token"
+        socket.send_json({"type": "stop"})
+        assert socket.receive_json()["type"] == "done"
+    assert stopped.is_set()

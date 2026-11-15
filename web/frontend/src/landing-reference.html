@@ -1,0 +1,128 @@
+
+  <header class="site-nav">
+    <div class="wrap">
+      <a class="ws" href="/"><img class="logo" src="/logo.svg" alt="" /><b>ModelForge</b></a>
+      <nav><a href="#how">How it decides</a><a href="#runs">Runs</a><a href="#learn">Learn</a><a href="/app/docs">Docs</a><a href="https://github.com/ForgeOpus/ModelForgeRedesign">GitHub</a></nav>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-theme-toggle title="Toggle theme">
+        <svg class="i theme-icon-light" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="i theme-icon-dark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <a class="btn primary" href="/app">Open console</a>
+    </div>
+  </header>
+
+  <div class="wrap">
+    <section class="hero">
+      <div class="hero-title-row">
+        <img class="hero-brand-logo" src="/logo.svg" alt="" />
+        <div class="hero-copy">
+          <h1>Fine-tune the right model for the GPU you actually have. <span>With the math shown.</span></h1>
+          <p class="lede">ModelForge reads your hardware, works out which training technique and base model fit in your VRAM, explains every choice, and runs the job on your own machine. Nothing leaves the host.</p>
+          <div class="ctas">
+            <a class="btn primary lg" href="/app">Open console</a>
+            <a class="btn lg" href="/app/docs/what-fine-tuning-is">Learn how fine-tuning works</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="shot-wrap">
+        <div class="shot" id="heroShot" style="height:calc(900px * var(--s, .8))"><iframe data-src="/landing-mock/new-run.html" title="ModelForge console"></iframe></div>
+      </div>
+    </section>
+
+    <section class="block" id="how">
+      <div class="kicker">How it decides</div>
+      <h2 class="title">Four steps between "I have a GPU" and a running job.</h2>
+      <p class="sub">Most fine-tuning tools hand you a config file. ModelForge hands you the config and the reasoning behind it, so you can trust it or change it.</p>
+      <div class="decide">
+        <div class="steps">
+          <div class="s"><span class="n">01</span><div><h3>Detect the hardware</h3><p>Every visible GPU and its VRAM, plus RAM, CPU cores and free disk. Apple Silicon and CPU-only machines get their own limits.</p></div></div>
+          <div class="s"><span class="n">02</span><div><h3>Resolve the task</h3><p>Your use case and objective map to a model task and a trainer. Instruction following with a supervised objective becomes <code>causal_language_modeling</code> trained with <code>sft</code>.</p></div></div>
+          <div class="s"><span class="n">03</span><div><h3>Budget the parameters</h3><p>For each PEFT tier it computes the largest model that fits, then picks the highest-fidelity tier. Try it on the right.</p></div></div>
+          <div class="s"><span class="n">04</span><div><h3>Plan and launch</h3><p>Candidate models come from the Hugging Face Hub, filtered by task and size. Multi-GPU runs get data-parallel or FSDP. Then training streams live to the console.</p></div></div>
+        </div>
+
+        <div class="calc">
+          <div class="calc-head">
+            <div class="row"><b>Largest model per tier</b><span class="mono muted" style="font-size:11.5px">SFT · single GPU</span></div>
+            <div class="chips" id="vram"></div>
+          </div>
+          <div class="calc-body" id="tiers"></div>
+          <div class="formula">P_max = (VRAM − adapter − 2.0 GB activations) ÷ bytes per param · log-scale bars</div>
+          <div class="calc-foot" id="verdict"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="block" id="runs">
+      <div class="kicker">Watch every run</div>
+      <h2 class="title">Know whether a run is healthy before it finishes.</h2>
+      <div class="feature">
+        <div class="bullets">
+          <div><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg><p><b>Live loss and learning rate</b><span>Raw and smoothed loss, the schedule, and gradient norm stream over a WebSocket as the trainer logs them.</span></p></div>
+          <div><svg class="i" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3"/></svg><p><b>Checkpoints you can resume</b><span>Every save shows up with its step and loss. Resume an interrupted run from any of them.</span></p></div>
+          <div><svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4v4H7z"/></svg><p><b>Memory you can see</b><span>VRAM use next to the estimate the plan made, so an out-of-memory error never comes as a surprise.</span></p></div>
+          <div><svg class="i" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 9h16M9 9v11"/></svg><p><b>TensorBoard included</b><span>Standard event files are written for every run if you prefer your own tooling.</span></p></div>
+        </div>
+        <div class="crop" id="runShot"><iframe data-src="/landing-mock/live-run.html" title="Live run"></iframe></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <div class="kicker">Three ways in</div>
+      <h2 class="title">Same engine in the browser, the terminal, or a notebook.</h2>
+      <div class="surfaces">
+        <div class="surface"><h3><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18"/></svg>Browser console</h3><p>Configure, launch and monitor runs with the plan explained beside every field.</p><pre><span class="p">$ </span>modelforge run</pre></div>
+        <div class="surface"><h3><svg class="i" viewBox="0 0 24 24"><path d="M4 17l6-5-6-5M12 19h8"/></svg>Terminal</h3><p>An interactive wizard, plus commands to get recommendations or review history without training.</p><pre><span class="p">$ </span>modelforge recommend
+<span class="p">$ </span>modelforge history</pre></div>
+        <div class="surface"><h3><svg class="i" viewBox="0 0 24 24"><path d="M5 3h14v18H5z"/><path d="M9 7h6M9 11h6M9 15h3"/></svg>Notebook</h3><p>Drive the same recommend-and-train workflow from inside a Jupyter notebook.</p><pre><span class="p">$ </span>modelforge-nb</pre></div>
+      </div>
+    </section>
+
+    <section class="block" id="learn">
+      <div class="kicker">Learn</div>
+      <h2 class="title">New to fine-tuning? Start at the basics.</h2>
+      <p class="sub">The docs explain the techniques ModelForge uses, from what fine-tuning is to sharding a model across GPUs, and how to configure each one.</p>
+      <div class="levels">
+        <div class="level">
+          <div class="lv"><span class="bars"><i class="f" style="height:6px"></i><i style="height:9px"></i><i style="height:12px"></i></span>Basics</div>
+          <h3>What you are training</h3>
+          <ul>
+            <li><a href="/app/docs/what-fine-tuning-is">What fine-tuning is <span>4 min</span></a></li>
+            <li><a href="/app/docs/objectives">SFT vs. DPO <span>6 min</span></a></li>
+            <li><a href="/app/docs/preparing-a-dataset">Preparing a dataset <span>5 min</span></a></li>
+          </ul>
+        </div>
+        <div class="level">
+          <div class="lv"><span class="bars"><i class="f" style="height:6px"></i><i class="f" style="height:9px"></i><i style="height:12px"></i></span>Intermediate</div>
+          <h3>Fitting it in memory</h3>
+          <ul>
+            <li><a href="/app/docs/where-vram-goes">Where VRAM goes <span>7 min</span></a></li>
+            <li><a href="/app/docs/lora-and-qlora">LoRA and QLoRA <span>9 min</span></a></li>
+            <li><a href="/app/docs/how-a-tier-is-chosen">How a tier is chosen <span>5 min</span></a></li>
+          </ul>
+        </div>
+        <div class="level">
+          <div class="lv"><span class="bars"><i class="f" style="height:6px"></i><i class="f" style="height:9px"></i><i class="f" style="height:12px"></i></span>Advanced</div>
+          <h3>Going faster and bigger</h3>
+          <ul>
+            <li><a href="/app/docs/data-parallel-vs-fsdp">Data parallel vs. FSDP <span>10 min</span></a></li>
+            <li><a href="/app/docs/gradient-checkpointing-and-packing">Packing and checkpointing <span>6 min</span></a></li>
+            <li><a href="/app/docs/liger-kernels">Liger kernels <span>4 min</span></a></li>
+          </ul>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section class="final">
+    <div class="wrap">
+      <div><h2>Point it at a dataset and a GPU.</h2><p>It handles model choice, quantization, adapters and parallelism.</p></div>
+      <div class="spacer"></div>
+      <a class="btn lg" href="/app/docs">Read the docs</a>
+      <a class="btn primary lg" href="/app">Open console</a>
+    </div>
+  </section>
+  <footer><div class="wrap"><span>ModelForge v4.0</span><div class="spacer"></div><a href="/app/docs" style="text-decoration:none">Docs</a><a href="https://github.com/ForgeOpus/ModelForgeRedesign" style="text-decoration:none">GitHub</a></div></footer>
+
