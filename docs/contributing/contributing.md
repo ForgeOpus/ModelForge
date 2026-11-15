@@ -1,364 +1,164 @@
 # Contributing to ModelForge
 
-Thank you for your interest in contributing to ModelForge! This guide will help you get started.
+This page explains how to get a change into ModelForge: the fork-and-pull-request workflow, what a pull request must include, and the rule that keeps the Read the Docs site and the in-app docs in step. For setting up a working checkout, see [Development setup](development.md).
 
-## Ways to Contribute
+## Ways to contribute
 
-- 🐛 **Report bugs** via GitHub Issues
-- 💡 **Suggest features** via GitHub Discussions
-- 📝 **Improve documentation**
-- 🔧 **Submit code improvements**
-- 🤖 **Add model recommendations**
-- 🏗️ **Add new providers or strategies**
+- Report a bug or request a feature using the GitHub issue templates.
+- Fix a bug or improve error messages.
+- Add a use case, strategy, task or provider. Each one is a subclass that registers itself. See [Adding a use case](use-cases.md), [Custom strategies](../strategies/custom-strategies.md) and [Custom providers](../providers/custom-providers.md).
+- Improve the documentation, both here and in the app.
+- Add tests for code paths that have none.
 
-## Getting Started
+## Code of conduct
 
-### 1. Fork and Clone
+Everyone taking part in the project is expected to follow the [Code of Conduct](https://github.com/ForgeOpus/ModelForge/blob/main/CODE_OF_CONDUCT.md). Report unacceptable behaviour to the maintainers as described there.
 
-```bash
-# Fork on GitHub, then clone your fork
-git clone https://github.com/YOUR_USERNAME/ModelForge.git
-cd ModelForge
-```
+## License
 
-### 2. Set Up Development Environment
+ModelForge is released under the [BSD 3-Clause License](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE). By opening a pull request you agree that your contribution is licensed under the same terms.
 
-```bash
-# Create virtual environment
-python3.11 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+## Workflow
 
-# Install in development mode
-pip install -e .
+The upstream repository is [ForgeOpus/ModelForge](https://github.com/ForgeOpus/ModelForge). All pull requests target its `main` branch.
 
-# Install development dependencies
-pip install pytest black flake8 mypy
-```
+1. Fork the repository on GitHub, then clone your fork and add upstream:
 
-### 3. Create a Branch
+    ```bash
+    git clone https://github.com/<your-user>/ModelForge.git
+    cd ModelForge
+    git remote add upstream https://github.com/ForgeOpus/ModelForge.git
+    ```
 
-```bash
-git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/your-bug-fix
-```
+2. Set up the environment as described in [Development setup](development.md). The short version:
 
-## Code Style
+    ```bash
+    uv sync --extra dev
+    ```
 
-### Python
+3. Create a branch from an up-to-date `main`:
 
-We follow PEP 8 with some modifications:
+    ```bash
+    git fetch upstream
+    git switch -c fix/short-description upstream/main
+    ```
 
-- Maximum line length: 100 characters
-- Use Black for formatting
-- Use type hints where possible
+4. Make the change, with tests and documentation (see below).
 
-**Format code:**
-```bash
-black ModelForge/
-```
+5. Run the same checks CI runs:
 
-**Lint code:**
-```bash
-flake8 ModelForge/ --max-line-length=100
-```
+    ```bash
+    uv run pytest
+    cd web/frontend && npm ci && npm run build && npm test
+    ```
 
-**Type check:**
-```bash
-mypy ModelForge/
-```
+6. Push the branch to your fork and open a pull request against `ForgeOpus/ModelForge:main`. Describe what changed, why, and how you tested it. Link the issue it fixes, if there is one.
 
-### React/JavaScript
+7. CI runs three jobs on every pull request: Python tests, the frontend type-check, build and tests, and the wheel smoke test. All three must pass before review. See [Continuous integration](development.md#continuous-integration).
 
-- Use ESLint and Prettier
-- Follow Airbnb style guide
-- Functional components with hooks
-
-## Commit Messages
-
-Follow conventional commits:
-
-```
-feat: add QLoRA strategy support
-fix: resolve CUDA memory leak
-docs: update Windows installation guide
-refactor: improve provider abstraction
-test: add tests for training service
-```
+## What a pull request must include
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+### Tests
 
-## Pull Request Process
-
-### 1. Before Submitting
+Every behaviour change needs a test. Bug fixes need a regression test that fails without the fix.
 
-- ✅ Code follows style guidelines
-- ✅ All tests pass
-- ✅ Documentation updated
-- ✅ Commits are clean and descriptive
+- Python tests live in `tests/unit_tests/` and run with `pytest`. Test files are named `<subject>_test.py`.
+- Frontend tests live in `web/frontend/tests/` and run with Vitest (`npm test`).
+- Tests must run on CPU and offline. CI hides all CUDA devices and sets `HF_HUB_OFFLINE=1`, so a test that downloads from the Hugging Face Hub or needs a GPU will fail. Mock `HfApi` or `RecommendationEngine._query_hub`, and build tiny local models or datasets instead.
+- Changes to training flows should also pass `python scripts/run_training_flow_tests.py`, which trains tiny local models through every use case and objective. It is not part of CI. See [Training-flow harness](development.md#training-flow-harness).
 
-### 2. Submit PR
+### Compatibility
 
-1. Push to your fork
-2. Create PR on GitHub
-3. Fill out PR template
-4. Link related issues
-
-### 3. Code Review
-
-- Respond to feedback promptly
-- Make requested changes
-- Keep PR focused and small
-
-### 4. After Merge
-
-- Delete your branch
-- Pull latest changes
-- Celebrate! 🎉
-
-## Adding Model Recommendations
-
-See [Model Configurations Guide](model-configs.md) for detailed instructions.
-
-**Quick steps:**
-
-1. Add JSON file to `ModelForge/model_configs/`
-2. Follow schema:
-
-```json
-{
-  "profile": "mid_range",
-  "tasks": {
-    "text-generation": {
-      "primary": "meta-llama/Llama-3.2-3B",
-      "alternatives": ["mistralai/Mistral-7B-v0.1"]
-    }
-  }
-}
-```
-
-## Adding a Provider
-
-### 1. Create Provider Class
-
-Create `ModelForge/providers/your_provider.py`:
-
-```python
-from typing import Any, Tuple
-from ..logging_config import logger
-
-class YourProvider:
-    def load_model(
-        self,
-        model_id: str,
-        model_class: str,
-        quantization_config=None,
-        device_map=None,
-        **kwargs
-    ) -> Tuple[Any, Any]:
-        """Load model and tokenizer."""
-        logger.info(f"Loading model {model_id} with Your Provider")
-        # Implementation here
-        return model, tokenizer
-    
-    def load_tokenizer(self, model_id: str, **kwargs) -> Any:
-        """Load tokenizer."""
-        # Implementation here
-        return tokenizer
-    
-    def validate_model_access(self, model_id: str, model_class: str) -> bool:
-        """Check if model is accessible."""
-        # Implementation here
-        return True
-    
-    def get_provider_name(self) -> str:
-        """Return provider name."""
-        return "your_provider"
-```
-
-### 2. Register in Factory
-
-Edit `ModelForge/providers/provider_factory.py`:
-
-```python
-from .your_provider import YourProvider
-
-class ProviderFactory:
-    _providers = {
-        "huggingface": HuggingFaceProvider,
-        "unsloth": UnslothProvider,
-        "your_provider": YourProvider,  # Add here
-    }
-```
-
-### 3. Add Tests
-
-Create `tests/test_your_provider.py`:
-
-```python
-def test_your_provider_loads():
-    provider = YourProvider()
-    assert provider.get_provider_name() == "your_provider"
-```
-
-### 4. Update Documentation
-
-Add docs to `docs/providers/your_provider.md`
-
-## Adding a Strategy
-
-### 1. Create Strategy Class
-
-Create `ModelForge/strategies/your_strategy.py`:
-
-```python
-from typing import Any, Dict
-from ..logging_config import logger
-
-class YourStrategy:
-    def get_strategy_name(self) -> str:
-        return "your_strategy"
-    
-    def prepare_model(self, model: Any, config: Dict) -> Any:
-        """Prepare model for training."""
-        logger.info("Preparing model with Your Strategy")
-        # Implementation here
-        return model
-    
-    def prepare_dataset(self, dataset: Any, tokenizer: Any, config: Dict) -> Any:
-        """Prepare dataset for strategy."""
-        # Implementation here
-        return dataset
-    
-    def create_trainer(
-        self,
-        model,
-        train_dataset,
-        eval_dataset,
-        tokenizer,
-        config,
-        callbacks
-    ):
-        """Create trainer instance."""
-        # Implementation here
-        return trainer
-    
-    def get_required_dataset_fields(self):
-        """Return required dataset fields."""
-        return ["input", "output"]
-```
-
-### 2. Register in Factory
-
-Edit `ModelForge/strategies/strategy_factory.py`:
-
-```python
-from .your_strategy import YourStrategy
-
-class StrategyFactory:
-    _strategies = {
-        "sft": SFTStrategy,
-        "qlora": QLoRAStrategy,
-        "rlhf": RLHFStrategy,
-        "dpo": DPOStrategy,
-        "your_strategy": YourStrategy,  # Add here
-    }
-```
-
-### 3. Add Tests and Documentation
-
-Similar to providers above.
-
-## Testing
-
-### Run All Tests
-
-```bash
-pytest
-```
-
-### Run Specific Test
-
-```bash
-pytest tests/test_providers.py
-```
-
-### Run with Coverage
-
-```bash
-pytest --cov=ModelForge --cov-report=html
-```
-
-### Manual Testing
-
-```bash
-# Start development server
-modelforge cli
-
-# Test in browser
-open http://localhost:8000
-```
+- Don't break the REST API, the WebSocket event shapes, the `modelforge` and `modelforge-nb` commands, or the SQLite schema without saying so in the pull request. The browser UI, the terminal wizard and the notebook all depend on them.
+- New request fields should be optional with a default.
+- Database changes must migrate existing databases in place, as `WebRunLedger._initialize()` does with `ALTER TABLE`.
+
+### Style
+
+There is no enforced formatter or linter. Follow the style of the file you are editing.
+
+- Python: type hints on public functions, Pydantic models for request and response shapes, short docstrings where the reason for the code is not obvious.
+- TypeScript: the build runs `tsc` in strict mode, so type errors fail CI. The app UI is the single file `web/frontend/src/main.tsx`; keep it that way rather than splitting it into a new component tree.
+- No secrets, tokens or absolute local paths in code, tests or logs.
+
+### Commit messages
+
+Write a short imperative subject line ("Fix GRPO reward on whitespace answers"), a blank line, then the reason for the change if it isn't obvious. Keep unrelated changes in separate commits.
 
 ## Documentation
 
-### Building Docs Locally
+ModelForge has two sets of user docs:
 
-Documentation is in Markdown. Preview with any Markdown viewer.
+- **Read the Docs** (this site): Markdown in `docs/`, built with MkDocs Material from `mkdocs.yml`. Published at <https://modelforge-finetuning.readthedocs.io>.
+- **In-app docs**: React pages in `web/frontend/src/docs/content/*.tsx`, shown in the browser console at `/app/docs/<slug>`. Each page has a `slug`, and each links to its longer Read the Docs counterpart.
 
-### Adding Documentation
+!!! warning "Any user-facing change updates both"
+    If a change alters something a user sees or relies on (a flag, a default, an endpoint, a column name, a number in a recommendation, an error message they need to act on), the pull request must update **both** the Read the Docs page in `docs/` **and** the matching in-app page in `web/frontend/src/docs/content/*.tsx`. A pull request that updates only one of them is incomplete.
 
-1. Create `.md` file in appropriate `docs/` subdirectory
-2. Add to index in `docs/README.md`
-3. Use relative links: `[text](../other/file.md)`
+The in-app pages are short. The Read the Docs pages may go deeper, but must not contradict them. Facts in both must match the code.
 
-### Documentation Style
+### Keeping the two doc sets in sync
 
-- Use clear, simple language
-- Include code examples
-- Add links to related docs
-- Use emoji sparingly (✅❌⚠️)
+Each in-app page maps to one Read the Docs page. The mapping lives in `web/frontend/src/docs/rtd.ts` (`RTD_PAGES`), which the app uses for the "Full guide on Read the Docs" link on each page. The Vitest test `web/frontend/tests/docs-rtd.test.ts` fails if an in-app page has no mapping or if a mapping points at a slug that no longer exists.
 
-## Issue Guidelines
+When you add or rename an in-app page, update `rtd.ts` and the table below in the same pull request.
 
-### Reporting Bugs
+| In-app slug | In-app file | Read the Docs page |
+|---|---|---|
+| `introduction` | `getStarted.tsx` | [Home](../README.md) |
+| `install-and-first-run` | `getStarted.tsx` | [Quick start](../getting-started/quickstart.md) |
+| `tour-of-the-console` | `getStarted.tsx` | [Browser console](../user-guide/browser-console.md) |
+| `using-the-playground` | `getStarted.tsx` | [Playground](../user-guide/playground.md) |
+| `what-fine-tuning-is` | `basics.tsx` | [Fine-tuning concepts](../getting-started/concepts.md) |
+| `objectives` | `basics.tsx` | [Strategies overview](../strategies/overview.md) |
+| `use-cases-and-tasks` | `basics.tsx` | [Use cases and tasks](../configuration/training-tasks.md) |
+| `preparing-a-dataset` | `basics.tsx` | [Dataset formats](../configuration/dataset-formats.md) |
+| `where-vram-goes` | `intermediate.tsx` | [Hardware and memory](../configuration/hardware-profiles.md) |
+| `full-fine-tuning` | `intermediate.tsx` | [Full fine-tuning](../strategies/full-finetuning.md) |
+| `lora-and-qlora` | `intermediate.tsx` | [LoRA and QLoRA](../strategies/qlora.md) |
+| `how-a-tier-is-chosen` | `intermediate.tsx` | [How planning works](../configuration/configuration-guide.md) |
+| `picking-a-base-model` | `intermediate.tsx` | [How planning works](../configuration/configuration-guide.md) |
+| `data-parallel-vs-fsdp` | `advanced.tsx` | [Multi-GPU](../strategies/multi-gpu.md) |
+| `gradient-checkpointing-and-packing` | `advanced.tsx` | [Memory optimizations](../strategies/memory-optimizations.md) |
+| `liger-kernels` | `advanced.tsx` | [Memory optimizations](../strategies/memory-optimizations.md) |
+| `resuming-from-checkpoints` | `advanced.tsx` | [Checkpoints](../user-guide/checkpoints.md) |
+| `fixing-out-of-memory-errors` | `advanced.tsx` | [Performance and out-of-memory](../troubleshooting/performance.md) |
+| `recommendation-fields` | `reference.tsx` | [Responses](../api-reference/responses.md) |
+| `training-config-keys` | `reference.tsx` | [Training config](../api-reference/training-config.md) |
+| `cli-commands` | `reference.tsx` | [CLI reference](../api-reference/cli.md) |
+| `http-api` | `reference.tsx` | [REST API](../api-reference/rest-api.md) |
 
-Include:
-- ModelForge version
-- Python version
-- OS and platform
-- GPU model and VRAM
-- Steps to reproduce
-- Error messages/logs
-- Expected vs actual behavior
+Read the Docs pages that are not in this table (installation, providers, custom strategies, troubleshooting, contributing and others) have no in-app counterpart. Changes to those touch `docs/` only.
 
-### Requesting Features
+### Building the docs
 
-Include:
-- Use case description
-- Expected behavior
-- Why it's useful
-- Implementation ideas (optional)
+```bash
+pip install -r docs/requirements.txt
+mkdocs serve
+```
 
-## Community Guidelines
+Open <http://127.0.0.1:8000>. Read the Docs builds with `mkdocs build --strict`, so a broken relative link fails the build. Run it before pushing documentation changes. Note that `mkdocs serve` and `modelforge run` both default to port 8000; pass `-a 127.0.0.1:8001` to one of them if you run both.
 
-- Be respectful and professional
-- Help others learn and grow
-- Give constructive feedback
-- Follow Code of Conduct
+### Documentation style
 
-## Recognition
+- One H1 per page, followed by a one to three sentence lead.
+- Short sentences, concrete numbers, no marketing language, no emojis.
+- Check every flag, default, endpoint and column name against the code before writing it down.
+- Link between pages with relative `.md` paths.
 
-Contributors are recognized in:
-- GitHub Contributors page
-- Release notes
-- README (for significant contributions)
+## Reporting issues
 
-## Questions?
+Use the templates under **New issue** on GitHub.
 
-- Check [FAQ](../troubleshooting/faq.md)
-- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
-- Read [Architecture Guide](architecture.md)
+- **Bug report**: include the ModelForge version (`pip show modelforge-finetuning`), Python version, OS, GPU and driver, which interface you used (browser, `modelforge cli` or `modelforge-nb`), the steps to reproduce, and the full error or the run's event log.
+- **Feature request**: describe the problem first, then the change you'd like. Say which interface it affects.
 
----
+Don't post Hugging Face tokens or the ModelForge startup token in an issue.
 
-**Thank you for contributing to ModelForge!** 🎉
+## See also
+
+- [Development setup](development.md)
+- [Architecture](architecture.md)
+- [Adding a use case](use-cases.md)
+- [Custom strategies](../strategies/custom-strategies.md)
+- [Custom providers](../providers/custom-providers.md)

@@ -1,291 +1,127 @@
-# macOS Installation Guide (Apple Silicon MPS)
+# macOS Installation (Apple Silicon)
 
-Install and run ModelForge on Apple Silicon Macs (M1/M2/M3/M4/M5) with MPS (Metal Performance Shaders) acceleration.
+This page installs ModelForge v4 on an Apple Silicon Mac (M1 or later) and explains what the planner does with the MPS backend. Macs work for learning the workflow and for small models; for anything larger, train on an NVIDIA GPU.
 
-## Overview
+## What to expect on a Mac
 
-ModelForge supports Apple Silicon Macs through PyTorch's MPS backend. This provides GPU acceleration for training on Apple's M-series chips.
+| | Apple Silicon (MPS) |
+|---|---|
+| Memory the planner assumes | **8 GB**, whatever your unified memory is |
+| Tiers | `full_finetune` or `lora_bf16` only |
+| QLoRA 8-bit and 4-bit | Disabled. bitsandbytes quantization isn't supported on MPS |
+| Precision | Full precision. bf16 and fp16 are both off |
+| Liger kernels (`[gpu]` extra) | Not available. Liger needs CUDA and Triton |
+| Multi-GPU and FSDP | Not applicable |
+| Intel Macs | Not supported. Current PyTorch releases publish macOS wheels for Apple Silicon only |
 
-**⚠️ Important Limitations:**
-- **HuggingFace provider only** - Unsloth provider is not supported on MPS
-- **No 4-bit/8-bit quantization** - bitsandbytes library doesn't support MPS
-- **Smaller models recommended** - Unified memory architecture limits model sizes
-- **Native FP16 precision** - Model loads in float16 by default; training precision flags are disabled
+ModelForge can't read how much of the unified memory the GPU may use, so it counts MPS as a fixed 8 GB. That gives these ceilings, worked out with the formulas on [Hardware and Memory](../configuration/hardware-profiles.md):
+
+| Objective | Adjusted memory | Largest full fine-tune | Largest LoRA |
+|---|---|---|---|
+| Supervised (SFT), summarization, extractive QA | 8 GB | ≈ 0.33B parameters | ≈ 2.95B parameters |
+| Preference (DPO) | 3 GB | ≈ 0.06B parameters | ≈ 0.45B parameters |
+| Reinforcement (GRPO) | 2 GB | none | none |
+
+The planner picks the largest popular Hub model under the LoRA ceiling and uses full fine-tuning only if that model also fits the full fine-tune ceiling. GRPO reserves room for four sampled completions, which leaves nothing for a model on the 8 GB budget, so expect no recommendation for the Reinforcement objective on a Mac.
+
+The plan shows a warning on MPS: *"Apple MPS detected. bitsandbytes 4-bit and 8-bit quantisation are not supported on MPS."*
 
 ## Prerequisites
 
-- **macOS** 12.3 or later
-- **Apple Silicon** Mac (M1/M2/M3/M4/M5)
-- **Python 3.11.x** (Python 3.12 not yet supported)
-- **HuggingFace Account** with access token ([Get one here](https://huggingface.co/settings/tokens))
+- An Apple Silicon Mac.
+- **macOS 14 (Sonoma) or newer.** bitsandbytes is a required dependency, and its macOS wheel (at the version ModelForge locks, 0.49.2) is built for macOS 14 and later on arm64.
+- **Python 3.13** or newer.
 
-## Installation
+## 1. Install Python 3.13
 
-### 1. Install Python
+=== "Homebrew"
 
-Using Homebrew:
+    ```bash
+    brew install python@3.13
+    python3.13 -m venv ~/modelforge/.venv
+    ```
 
-```bash
-brew install python@3.11
-```
+=== "uv"
 
-Or download from [python.org](https://www.python.org/downloads/).
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    uv python install 3.13
+    uv venv --python 3.13 ~/modelforge/.venv
+    ```
 
-### 2. Create Virtual Environment
+    uv environments don't include pip. Use `uv pip install` below.
 
-```bash
-python3.11 -m venv modelforge-env
-source modelforge-env/bin/activate
-```
+=== "python.org"
 
-### 3. Install ModelForge
+    Download the macOS installer for Python 3.13 from [python.org](https://www.python.org/downloads/macos/), then:
 
-```bash
-# Install ModelForge (without bitsandbytes - not needed on MPS)
-pip install modelforge-finetuning
+    ```bash
+    python3.13 -m venv ~/modelforge/.venv
+    ```
 
-# Install PyTorch with MPS support (no CUDA needed)
-pip install torch torchvision torchaudio
-```
-
-**Note**: The standard PyTorch installation includes MPS support on macOS. No special CUDA installation needed. The `bitsandbytes` library is **not required** for MPS - it is only needed for NVIDIA CUDA quantization. Install it separately with `pip install 'modelforge-finetuning[cuda]'` if you need CUDA support.
-
-### 4. Set HuggingFace Token
+## 2. Install ModelForge
 
 ```bash
-export HUGGINGFACE_TOKEN=your_token_here
+source ~/modelforge/.venv/bin/activate
+pip install --upgrade pip
+pip install "modelforge-finetuning[cli]"
 ```
 
-Or create a `.env` file:
+Don't add the `[gpu]` extra; Liger depends on Triton, which has no macOS wheels.
+
+PyTorch comes in as a dependency. The PyPI wheel for macOS arm64 includes MPS support, so no special index is needed. Check it:
 
 ```bash
-echo "HUGGINGFACE_TOKEN=your_token_here" > .env
+python -c "import torch; print(torch.__version__, torch.backends.mps.is_available())"
 ```
 
-### 5. Run ModelForge
+The last value must be `True`. If it is `False`, you are probably running an x86_64 Python under Rosetta. Check with `python -c "import platform; print(platform.machine())"`; it must print `arm64`.
+
+## 3. Start ModelForge
 
 ```bash
 modelforge run
 ```
 
-Open your browser to **http://localhost:8000** and start training!
+Open **Settings** in the console. Under **Hardware**, the GPU reads **Apple Silicon GPU · N/A GB**. That `N/A` is expected: it is the entry the planner turns into 8 GB. Continue with [Post-Installation Setup](post-installation.md).
 
-## Configuration for MPS
+## Choosing models
 
-### Recommended Settings
+- Keep to models under about 3B parameters for SFT, and under about 0.5B for DPO. Models above the ceiling are refused with *"Selected model exceeds the available training memory budget."*
+- Smaller is often better here. A 0.5B model fine-tuned on good data trains several times faster than a 3B one.
+- Close memory-heavy apps before training. The 8 GB figure is a planning bound, not a reservation.
 
-When training on Apple Silicon with MPS:
+## Optional PyTorch settings
 
-```json
-{
-  "provider": "huggingface",
-  "device": "mps",
-  "model_name": "qwen/Qwen2.5-3B",
-  "task": "text-generation",
-  "strategy": "sft",
+ModelForge v4 does not set any MPS environment variables. (v3 set `PYTORCH_ENABLE_MPS_FALLBACK=1` automatically; v4 does not.) If a run fails with an error saying an operator is not implemented for MPS, you can let PyTorch fall back to the CPU for that operator:
 
-  "use_4bit": false,
-  "use_8bit": false,
-
-  "optim": "adamw_torch",
-  "per_device_train_batch_size": 1,
-  "gradient_accumulation_steps": 8,
-  "gradient_checkpointing": true,
-  "max_seq_length": 512,
-
-  "num_train_epochs": 3,
-  "learning_rate": 2e-4,
-  "dataset": "/path/to/dataset.jsonl"
-}
+```bash
+export PYTORCH_ENABLE_MPS_FALLBACK=1
+modelforge run
 ```
 
-### Key Settings Explained
-
-**Provider:**
-- ✅ `"provider": "huggingface"` - **Supported**
-- ❌ `"provider": "unsloth"` - **Not supported** (CUDA only)
-
-**Device:**
-- `"device": "mps"` - Explicitly use MPS
-- `"device": "auto"` - Auto-detects and uses MPS if available
-
-**Quantization:**
-- ❌ `"use_4bit": false` - **Required** (bitsandbytes doesn't support MPS)
-- ❌ `"use_8bit": false` - **Required** (bitsandbytes doesn't support MPS)
-
-**Precision:**
-- ℹ️ Training precision flags (`fp16`, `bf16`) are automatically disabled on MPS
-- The model loads natively in float16 (`torch_dtype=float16`) which provides optimal performance
-- Do not set `fp16: true` or `bf16: true` - they will be ignored
-
-**Batch Size:**
-- Use `per_device_train_batch_size: 1-2` to fit in unified memory
-- Increase `gradient_accumulation_steps` to compensate (8-16)
-
-**Sequence Length:**
-- Keep `max_seq_length` at 512-1024 for smaller models
-- 2048 may work for 3B models on M1 Pro/Max or M2
-
-## Recommended Models
-
-Models that work well on Apple Silicon with MPS:
-
-### Small Models (8-16GB Unified Memory)
-
-- **Qwen2.5-3B** - `qwen/Qwen2.5-3B`
-- **Phi-3 Mini** - `microsoft/phi-3-mini-4k-instruct`
-- **Llama 3.2 1B** - `meta-llama/Llama-3.2-1B`
-- **Llama 3.2 3B** - `meta-llama/Llama-3.2-3B`
-
-### Medium Models (32GB+ Unified Memory)
-
-- **Qwen2.5-7B** - `qwen/Qwen2.5-7B`
-- **Llama 3.1 8B** - `meta-llama/Llama-3.1-8B` (tight fit)
-- **Mistral 7B** - `mistralai/Mistral-7B-v0.3`
-
-**Note**: Larger models (13B+) are generally not feasible on MPS without quantization.
-
-## Verifying MPS Support
-
-Check if MPS is available:
-
-```python
-import torch
-print(f"MPS available: {torch.backends.mps.is_available()}")
-print(f"MPS built: {torch.backends.mps.is_built()}")
-```
-
-If MPS is available, you should see:
-```
-MPS available: True
-MPS built: True
-```
-
-## Performance Expectations
-
-### Training Speed
-
-MPS training is **slower than NVIDIA GPUs** but **much faster than CPU**:
-
-| Hardware | Relative Speed | Example: 3B Model, 1000 samples |
-|----------|---------------|----------------------------------|
-| M1/M2 (8GB) | 1x | ~3-4 hours |
-| M1 Pro/Max (32GB) | 1.5x | ~2-2.5 hours |
-| RTX 3090 (CUDA) | 3-4x | ~45-60 min |
-
-### Memory Usage
-
-Apple Silicon uses **unified memory** (shared between CPU and GPU):
-
-- **Model Size**: ~2x parameters in GB (FP16)
-  - 3B model: ~6GB
-  - 7B model: ~14GB
-- **Training Overhead**: +30-50% memory for gradients, optimizer states
-
-**Recommendations:**
-- 8GB unified memory: 1-3B models only
-- 16GB unified memory: 3B models comfortably
-- 32GB+ unified memory: 3-7B models
+This is a PyTorch setting, not a ModelForge one. It makes the unsupported operator run on the CPU, which is slower.
 
 ## Troubleshooting
 
-### "MPS backend out of memory"
+### `MPS backend out of memory`
 
-**Problem**: Model too large for available unified memory
+The model and activations exceeded what macOS let the GPU allocate. Choose a smaller model, shorten your examples, or close other applications. See [Performance and Memory](../troubleshooting/performance.md).
 
-**Solutions**:
-1. Use a smaller model (3B instead of 7B)
-2. Reduce `max_seq_length` (512 instead of 2048)
-3. Reduce `per_device_train_batch_size` to 1
-4. Enable `gradient_checkpointing: true`
-5. Close other applications to free memory (browsers, IDEs)
-6. ModelForge automatically sets `PYTORCH_MPS_HIGH_WATERMARK_RATIO=0.0` to let macOS manage memory pressure
-7. Models are loaded in float16 with `low_cpu_mem_usage=True` to minimize peak memory
+### bitsandbytes fails to install
 
-### "Unsloth provider is not supported on Apple MPS"
+You are on macOS 13 or older, or on an Intel Mac. bitsandbytes is a required dependency and has no wheel for those systems. Upgrade to macOS 14 or newer on Apple Silicon.
 
-**Problem**: Trying to use Unsloth with MPS
+### No recommendation for Reinforcement (GRPO)
 
-**Solution**: Change `"provider"` to `"huggingface"` in your config:
-
-```json
-{
-  "provider": "huggingface",
-  "device": "mps"
-}
-```
-
-### "4-bit quantization via bitsandbytes is not supported on MPS"
-
-**Problem**: Trying to use quantization on MPS
-
-**Solution**: Disable quantization:
-
-```json
-{
-  "use_4bit": false,
-  "use_8bit": false,
-  "fp16": true
-}
-```
+Expected on MPS; see the table above. Use Supervised or Preference, or train GRPO on a CUDA machine.
 
 ### Training is very slow
 
-**Problem**: MPS is slower than CUDA
+MPS training runs in full precision, without fused kernels, and with gradient checkpointing on. That is the trade for fitting into memory. For real workloads, use a machine with an NVIDIA GPU.
 
-**Expected Behavior**: This is normal. MPS is 3-5x slower than high-end NVIDIA GPUs but still much faster than CPU.
+## Next steps
 
-**Tips to improve speed**:
-- Use smaller models (1-3B)
-- Reduce `max_seq_length`
-- Enable `gradient_checkpointing: false` if you have enough memory
-- Close other applications
-
-### "RuntimeError: MPS does not support..."
-
-**Problem**: Some operations are not yet supported on MPS
-
-**Solution**: This is a PyTorch limitation. Try:
-1. Update to the latest PyTorch: `pip install --upgrade torch`
-2. Use a different model architecture
-3. Report the issue to PyTorch
-
-## Comparison: MPS vs CUDA
-
-| Feature | Apple MPS | NVIDIA CUDA |
-|---------|-----------|-------------|
-| **Providers** | HuggingFace only | HuggingFace + Unsloth |
-| **Quantization** | ❌ Not supported | ✅ 4-bit, 8-bit |
-| **Model Sizes** | 1-7B (limited by memory) | 1-70B+ with quantization |
-| **Training Speed** | Slower (1x baseline) | Faster (2-4x with Unsloth) |
-| **Memory** | Unified (shared CPU/GPU) | Dedicated VRAM |
-| **Cost** | Built into Mac | Requires separate GPU |
-
-## When to Use MPS
-
-### ✅ Use MPS When:
-
-- You have an Apple Silicon Mac and want to train locally
-- Training small to medium models (1-7B)
-- Learning and experimenting with fine-tuning
-- Don't need the fastest training speeds
-- Don't want to invest in a separate GPU
-
-### ❌ Don't Use MPS When:
-
-- Need maximum training speed (use NVIDIA GPU with Unsloth)
-- Training very large models (13B+)
-- Need 4-bit/8-bit quantization
-- Training in production at scale
-
-## Next Steps
-
-- **[Configuration Guide](../configuration/configuration-guide.md)** - Detailed configuration options
-- **[Dataset Formats](../configuration/dataset-formats.md)** - Preparing training data
-- **[HuggingFace Provider](../providers/huggingface.md)** - Provider documentation
-- **[Common Issues](../troubleshooting/common-issues.md)** - General troubleshooting
-- **[FAQ](../troubleshooting/faq.md)** - Frequently asked questions
-
----
-
-**ModelForge on Apple Silicon: Training LLMs on your Mac!** 🍎⚡
+- [Post-Installation Setup](post-installation.md)
+- [Quick Start](../getting-started/quickstart.md)
+- [Hardware and Memory](../configuration/hardware-profiles.md)

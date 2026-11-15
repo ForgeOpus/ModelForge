@@ -1,1 +1,6 @@
-recursive-include ModelForge/FastAPI_server/Frontend/build *
+include setup.py
+include scripts/build_frontend.py
+recursive-include web/frontend *
+prune web/frontend/node_modules
+global-exclude *.tsbuildinfo
+recursive-include web/frontend_dist *

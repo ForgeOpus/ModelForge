@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>#42 gemma-3-1b · Training — ModelForge</title>
+<script src="theme.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="workbench.css" />
+<style>
+  .scroll { overflow: auto; padding: 20px 28px 40px; }
+  .status { display: inline-flex; align-items: center; gap: 7px; padding: 2px 8px 2px 7px; border-radius: 999px; background: var(--ok-soft); color: var(--ok); font-weight: 500; font-size: 12px; }
+  .status i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); animation: pulse 1.6s infinite; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 70%, 100% { box-shadow: 0 0 0 6px transparent; } }
+
+  .run-head { display: flex; align-items: flex-end; gap: 16px; }
+  .run-head h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; display: flex; align-items: center; gap: 10px; }
+  .run-head h1 .mono { font-size: 14px; color: var(--ink-3); font-weight: 400; }
+  .run-meta { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .run-meta .chip { font-weight: 450; }
+
+  .progress { margin-top: 16px; }
+  .ptrack { height: 6px; border-radius: 3px; background: var(--sunken); border: 1px solid var(--line); position: relative; overflow: hidden; }
+  .ptrack i { position: absolute; inset: 0 auto 0 0; width: 62%; background: var(--ink); }
+  .ptrack .ep { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--panel); }
+  .prow { display: flex; gap: 22px; margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+  .prow b { color: var(--ink); font-weight: 500; font-family: var(--mono); font-size: 12px; }
+
+  .kpis { margin-top: 18px; display: grid; grid-template-columns: repeat(6, 1fr); border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .kpi { padding: 11px 14px; border-right: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 2px 8px; min-width: 0; }
+  .kpi:last-child { border-right: 0; }
+  .kpi .k { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
+  .kpi .v { font: 500 19px var(--mono); letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .kpi .v small { font-size: 11.5px; color: var(--ink-3); font-weight: 400; letter-spacing: 0; }
+  .kpi .d { grid-column: 1 / -1; font: 11px var(--mono); color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kpi .d.good { color: var(--ok); }
+  .kpi svg.spark { width: 56px; height: 20px; overflow: visible; }
+  .kpi .minibar { width: 56px; height: 4px; background: var(--sunken); border-radius: 2px; overflow: hidden; margin-bottom: 7px; }
+  .kpi .minibar i { display: block; height: 100%; background: var(--ink-2); }
+
+  .grid { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; margin-top: 12px; }
+  .stack { display: grid; gap: 12px; align-content: start; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .card-head h3 { font-size: 13px; font-weight: 600; }
+  .card-head .right { margin-left: auto; display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-3); }
+  .legend { display: flex; gap: 12px; font-size: 11.5px; color: var(--ink-3); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 12px; height: 2px; border-radius: 1px; display: inline-block; }
+  .chart { height: 280px; position: relative; }
+  .chart.sm { height: 74px; }
+  .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+
+  .gauge { display: grid; grid-template-columns: 74px 1fr 84px; align-items: center; gap: 10px; font-size: 12px; padding: 4px 0; }
+  .gauge > span:first-child { color: var(--ink-3); }
+  .gauge .track { height: 5px; background: var(--sunken); border-radius: 3px; overflow: hidden; }
+  .gauge .track i { display: block; height: 100%; background: var(--ink-2); }
+  .gauge .val { text-align: right; font-family: var(--mono); font-size: 11.5px; }
+
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .log { font: 11.5px/1.8 var(--mono); color: var(--ink-2); }
+  .log div { display: grid; grid-template-columns: 60px 76px 1fr; gap: 8px; white-space: nowrap; }
+  .log .t { color: var(--ink-4); }
+  .log .ty { color: var(--ink-3); }
+  .log .ck { color: var(--info); }
+  .log .st { color: var(--ok); }
+  .log .wn { color: var(--warn); }
+  .log .m { overflow: hidden; text-overflow: ellipsis; }
+  .card .tbl { border: 0; border-radius: 0; margin: 0 -14px -14px; border-top: 1px solid var(--line); }
+  .card .tbl th { background: transparent; }
+  .card .tbl td { font: 11.5px var(--mono); color: var(--ink-2); padding: 8px 14px; }
+  .card .tbl th { padding: 7px 14px; }
+  .best { color: var(--ok); font-family: var(--sans); font-size: 11px; font-weight: 500; margin-left: 6px; }
+  .act { color: var(--ink-3); font-family: var(--sans); font-weight: 500; }
+  .ghost td { color: var(--ink-4) !important; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <a class="ws" href="landing.html"><div class="logo"><span></span></div><b>ModelForge</b><span class="mono">v4.0</span></a>
+    <div class="search"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>Search or jump to…<kbd>⌘K</kbd></div>
+    <nav class="nav">
+      <a href="new-run.html"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New run</a>
+      <a class="on" href="live-run.html"><svg class="i" viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Runs<span class="count">15</span></a>
+      <a href="playground.html"><svg class="i" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>Playground</a>
+      <a href="artifacts.html"><svg class="i" viewBox="0 0 24 24"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>Artifacts<span class="count">9</span></a>
+      <a href="docs.html"><svg class="i" viewBox="0 0 24 24"><path d="M4 4h6a2 2 0 0 1 2 2v14a2 2 0 0 0-2-2H4z"/><path d="M20 4h-6a2 2 0 0 0-2 2v14a2 2 0 0 1 2-2h6z"/></svg>Docs</a>
+      <a href="settings.html"><svg class="i" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>Settings</a>
+    </nav>
+    <div>
+      <div class="group-label">Training now</div>
+      <a class="side-run" href="live-run.html">
+        <div class="top"><span class="dot live"></span><span class="mono">#42</span> gemma-3-1b · support</div>
+        <div class="meta num"><span>step 1,240 / 2,000</span><span>44m left</span></div>
+        <div class="bar"><i style="width:62%"></i></div>
+      </a>
+      <div class="group-label" style="margin-top:10px">Recent runs</div>
+      <a class="side-run" href="#">
+        <div class="top"><span class="dot"></span><span class="mono">#41</span> qwen2.5-0.5b · faq</div>
+        <div class="meta num"><span>loss 0.704</span><span>3h ago</span></div>
+      </a>
+    </div>
+    <div class="hw">
+      <div class="hw-row"><span class="hw-gpu"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h4v4H7zM15 10h2M15 14h2"/></svg>RTX 4090</span><span class="mono">GPU 0</span></div>
+      <div class="hw-row"><span>VRAM</span><span class="mono num">19.6 / 24.0 GB</span></div>
+      <div class="bar"><i style="width:82%; background: var(--ink-2)"></i></div>
+      <div class="hw-row"><span>RAM</span><span class="mono num">64 GB</span></div>
+      <div class="hw-row"><span>Disk free</span><span class="mono num">404 GB</span></div>
+    </div>
+    <div class="side-foot"><span class="dot"></span>Connected · <span class="mono" style="font-size:11px">localhost:8000</span></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div class="crumb">Runs <span class="sep">/</span> <b>#42</b></div>
+      <span class="status"><i></i>Training</span>
+      <div class="spacer"></div>
+      <button class="icon-btn" data-theme-toggle title="Toggle theme">
+        <svg class="i theme-icon-light" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+        <svg class="i theme-icon-dark" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <button class="btn ghost"><svg class="i" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>TensorBoard</button>
+      <button class="btn"><svg class="i" viewBox="0 0 24 24"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v5h7V3M8 21v-7h8v7"/></svg>Save checkpoint</button>
+      <button class="btn danger"><svg class="i" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>Cancel run</button>
+    </header>
+
+    <div class="scroll">
+      <div class="run-head">
+        <div>
+          <h1>gemma-3-1b · support tickets <span class="mono">#42</span></h1>
+          <div class="run-meta">
+            <span class="chip accent">Full fine-tune</span>
+            <span class="chip neutral">SFT</span>
+            <span class="chip neutral mono" style="font-size:11px">./data/support_tickets.jsonl</span>
+            <span class="chip neutral">GPU 0 · RTX 4090</span>
+            <span class="chip neutral">started 14:02</span>
+          </div>
+        </div>
+        <div class="spacer"></div>
+        <a class="link" href="docs.html" style="font-size:12.5px">Why this plan →</a>
+      </div>
+
+      <div class="progress">
+        <div class="ptrack"><i></i><span class="ep" style="left:33.33%"></span><span class="ep" style="left:66.66%"></span></div>
+        <div class="prow num"><span>Step <b>1,240</b> / 2,000</span><span>Epoch <b>1.86</b> / 3</span><span>Elapsed <b>1h 12m</b></span><span style="margin-left:auto">ETA <b>44m</b> · finishes ~15:58</span></div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi"><span class="k">Train loss</span><span class="v">0.8412</span><svg class="spark" id="sp-loss"></svg><span class="d good">−0.031 last 100 steps</span></div>
+        <div class="kpi"><span class="k">Learning rate</span><span class="v">7.60e-6</span><svg class="spark" id="sp-lr"></svg><span class="d">linear decay</span></div>
+        <div class="kpi"><span class="k">Grad norm</span><span class="v">0.47</span><svg class="spark" id="sp-gn"></svg><span class="d">p95 0.71</span></div>
+        <div class="kpi"><span class="k">Throughput</span><span class="v">0.29 <small>steps/s</small></span><span></span><span class="d">8 seqs × 1024 tok</span></div>
+        <div class="kpi"><span class="k">GPU util</span><span class="v">97<small>%</small></span><div class="minibar"><i style="width:97%"></i></div><span class="d">71 °C · 412 W</span></div>
+        <div class="kpi"><span class="k">VRAM</span><span class="v">19.6 <small>/ 24 GB</small></span><div class="minibar"><i style="width:82%"></i></div><span class="d">estimate 20.0 GB</span></div>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <div class="card-head">
+            <h3>Training loss</h3>
+            <div class="legend"><span><i style="background:var(--accent)"></i>smoothed</span><span><i style="background:var(--chart-raw)"></i>raw</span><span><i style="background:var(--info); width:1px; height:9px"></i>checkpoint</span></div>
+            <div class="right"><div class="seg sm"><span class="on">Step</span><span>Time</span></div><div class="seg sm"><span class="on">Linear</span><span>Log</span></div></div>
+          </div>
+          <div class="chart"><svg id="loss"></svg></div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-head"><h3>Learning rate</h3><span class="right mono">peak 2e-5</span></div>
+            <div class="chart sm"><svg id="lr"></svg></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>Grad norm</h3><span class="right mono">clip 1.0</span></div>
+            <div class="chart sm"><svg id="gn"></svg></div>
+          </div>
+          <div class="card">
+            <div class="card-head"><h3>GPU 0</h3><span class="right">every 2s</span></div>
+            <div class="gauge"><span>Utilization</span><div class="track"><i style="width:97%"></i></div><span class="val">97%</span></div>
+            <div class="gauge"><span>Memory</span><div class="track"><i style="width:82%"></i></div><span class="val">19.6 GB</span></div>
+            <div class="gauge"><span>Power</span><div class="track"><i style="width:91%"></i></div><span class="val">412 / 450 W</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="card">
+          <div class="card-head"><h3>Events</h3><div class="right"><div class="seg sm"><span class="on">All</span><span>Checkpoints</span><span>Warnings</span></div></div></div>
+          <div class="log">
+            <div><span class="t">15:14:08</span><span class="ty">log</span><span class="m">step 1240 · loss 0.8412 · lr 7.60e-6 · epoch 1.86</span></div>
+            <div><span class="t">15:00:12</span><span class="ty ck">checkpoint</span><span class="m">saved checkpoint-1000 · 2.01 GB</span></div>
+            <div><span class="t">14:40:44</span><span class="ty st">status</span><span class="m">epoch 1 complete · 667 steps</span></div>
+            <div><span class="t">14:31:03</span><span class="ty ck">checkpoint</span><span class="m">saved checkpoint-500 · 2.01 GB</span></div>
+            <div><span class="t">14:03:12</span><span class="ty wn">warning</span><span class="m">tokenizer has no pad_token; using eos_token</span></div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h3>Checkpoints</h3><span class="right mono">./modelforge_output/gemma-support</span></div>
+          <div class="tbl">
+            <table>
+              <thead><tr><th>Checkpoint</th><th class="r">Loss</th><th class="r">Size</th><th class="r">Saved</th><th class="r"></th></tr></thead>
+              <tbody>
+                <tr><td>checkpoint-1000<span class="best">lowest</span></td><td class="r num">0.8720</td><td class="r">2.01 GB</td><td class="r">15:00</td><td class="r act">Resume · Copy path</td></tr>
+                <tr><td>checkpoint-500</td><td class="r num">1.0384</td><td class="r">2.01 GB</td><td class="r">14:31</td><td class="r act">Resume · Copy path</td></tr>
+                <tr class="ghost"><td>checkpoint-1500</td><td class="r">—</td><td class="r">—</td><td class="r">in ~15m</td><td></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let seed = 7;
+  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const gauss = () => { let s = 0; for (let i = 0; i < 6; i++) s += rand(); return s / 6 - 0.5; };
+
+  const N = 1240, MAX = 2000;
+  const raw = [], ema = [], lr = [], gn = [];
+  let e = null;
+  for (let s = 1; s <= N; s++) {
+    const base = 0.85 + 1.45 * Math.exp(-s / 210) + 0.12 * Math.exp(-s / 900) - (s > 667 ? 0.04 : 0);
+    const v = base + gauss() * (0.12 + 0.22 * Math.exp(-s / 300));
+    raw.push(v);
+    e = e === null ? v : e * 0.96 + v * 0.04;
+    ema.push(e);
+    lr.push(2e-5 * (1 - s / MAX) / (1 - 1 / MAX) * (s < 60 ? s / 60 : 1));
+    gn.push(Math.max(0.15, 0.42 + 1.4 * Math.exp(-s / 120) + gauss() * 0.28 + (rand() > 0.992 ? 0.6 : 0)));
+  }
+  const lrFull = Array.from({ length: MAX }, (_, i) => { const s = i + 1; return 2e-5 * (1 - s / MAX) * (s < 60 ? s / 60 : 1); });
+  const gnSmooth = gn.map((_, i, a) => { const w = a.slice(Math.max(0, i - 10), i + 1); return w.reduce((x, y) => x + y, 0) / w.length; });
+
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, parent) => { const n = document.createElementNS(NS, tag); for (const k in attrs) n.setAttribute(k, attrs[k]); parent && parent.appendChild(n); return n; };
+  const path = (pts) => pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join("");
+  const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+
+  function chart(svg, series, opts) {
+    svg.innerHTML = "";
+    const r = svg.getBoundingClientRect();
+    const W = r.width, H = r.height;
+    const pad = opts.axis ? { l: 34, r: 6, t: 4, b: 20 } : { l: 0, r: 0, t: 3, b: 3 };
+    const [y0, y1] = opts.y;
+    const X = (i) => pad.l + (i / opts.xMax) * (W - pad.l - pad.r);
+    const Y = (v) => pad.t + (1 - (v - y0) / (y1 - y0)) * (H - pad.t - pad.b);
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    const font = { "font-size": 10.5, "font-family": "Geist Mono, monospace", fill: css("--ink-3") };
+
+    if (opts.axis) {
+      const d = el("defs", {}, svg);
+      const p = el("pattern", { id: "hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" }, d);
+      el("line", { x1: 0, y1: 0, x2: 0, y2: 6, stroke: css("--chart-grid"), "stroke-width": 3 }, p);
+      const g = el("linearGradient", { id: "fillA", x1: 0, x2: 0, y1: 0, y2: 1 }, d);
+      el("stop", { offset: "0", "stop-color": css("--accent"), "stop-opacity": 0.14 }, g);
+      el("stop", { offset: "1", "stop-color": css("--accent"), "stop-opacity": 0 }, g);
+
+      opts.yTicks.forEach((t) => {
+        el("line", { x1: pad.l, x2: W - pad.r, y1: Y(t), y2: Y(t), stroke: css("--chart-grid") }, svg);
+        el("text", { ...font, x: pad.l - 8, y: Y(t) + 4, "text-anchor": "end" }, svg).textContent = t.toFixed(1);
+      });
+      opts.xTicks.forEach((t) => {
+        el("text", { ...font, x: X(t), y: H - 3, "text-anchor": "middle" }, svg).textContent = t >= 1000 ? t / 1000 + "k" : t;
+      });
+      el("rect", { x: X(N), y: pad.t, width: X(opts.xMax) - X(N), height: H - pad.t - pad.b, fill: "url(#hatch)" }, svg);
+      opts.marks.forEach((m) => {
+        const c = m.ckpt ? css("--info") : css("--ink-4");
+        el("line", { x1: X(m.x), x2: X(m.x), y1: pad.t, y2: H - pad.b, stroke: c, "stroke-dasharray": m.ckpt ? "3 3" : "", opacity: m.ckpt ? 0.8 : 0.7 }, svg);
+        el("text", { ...font, fill: c, x: X(m.x) + 5, y: pad.t + 11 }, svg).textContent = m.label;
+      });
+    }
+    series.forEach((s) => {
+      const pts = s.data.map((v, i) => [X(i + 1), Y(v)]);
+      if (s.fill) el("path", { d: path(pts.concat([[pts[pts.length - 1][0], Y(y0)], [pts[0][0], Y(y0)]])) + "Z", fill: s.fill }, svg);
+      el("path", { d: path(pts), fill: "none", stroke: s.color, "stroke-width": s.w || 1.5, opacity: s.op || 1, "stroke-linejoin": "round" }, svg);
+      if (s.dot) {
+        const last = pts[pts.length - 1];
+        el("circle", { cx: last[0], cy: last[1], r: 7, fill: s.color, opacity: 0.18 }, svg);
+        el("circle", { cx: last[0], cy: last[1], r: 3.5, fill: s.color }, svg);
+      }
+    });
+  }
+
+  function spark(id, data, color) {
+    const tail = data.slice(-200);
+    const lo = Math.min(...tail), hi = Math.max(...tail), pad = (hi - lo) * 0.1;
+    chart(document.getElementById(id), [{ data: tail, color, w: 1.25 }], { xMax: tail.length, y: [lo - pad, hi + pad] });
+  }
+
+  function draw() {
+    chart(document.getElementById("loss"), [
+      { data: raw, color: css("--chart-raw"), w: 1, op: 0.8 },
+      { data: ema, color: css("--accent"), w: 2, fill: "url(#fillA)", dot: true },
+    ], {
+      axis: true, xMax: MAX, y: [0.4, 2.6], yTicks: [0.5, 1.0, 1.5, 2.0, 2.5],
+      xTicks: [0, 250, 500, 750, 1000, 1250, 1500, 1750, 2000],
+      marks: [
+        { x: 500, ckpt: true, label: "ckpt-500" },
+        { x: 667, label: "epoch 2" },
+        { x: 1000, ckpt: true, label: "ckpt-1000" },
+        { x: 1333, label: "epoch 3" },
+      ],
+    });
+    chart(document.getElementById("lr"), [
+      { data: lrFull, color: css("--chart-ghost"), w: 1.5 },
+      { data: lr, color: css("--ink"), w: 1.5, dot: true },
+    ], { xMax: MAX, y: [0, 2.2e-5] });
+    chart(document.getElementById("gn"), [{ data: gn, color: css("--ink-3"), w: 1 }], { xMax: N, y: [0, 2.2] });
+    spark("sp-loss", ema, css("--accent"));
+    spark("sp-lr", lr, css("--ink-3"));
+    spark("sp-gn", gnSmooth, css("--ink-3"));
+  }
+
+  draw();
+  addEventListener("mf-theme", draw);
+  addEventListener("resize", draw);
+  document.fonts && document.fonts.ready.then(draw);
+</script>
+</body>
+</html>

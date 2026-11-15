@@ -1,0 +1,162 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_COLOR: "1"
+  # Default CI stays CPU-only. The optional gpu extra is never installed.
+  CUDA_VISIBLE_DEVICES: ""
+  NVIDIA_VISIBLE_DEVICES: ""
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+  HF_DATASETS_OFFLINE: "1"
+  TOKENIZERS_PARALLELISM: "false"
+
+jobs:
+  python:
+    name: Python tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Python from .python-version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Install Node from .node-version
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Run pytest
+        run: uv run pytest
+
+  frontend:
+    name: Frontend type-check and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Node from .node-version
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: web/frontend
+        run: npm ci
+
+      - name: Strict TypeScript check and production Vite build
+        working-directory: web/frontend
+        run: npm run build
+
+      - name: Frontend unit and smoke tests
+        working-directory: web/frontend
+        run: |
+          if node --input-type=module -e "import {readFileSync} from 'node:fs'; const scripts = JSON.parse(readFileSync('package.json', 'utf8')).scripts || {}; process.exit(scripts.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "No frontend test script yet; skipping."
+          fi
+
+      - name: Assert production bundle
+        run: |
+          test -s web/frontend_dist/index.html
+          find web/frontend_dist/assets -type f -name '*.js' -size +0c | grep -q .
+
+  distribution:
+    name: Wheel smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Python from .python-version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install Node from .node-version
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
+      - name: Build frontend and Python distributions
+        run: bash scripts/build_distribution.sh
+
+      - name: Install the wheel into a clean environment
+        run: |
+          req="$(mktemp)"
+          uv export --frozen --no-dev --no-emit-project --output-file "$req"
+          uv venv --python "$(tr -d '[:space:]' < .python-version)" /tmp/modelforge-wheel
+          uv pip install --python /tmp/modelforge-wheel/bin/python --requirement "$req"
+          uv pip install --python /tmp/modelforge-wheel/bin/python --no-deps dist/*.whl
+
+      - name: Smoke-test the installed wheel
+        working-directory: /tmp
+        run: /tmp/modelforge-wheel/bin/python "$GITHUB_WORKSPACE/scripts/distribution_smoke.py"
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Python from .python-version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install docs requirements
+        run: pip install -r docs/requirements.txt
+
+      - name: Build docs (strict)
+        run: mkdocs build --strict

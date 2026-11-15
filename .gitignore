@@ -1,28 +1,26 @@
-ModelForge/finetuned_models/*
-ModelForge/model_checkpoints/*
-model_checkpoints/
-finetuned_models/
-training_logs/
-datasets/
-ModelForge/datasets/*
-ModelForge/training_logs/
-*/__pycache__/*
-ModelForge/__pycache__/
-ModelForge/utilities/__pycache__/*
-ModelForge/utilities/tests/
-*.pyc
+## Python gitignores
+.py[ocd]
+__pycache__/
 .env
+.env.local
 .venv
-*.db
-*.sqlite
+venv/
+.pytest_cache/
+HF_DOCS
+.claude
+
+*.egg-info/
 dist/
-dist/*
-ModelForge.egg-info/*
-ModelForge.egg-info/
-*.egg-info
-*.lock
-unsloth_compiled_cache/*
-# MkDocs build directory
-site/
-.claude/
-*/.claude/*
+build/
+## Frontend
+node_modules/
+web/frontend/tsconfig.tsbuildinfo
+test-results/
+web/frontend_dist/
+
+## Generated training output
+/modelforge_output/
+
+## Documentation build
+/site/
+brag*

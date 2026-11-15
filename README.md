@@ -1,255 +1,85 @@
-# ModelForge 🔧⚡
+# ModelForge
 
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/modelforge-finetuning?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/modelforge-finetuning)
-[![License: BSD](https://img.shields.io/badge/License-BSD-yellow.svg)](https://opensource.org/licenses/BSD)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
-[![Version](https://img.shields.io/badge/version-3-blue)](https://github.com/forgeopus/modelforge)
+[![PyPI](https://img.shields.io/pypi/v/modelforge-finetuning)](https://pypi.org/project/modelforge-finetuning/)
+[![Python](https://img.shields.io/pypi/pyversions/modelforge-finetuning)](https://pypi.org/project/modelforge-finetuning/)
+[![Docs](https://readthedocs.org/projects/modelforge-finetuning/badge/?version=latest)](https://modelforge-finetuning.readthedocs.io)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE)
 
-<a href="https://www.producthunt.com/products/forgeopus?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-forgeopus" target="_blank" rel="noopener noreferrer"><img alt="ForgeOpus - Where AI masterpieces are forged. Your work, your opus. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1080450&amp;theme=light&amp;t=1771311433851"></a>
+Hardware-aware fine-tuning for open models from the Hugging Face Hub, with browser, terminal and notebook interfaces.
 
-**Fine-tune LLMs on your laptop's GPU—no code, no PhD, no hassle.**
+ModelForge reads your GPUs, works out how large a model fits, picks a training recipe for your goal, and runs it while you watch the loss come down. It shows its reasoning before anything starts, so you don't find out at step 40 that the run doesn't fit in memory.
 
-ModelForge v3 is a complete architectural overhaul bringing **2x faster training**, modular providers, advanced strategies, and production-ready code quality.
+## Features
 
-![logo](https://github.com/user-attachments/assets/12b3545d-0e8b-4460-9291-d0786c9cb0fa)
+- **Hardware-aware planning.** Total VRAM, the strategy's memory overhead and a per-parameter cost set a ceiling on model size. ModelForge picks full fine-tuning, LoRA or QLoRA (8-bit or 4-bit) to match.
+- **A recipe for each goal.** Supervised fine-tuning (SFT), preference training (DPO) and reinforcement training (GRPO), plus native trainers for summarization and extractive QA.
+- **Model recommendations.** Searches the Hub for popular models of the right type that fit your hardware, or validates any model ID you enter.
+- **Multi-GPU.** Data parallel by default, switching to FSDP automatically when a full fine-tune is too large for one card.
+- **Live runs.** Streamed training logs, checkpoints you can resume from, and TensorBoard logging.
+- **Playground.** Chat with a finished model or any checkpoint in the browser, even while another run is training.
 
-## ✨ What's New in v3
+## Install
 
-- 🚀 **2x Faster Training** with Unsloth provider
-- 🧩 **Multiple Providers**: HuggingFace, Unsloth (more coming!)
-- 🎯 **Advanced Strategies**: SFT, QLoRA, RLHF, DPO
-- 📊 **Built-in Evaluation** with task-specific metrics
-- 🖥️ **Interactive CLI Wizard** (`modelforge cli`) for headless/SSH environments
-- 📦 **Optional Quantization** — bitsandbytes moved to `[quantization]` extra
-
-**[See What's New in v3 →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)**
-
-## 🚀 Features
-
-- **GPU-Powered Fine-Tuning**: Optimized for NVIDIA GPUs (even 4GB VRAM) and Apple Silicon (MPS)
-- **One-Click Workflow**: Upload data → Configure → Train → Test
-- **Hardware-Aware**: Auto-detects GPU (CUDA or MPS) and recommends optimal settings
-- **No-Code UI**: Beautiful React interface, or use the CLI wizard for headless environments
-- **Multiple Providers**: HuggingFace (standard, works on CUDA + MPS) or Unsloth (2x faster, CUDA only)
-- **Advanced Strategies**: SFT, QLoRA, RLHF, DPO support
-- **Automatic Evaluation**: Built-in metrics for all tasks
-
-## 📖 Supported Tasks
-
-- **Text Generation**: Chatbots, instruction following, code generation, creative writing
-- **Summarization**: Document condensing, article summarization, meeting notes
-- **Question Answering**: RAG systems, document search, FAQ bots
-
-## 🎯 Quick Start
-
-### Prerequisites
-
-- **Python 3.11.x** (Python 3.12 not yet supported)
-- **GPU with 4GB+ VRAM**:
-  - **NVIDIA GPU** (6GB+ recommended) for CUDA-accelerated training with Unsloth support
-  - **OR Apple Silicon** (M1/M2/M3/M4/M5) for MPS-accelerated training (HuggingFace provider only, experimental)
-- **CUDA** (for NVIDIA GPUs) - [Installation Guide](https://developer.nvidia.com/cuda-downloads)
-- **HuggingFace Account** with access token ([Get one here](https://huggingface.co/settings/tokens))
-- **Linux, Windows, or macOS** operating system
-
-> **Apple Silicon Users**: ModelForge now has **experimental support** for Apple Silicon Macs with MPS (Metal Performance Shaders). See [macOS MPS Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md) for setup instructions and limitations (HuggingFace provider only, no quantization support).
->
-> **Windows Users**: See [Windows Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md) for platform-specific instructions, especially for Unsloth support.
-
-### Installation
+ModelForge needs Python 3.13 or newer. Real training needs an NVIDIA GPU with CUDA. Apple Silicon (MPS) and CPU-only machines work, but only with small models.
 
 ```bash
-# Install ModelForge
 pip install modelforge-finetuning
 
-# Optional extras
-pip install modelforge-finetuning[cli]           # CLI wizard
-pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization
-
-# Install PyTorch with CUDA support
-# Visit https://pytorch.org/get-started/locally/ for your CUDA version
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
+# Optional extras: the terminal wizard, and Liger kernels for CUDA
+pip install "modelforge-finetuning[cli,gpu]"
 ```
 
-### Set HuggingFace Token
+Per-OS instructions, including PyTorch with CUDA, are in the [installation guides](https://modelforge-finetuning.readthedocs.io/en/latest/installation/linux/).
 
-**Linux:**
-```bash
-export HUGGINGFACE_TOKEN=your_token_here
-```
-
-**Windows PowerShell:**
-```powershell
-$env:HUGGINGFACE_TOKEN="your_token_here"
-```
-
-**Or use .env file:**
-```bash
-echo "HUGGINGFACE_TOKEN=your_token_here" > .env
-```
-
-### Run ModelForge
+## Quick start
 
 ```bash
-modelforge          # Launch web UI
-modelforge cli      # Launch CLI wizard (headless/SSH)
+modelforge run
 ```
 
-Open your browser to **http://localhost:8000** and start training!
+This starts the server and opens the browser console. The link it prints includes a one-time token that connects your browser. On a remote machine, use `modelforge run --no-browser --host 127.0.0.1` and connect through an SSH tunnel.
 
-**[Full Quick Start Guide →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/quickstart.md)**
+For gated models such as Llama, accept the licence on the model's Hub page, then log in once with `hf auth login`.
 
-## 📚 Documentation
+| Interface | Command | Best for |
+|---|---|---|
+| Browser console | `modelforge run` | Most people |
+| Terminal wizard | `modelforge cli` | Headless servers over SSH (needs `[cli]`) |
+| Notebook | `modelforge-nb` | Jupyter and Colab |
 
-### Getting Started
-- **[Quick Start Guide](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/quickstart.md)** - Get up and running in 5 minutes
-- **[What's New in v3](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/whats-new.md)** - Major features and improvements
+The [Quick Start guide](https://modelforge-finetuning.readthedocs.io/en/latest/getting-started/quickstart/) walks through a first run.
 
-### Installation
-- **[Windows Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md)** - Complete Windows setup (including WSL and Docker)
-- **[Linux Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/linux.md)** - Linux setup guide
-- **[macOS (Apple Silicon) Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/macos-mps.md)** - Setup for M1/M2/M3/M4/M5 Macs with MPS support
-- **[Post-Installation](https://github.com/forgeopus/modelforge/tree/main/docs/installation/post-installation.md)** - Initial configuration
+## Documentation
 
-### Configuration & Usage
-- **[Configuration Guide](https://github.com/forgeopus/modelforge/tree/main/docs/configuration/configuration-guide.md)** - All configuration options
-- **[Dataset Formats](https://github.com/forgeopus/modelforge/tree/main/docs/configuration/dataset-formats.md)** - Preparing your training data
-- **[Training Tasks](https://github.com/forgeopus/modelforge/tree/main/docs/configuration/training-tasks.md)** - Understanding different tasks
-- **[Hardware Profiles](https://github.com/forgeopus/modelforge/tree/main/docs/configuration/hardware-profiles.md)** - Optimizing for your GPU
+Full documentation is at **[modelforge-finetuning.readthedocs.io](https://modelforge-finetuning.readthedocs.io)**. A shorter version ships inside the app at `/app/docs`.
 
-### Providers
-- **[Provider Overview](https://github.com/forgeopus/modelforge/tree/main/docs/providers/overview.md)** - Understanding providers
-- **[HuggingFace Provider](https://github.com/forgeopus/modelforge/tree/main/docs/providers/huggingface.md)** - Standard HuggingFace models
-- **[Unsloth Provider](https://github.com/forgeopus/modelforge/tree/main/docs/providers/unsloth.md)** - 2x faster training
+- [What's new in v4 and migrating from v3](https://modelforge-finetuning.readthedocs.io/en/latest/getting-started/whats-new/)
+- [Dataset formats](https://modelforge-finetuning.readthedocs.io/en/latest/configuration/dataset-formats/)
+- [How planning works](https://modelforge-finetuning.readthedocs.io/en/latest/configuration/configuration-guide/)
+- [Training strategies](https://modelforge-finetuning.readthedocs.io/en/latest/strategies/overview/)
+- [REST API](https://modelforge-finetuning.readthedocs.io/en/latest/api-reference/rest-api/)
+- [Troubleshooting](https://modelforge-finetuning.readthedocs.io/en/latest/troubleshooting/common-issues/)
 
-### Training Strategies
-- **[Strategy Overview](https://github.com/forgeopus/modelforge/tree/main/docs/strategies/overview.md)** - Understanding strategies
-- **[SFT Strategy](https://github.com/forgeopus/modelforge/tree/main/docs/strategies/sft.md)** - Standard supervised fine-tuning
-- **[QLoRA Strategy](https://github.com/forgeopus/modelforge/tree/main/docs/strategies/qlora.md)** - Memory-efficient training
-- **[RLHF Strategy](https://github.com/forgeopus/modelforge/tree/main/docs/strategies/rlhf.md)** - Reinforcement learning
-- **[DPO Strategy](https://github.com/forgeopus/modelforge/tree/main/docs/strategies/dpo.md)** - Direct preference optimization
+## Running from source
 
-### API Reference
-- **[REST API](https://github.com/forgeopus/modelforge/tree/main/docs/api-reference/rest-api.md)** - Complete API documentation
-- **[Training Config Schema](https://github.com/forgeopus/modelforge/tree/main/docs/api-reference/training-config.md)** - Configuration options
+Building or installing from a source checkout needs Node.js and npm, because the browser UI is compiled into `web/frontend_dist/`. That directory isn't committed.
 
-### Troubleshooting
-- **[Common Issues](https://github.com/forgeopus/modelforge/tree/main/docs/troubleshooting/common-issues.md)** - Frequently encountered problems
-- **[Windows Issues](https://github.com/forgeopus/modelforge/tree/main/docs/troubleshooting/windows-issues.md)** - Windows-specific troubleshooting
-- **[FAQ](https://github.com/forgeopus/modelforge/tree/main/docs/troubleshooting/faq.md)** - Frequently asked questions
-
-### Contributing
-- **[Contributing Guide](https://github.com/forgeopus/modelforge/tree/main/docs/contributing/contributing.md)** - How to contribute
-- **[Architecture](https://github.com/forgeopus/modelforge/tree/main/docs/contributing/architecture.md)** - Understanding the codebase
-- **[Model Configurations](https://github.com/forgeopus/modelforge/tree/main/docs/contributing/model-configs.md)** - Adding model recommendations
-
-**[📖 Full Documentation Index →](https://github.com/forgeopus/modelforge/tree/main/docs/README.md)**
-
-## 🔧 Platform Support
-
-| Platform | HuggingFace Provider | Unsloth Provider | Notes |
-|----------|---------------------|------------------|-------|
-| **Linux (Native)** | ✅ Full support | ✅ Full support | Recommended for best performance |
-| **Windows (Native)** | ✅ Full support | ❌ Not supported | Use WSL or Docker for Unsloth |
-| **WSL 2** | ✅ Full support | ✅ Full support | Recommended for Windows users |
-| **Docker** | ✅ Full support | ✅ Full support | With NVIDIA runtime |
-| **macOS (Apple MPS)** | ✅ Experimental | ❌ Not supported | Requires PyTorch MPS; no bitsandbytes / Unsloth; smaller models recommended |
-
-**[Platform-Specific Installation Guides →](https://github.com/forgeopus/modelforge/tree/main/docs/installation/)**
-
-## ⚠️ Important Notes
-
-### Windows Users
-
-**Unsloth provider is NOT supported on native Windows.** For 2x faster training with Unsloth:
-
-1. **Option 1: WSL (Recommended)** - [WSL Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md#option-2-wsl-installation-recommended)
-2. **Option 2: Docker** - [Docker Installation Guide](https://github.com/forgeopus/modelforge/tree/main/docs/installation/windows.md#option-3-docker-installation)
-
-The HuggingFace provider works perfectly on native Windows.
-
-### Unsloth Constraints
-
-When using Unsloth provider, you **MUST** specify a fixed `max_sequence_length`:
-
-```json
-{
-  "provider": "unsloth",
-  "max_seq_length": 2048  // ✅ Required - cannot be -1
-}
+```bash
+git clone https://github.com/ForgeOpus/ModelForge.git
+cd ModelForge
+uv sync --extra dev
+python scripts/build_frontend.py   # or, from web/frontend: npm ci && npm run build
+uv run modelforge run --no-browser
 ```
 
-Auto-inference (`max_seq_length: -1`) is **NOT supported** with Unsloth.
+`pip wheel .`, `python -m build` and `uv build` run the frontend build automatically, and fail if Node.js is missing, so a wheel is never published without a UI. Installing an already-built wheel doesn't need Node.
 
-**[Learn more about Unsloth →](https://github.com/forgeopus/modelforge/tree/main/docs/providers/unsloth.md)**
+See the [development guide](https://modelforge-finetuning.readthedocs.io/en/latest/contributing/development/) and [DEVELOPER_GUIDE.md](https://github.com/ForgeOpus/ModelForge/blob/main/DEVELOPER_GUIDE.md) for the codebase tour, tests and the release process.
 
-## 📂 Dataset Format
+## Contributing
 
-ModelForge uses JSONL format. Each task has specific fields:
+Contributions are welcome. Read the [contributing guide](https://modelforge-finetuning.readthedocs.io/en/latest/contributing/contributing/) and the [code of conduct](https://github.com/ForgeOpus/ModelForge/blob/main/CODE_OF_CONDUCT.md), and report bugs or request features through [GitHub issues](https://github.com/ForgeOpus/ModelForge/issues).
 
-**Text Generation:**
-```jsonl
-{"input": "What is AI?", "output": "AI stands for Artificial Intelligence..."}
-{"input": "Explain ML", "output": "Machine Learning is a subset of AI..."}
-```
+## License
 
-**Summarization:**
-```jsonl
-{"input": "Long article text...", "output": "Short summary."}
-```
-
-**Question Answering:**
-```jsonl
-{"context": "Document text...", "question": "What is X?", "answer": "X is..."}
-```
-
-**[Complete Dataset Format Guide →](https://github.com/forgeopus/modelforge/tree/main/docs/configuration/dataset-formats.md)**
-
-## 🤝 Contributing
-
-We welcome contributions! ModelForge's modular architecture makes it easy to:
-
-- **Add new providers** - Just 2 files needed
-- **Add new strategies** - Just 2 files needed
-- **Add model recommendations** - Simple JSON configs
-- **Improve documentation**
-- **Fix bugs and add features**
-
-**[Contributing Guide →](https://github.com/forgeopus/modelforge/tree/main/docs/contributing/contributing.md)**
-
-### Adding Model Recommendations
-
-ModelForge uses modular configuration files for model recommendations. See the **[Model Configuration Guide](https://github.com/forgeopus/modelforge/tree/main/docs/contributing/model-configs.md)** for instructions on adding new recommended models.
-
-## 🛠 Tech Stack
-
-- **Backend**: Python, FastAPI, SQLAlchemy
-- **Frontend**: React.js
-- **ML**: PyTorch, Transformers, PEFT, TRL
-- **Training**: LoRA, QLoRA, bitsandbytes (optional)
-- **Providers**: HuggingFace Hub, Unsloth
-
-*Results on NVIDIA RTX 3090. Your results may vary.*
-
-## 📜 License
-
-BSD License - see [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- HuggingFace for Transformers and model hub
-- Unsloth AI for optimized training kernels
-- The open-source ML community
-
-## 📧 Support
-
-- **Documentation**: [https://github.com/forgeopus/modelforge/tree/main/docs/](https://github.com/forgeopus/modelforge/tree/main/docs/)
-- **Issues**: [GitHub Issues](https://github.com/forgeopus/modelforge/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
-- **PyPI**: [modelforge-finetuning](https://pypi.org/project/modelforge-finetuning/)
-
----
-
-**ModelForge v3 - Making LLM fine-tuning accessible to everyone** 🚀
-
-**[Get Started →](https://github.com/forgeopus/modelforge/tree/main/docs/getting-started/quickstart.md)** | **[Documentation →](https://github.com/forgeopus/modelforge/tree/main/docs/)** | **[GitHub →](https://github.com/forgeopus/modelforge)**
+ModelForge is released under the [BSD 3-Clause License](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE).

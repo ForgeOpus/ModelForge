@@ -1,425 +1,208 @@
-# Linux Installation Guide
+# Linux Installation
 
-Complete setup guide for ModelForge on Linux with full feature support.
+This page installs ModelForge v4 on a Linux machine with one or more NVIDIA GPUs. Linux is the primary platform: it is what CI runs on, and it is the only native platform where multi-GPU training, FSDP and Liger kernels are available.
 
 ## Prerequisites
 
-- **Linux Distribution**: Ubuntu 20.04+, Debian 11+, Fedora 35+, or similar
-- **Python 3.11.x** (Python 3.12 not yet supported)
-- **NVIDIA GPU** with 4GB+ VRAM (6GB+ recommended)
-- **NVIDIA Drivers**: Version 525.60 or newer
-- **CUDA Toolkit**: 11.8 or 12.x
-- **HuggingFace Account**: [Create account](https://huggingface.co/) and [generate access token](https://huggingface.co/settings/tokens)
+- A 64-bit Linux distribution (x86_64 or aarch64).
+- An NVIDIA GPU and the proprietary NVIDIA driver. ModelForge reads GPUs through NVML, which ships with the driver.
+- **Python 3.13** or newer. v4 does not run on Python 3.11 or 3.12.
+- Disk space for base models (Hugging Face cache), checkpoints and outputs.
 
-## Installation Steps
+CPU-only machines also work, but the planner caps models at 500M parameters (less on machines with little RAM) and training is very slow. See [Hardware and Memory](../configuration/hardware-profiles.md).
 
-### 1. Update System Packages
+## 1. Install the NVIDIA driver
 
-**Ubuntu/Debian:**
-```bash
-sudo apt update && sudo apt upgrade -y
-```
+Check whether a driver is already loaded:
 
-**Fedora:**
-```bash
-sudo dnf update -y
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -Syu
-```
-
-### 2. Install Python 3.11
-
-**Ubuntu/Debian:**
-```bash
-sudo apt install -y software-properties-common
-sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt update
-sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
-```
-
-**Fedora:**
-```bash
-sudo dnf install -y python3.11 python3.11-devel
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S python311
-```
-
-Verify installation:
-```bash
-python3.11 --version
-```
-
-### 3. Install NVIDIA Drivers
-
-Check if drivers are already installed:
 ```bash
 nvidia-smi
 ```
 
-If not installed:
+If the command is missing or fails, install the driver your distribution recommends:
 
-**Ubuntu/Debian:**
+=== "Ubuntu / Debian"
+
+    ```bash
+    sudo ubuntu-drivers install
+    sudo reboot
+    ```
+
+=== "Fedora"
+
+    ```bash
+    # Enable RPM Fusion first: https://rpmfusion.org/Configuration
+    sudo dnf install akmod-nvidia
+    sudo reboot
+    ```
+
+=== "Arch"
+
+    ```bash
+    sudo pacman -S nvidia nvidia-utils
+    sudo reboot
+    ```
+
+You don't need the CUDA Toolkit. PyTorch wheels bundle the CUDA runtime libraries; only the driver is required.
+
+## 2. Install Python 3.13
+
+Many distributions still ship an older Python. Check with `python3 --version`. If it is below 3.13:
+
+=== "uv (any distribution)"
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    uv python install 3.13
+    uv venv --python 3.13 ~/modelforge/.venv
+    ```
+
+=== "Ubuntu (deadsnakes PPA)"
+
+    ```bash
+    sudo add-apt-repository ppa:deadsnakes/ppa
+    sudo apt update
+    sudo apt install python3.13 python3.13-venv
+    python3.13 -m venv ~/modelforge/.venv
+    ```
+
+=== "Fedora"
+
+    ```bash
+    sudo dnf install python3.13
+    python3.13 -m venv ~/modelforge/.venv
+    ```
+
+uv-created environments don't include pip. Use `uv pip install …` wherever this page says `pip install …`, or run `python -m ensurepip` inside the environment.
+
+## 3. Install ModelForge
+
 ```bash
-# Add graphics-drivers PPA
-sudo add-apt-repository ppa:graphics-drivers/ppa -y
-sudo apt update
-
-# Install latest driver (or specific version like nvidia-driver-535)
-sudo ubuntu-drivers autoinstall
-
-# Reboot
-sudo reboot
+source ~/modelforge/.venv/bin/activate
+pip install --upgrade pip
+pip install "modelforge-finetuning[cli,gpu]"
 ```
 
-**Fedora:**
-```bash
-# Enable RPM Fusion repositories
-sudo dnf install -y https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
-sudo dnf install -y https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm
+| Extra | Adds | Notes |
+|---|---|---|
+| none | The browser console, planner and all trainers | Includes bitsandbytes for QLoRA. |
+| `[cli]` | click, rich | Needed for `modelforge cli` and `modelforge tensorboard`. |
+| `[gpu]` | liger-kernel (and Triton) | Fused kernels that cut memory on CUDA. Optional; ModelForge falls back when it is absent. |
 
-# Install NVIDIA drivers
-sudo dnf install -y akmod-nvidia
+## PyTorch and CUDA
 
-# Reboot
-sudo reboot
-```
-
-After reboot, verify:
-```bash
-nvidia-smi
-```
-
-### 4. Install CUDA Toolkit
-
-**Ubuntu/Debian (CUDA 12.6):**
-```bash
-# Download and install CUDA repository package
-wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt-get update
-
-# Install CUDA Toolkit
-sudo apt-get install -y cuda-toolkit-12-6
-```
-
-**Fedora (CUDA 12.6):**
-```bash
-sudo dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/fedora37/x86_64/cuda-fedora37.repo
-sudo dnf clean all
-sudo dnf install -y cuda-toolkit-12-6
-```
-
-Add CUDA to PATH:
-```bash
-echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
-echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-source ~/.bashrc
-```
+PyTorch is not a direct dependency. It is installed as a dependency of `accelerate`, `peft` and `bitsandbytes`. On Linux the default `torch` wheel from PyPI is built with CUDA and pulls in the NVIDIA runtime libraries as pip packages, so the install above is usually enough.
 
 Verify:
-```bash
-nvcc --version
+
+```
+$ python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
+2.11.0 13.0 True
 ```
 
-### 5. Create Virtual Environment
+Your exact versions will differ. If the last value is `False`:
 
-```bash
-# Create project directory
-mkdir ~/ModelForge
-cd ~/ModelForge
+- **The driver is too old for the wheel's CUDA version.** The `nvidia-smi` header shows the highest CUDA version your driver supports. Either update the driver, or install a wheel built for an older CUDA version from the PyTorch index. Pick the command from [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/); it looks like:
 
-# Create virtual environment
-python3.11 -m venv venv
+    ```bash
+    pip install --force-reinstall torch --index-url https://download.pytorch.org/whl/cu126
+    ```
 
-# Activate virtual environment
-source venv/bin/activate
-```
+- **You are on a machine without a GPU** (or in a container without GPU access). See below.
 
-### 6. Install ModelForge
+!!! warning "The planner trusts NVML, not PyTorch"
+    GPU detection uses NVML from the driver. If NVML sees a GPU but PyTorch can't use it, the console plans for the GPU's VRAM but training falls back to the CPU. Fix `torch.cuda.is_available()` before you train.
 
-```bash
-pip install modelforge-finetuning
-
-# Optional extras
-pip install modelforge-finetuning[cli]           # CLI wizard
-pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization
-```
-
-### 7. Install PyTorch with CUDA Support
-
-Visit [PyTorch Installation Page](https://pytorch.org/get-started/locally/) for the latest command.
-
-**For CUDA 12.6:**
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-```
-
-**For CUDA 11.8:**
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-### 8. Install Unsloth (Optional, for 2x Faster Training)
+## 4. Start ModelForge
 
 ```bash
-pip install unsloth
+modelforge run
 ```
 
-### 9. Verify GPU Detection
+On a desktop, the browser opens the printed link. On a remote server, see the next section. Then continue with [Post-Installation Setup](post-installation.md).
+
+## Remote servers
+
+`modelforge run` binds `0.0.0.0` by default, so it is reachable from the network by anyone who has the token. On a remote GPU box, bind to localhost and tunnel instead:
 
 ```bash
-python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"None\"}')"
+# on the server
+modelforge run --host 127.0.0.1 --no-browser
+
+# on your laptop
+ssh -L 8000:127.0.0.1:8000 user@gpu-server
 ```
 
-Expected output:
-```
-CUDA Available: True
-GPU: NVIDIA GeForce RTX 3060
-```
+Open the printed `http://127.0.0.1:8000/app?token=…` link on your laptop. For a fully headless workflow, use the terminal wizard (`modelforge cli`) instead. See [Terminal Wizard](../user-guide/terminal-cli.md).
 
-### 10. Set HuggingFace Token
+## Running as a systemd service
 
-**Option A: Export (temporary):**
-```bash
-export HUGGINGFACE_TOKEN="your_token_here"
-```
+To keep the console running across logouts, run it as a user service with a fixed token:
 
-**Option B: .env file (persistent):**
-```bash
-echo "HUGGINGFACE_TOKEN=your_token_here" > .env
-```
-
-**Option C: .bashrc (permanent):**
-```bash
-echo 'export HUGGINGFACE_TOKEN="your_token_here"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-### 11. Run ModelForge
-
-```bash
-modelforge          # Launch web UI
-modelforge cli      # Launch CLI wizard (headless/SSH alternative)
-```
-
-Open browser to: `http://localhost:8000`
-
-## Running as a Service (Optional)
-
-To run ModelForge as a systemd service:
-
-### 1. Create Service File
-
-```bash
-sudo nano /etc/systemd/system/modelforge.service
-```
-
-Add:
 ```ini
+# ~/.config/systemd/user/modelforge.service
 [Unit]
-Description=ModelForge Fine-Tuning Service
-After=network.target
+Description=ModelForge browser console
 
 [Service]
-Type=simple
-User=your_username
-WorkingDirectory=/home/your_username/ModelForge
-Environment="PATH=/home/your_username/ModelForge/venv/bin"
-Environment="HUGGINGFACE_TOKEN=your_token_here"
-ExecStart=/home/your_username/ModelForge/venv/bin/modelforge
-Restart=always
+WorkingDirectory=%h/modelforge
+ExecStart=%h/modelforge/.venv/bin/modelforge run --host 127.0.0.1 --no-browser --token REPLACE_WITH_A_LONG_RANDOM_TOKEN
+Restart=on-failure
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 ```
-
-Replace `your_username` and `your_token_here` with your values.
-
-### 2. Enable and Start Service
 
 ```bash
-sudo systemctl daemon-reload
-sudo systemctl enable modelforge
-sudo systemctl start modelforge
+systemctl --user daemon-reload
+systemctl --user enable --now modelforge
+journalctl --user -u modelforge -f
+loginctl enable-linger "$USER"   # keep running after logout
 ```
 
-### 3. Check Status
+`WorkingDirectory` matters: relative dataset paths and the default `./modelforge_output` are resolved from it. Generate a token with `python -c "import secrets; print(secrets.token_urlsafe(32))"`. Anyone who can read the unit file can read the token.
+
+If the service restarts during a run, that run is marked failed on startup and can be resumed from its last checkpoint. See [Checkpoints and Resuming](../user-guide/checkpoints.md).
+
+## Multiple GPUs
+
+ModelForge sums the VRAM of all GPUs NVML reports. The browser console trains on every detected GPU; the terminal wizard asks which ones to use, and the REST API accepts `gpu_indices`. ModelForge sets `CUDA_VISIBLE_DEVICES` itself from that selection, so setting it in your shell before `modelforge run` does not restrict the browser console. See [Multi-GPU](../strategies/multi-gpu.md).
+
+## Installing from source
+
+A source checkout builds the browser UI during install, so it needs **Node.js and npm** on `PATH` in addition to Python 3.13. The repository pins Node in `.node-version` (22.x).
 
 ```bash
-sudo systemctl status modelforge
+git clone https://github.com/ForgeOpus/ModelForge.git
+cd ModelForge
+pip install -e ".[dev]"      # runs npm ci && npm run build via setup.py
+modelforge run --no-browser
 ```
 
-### 4. View Logs
-
-```bash
-sudo journalctl -u modelforge -f
-```
+If Node.js or npm is missing, or the frontend build fails, the install stops with an error instead of producing a package without a UI. Installing a published wheel from PyPI does not need Node. See [Development Setup](../contributing/development.md).
 
 ## Troubleshooting
 
-### CUDA Not Available
+### `nvidia-smi` works but no GPU appears in Settings
 
-**Problem**: `torch.cuda.is_available()` returns `False`
+NVML could not be initialized from the ModelForge process, which then reports no GPUs and plans for CPU. Check that the server runs as a user with access to `/dev/nvidia*`, and in containers that the GPU is passed through.
 
-**Solutions**:
-1. Verify NVIDIA drivers:
-   ```bash
-   nvidia-smi
-   ```
-2. Check CUDA installation:
-   ```bash
-   nvcc --version
-   ```
-3. Reinstall PyTorch with correct CUDA version
-4. Check LD_LIBRARY_PATH includes CUDA libs:
-   ```bash
-   echo $LD_LIBRARY_PATH
-   ```
-
-### Driver Version Mismatch
-
-**Problem**: `CUDA driver version is insufficient`
-
-**Solution**:
-Update NVIDIA drivers to version 525.60 or newer.
-
-### Permission Denied
-
-**Problem**: Cannot create files/directories
-
-**Solution**:
-```bash
-sudo chown -R $USER:$USER ~/ModelForge
-```
-
-### Port Already in Use
-
-**Problem**: `Address already in use: 8000`
-
-**Solutions**:
-1. Check what's using port 8000:
-   ```bash
-   sudo lsof -i :8000
-   ```
-2. Kill the process or use a different port:
-   ```bash
-   modelforge --port 8080
-   ```
-
-### Out of Memory (OOM)
-
-**Problem**: Training crashes with OOM error
-
-**Solutions**:
-1. Use QLoRA strategy for memory efficiency
-2. Reduce batch size
-3. Use gradient checkpointing
-4. Use a smaller model
-5. See [Performance Optimization](../troubleshooting/performance.md)
-
-## Docker Installation (Alternative)
-
-### 1. Install Docker
-
-**Ubuntu:**
-```bash
-sudo apt install -y docker.io
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo usermod -aG docker $USER
-```
-
-Log out and back in for group changes to take effect.
-
-### 2. Install NVIDIA Container Toolkit
+### Port 8000 already in use
 
 ```bash
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-sudo systemctl restart docker
+modelforge run --port 8080
 ```
 
-### 3. Create Dockerfile and Build
+### `ImportError` for click or rich
 
-Create a `Dockerfile`:
+`modelforge cli` and `modelforge tensorboard` need the `[cli]` extra: `pip install "modelforge-finetuning[cli]"`.
 
-```dockerfile
-FROM ubuntu:22.04
+### Out of memory during training
 
-# Install Python 3.11
-RUN apt-get update && apt-get install -y \
-    software-properties-common \
-    && add-apt-repository ppa:deadsnakes/ppa -y \
-    && apt-get update \
-    && apt-get install -y \
-    python3.11 \
-    python3.11-venv \
-    python3.11-dev \
-    python3-pip \
-    git \
-    wget \
-    && rm -rf /var/lib/apt/lists/*
+See [Performance and Memory](../troubleshooting/performance.md).
 
-# Set Python 3.11 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+## Next steps
 
-# Install CUDA (if needed for GPU support)
-# Skip if using NVIDIA base image
-RUN wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
-    && dpkg -i cuda-keyring_1.1-1_all.deb \
-    && apt-get update \
-    && apt-get install -y cuda-toolkit-12-6 \
-    && rm cuda-keyring_1.1-1_all.deb
-
-# Install ModelForge from PyPI
-RUN pip install --no-cache-dir modelforge-finetuning
-
-# Install PyTorch with CUDA
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-
-# Install Unsloth (optional)
-RUN pip install --no-cache-dir unsloth
-
-# Set working directory
-WORKDIR /workspace
-
-# Expose port
-EXPOSE 8000
-
-# Run ModelForge
-CMD ["modelforge", "--host", "0.0.0.0"]
-```
-
-Build and run:
-
-```bash
-# Build the image
-docker build -t modelforge:latest .
-
-# Run container
-docker run --gpus all -p 8000:8000 \
-  -e HUGGINGFACE_TOKEN=your_token_here \
-  -v modelforge-data:/root/.local/share/modelforge \
-  modelforge:latest
-```
-
-## Next Steps
-
-- **[Post-Installation Setup](post-installation.md)** - Configure ModelForge
-- **[Quick Start Guide](../getting-started/quickstart.md)** - Run your first training
-- **[Configuration Guide](../configuration/configuration-guide.md)** - Learn all options
-- **[Unsloth Provider](../providers/unsloth.md)** - Enable 2x faster training
-
----
-
-**Need Help?** Check [Common Issues](../troubleshooting/common-issues.md) or ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions).
+- [Post-Installation Setup](post-installation.md)
+- [Quick Start](../getting-started/quickstart.md)
+- [Memory Optimizations](../strategies/memory-optimizations.md)
