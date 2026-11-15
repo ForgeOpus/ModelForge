@@ -1,435 +1,217 @@
-# Frequently Asked Questions (FAQ)
+# FAQ
 
-Common questions and answers about ModelForge.
+Short answers to common questions about ModelForge v4, with links to the pages that go deeper. For error messages, see [Common issues](common-issues.md).
 
 ## General
 
 ### What is ModelForge?
 
-ModelForge is a no-code toolkit for fine-tuning Large Language Models on your local GPU. It provides a web-based UI for training custom models without writing code.
+A tool that fine-tunes open models from the Hugging Face Hub on your own machine. It reads your GPUs, works out how large a model fits, picks a training recipe for your goal, and runs it while you watch the loss. You can use it from a browser console (`modelforge run`), a terminal wizard (`modelforge cli`) or a notebook (`modelforge-nb`). All three share the same planning and training code. See [Concepts](../getting-started/concepts.md).
 
-### Is ModelForge free?
+### Is it free?
 
-Yes! ModelForge is open-source under the MIT license. You can use it freely for personal or commercial projects.
+Yes. ModelForge is open source under the BSD-3-Clause licence. The models you train keep their own licences, and gated models like Llama require you to accept theirs on the Hub.
 
-### What's the difference between v2.x and v3?
+### What changed from v3?
 
-v3 builds on the v2 architecture with:
-- Apple Silicon (MPS) support — train on M1/M2/M3/M4/M5 Macs natively
-- Interactive CLI wizard (`modelforge cli`) for headless/SSH environments
-- Optional quantization — bitsandbytes moved to `[quantization]` extra for a lighter base install
-- Schema validation — catches incompatible config combinations at startup
+v4 is a rewrite. The planner now chooses the model, tier and training config from your hardware; there are no per-model JSON configs to edit. Training runs on the Hugging Face stack only (Transformers, TRL, PEFT, Accelerate); Unsloth and the separate RLHF strategy are gone. GRPO reinforcement training and native trainers for summarization and extractive QA were added, there's a new browser console with a Playground, and Python 3.13 is required. See [What's new](../getting-started/whats-new.md).
 
-All existing v2 workflows remain compatible.
+### Does it send my data anywhere?
 
-## System Requirements
+No. Datasets, checkpoints and models stay on the machine running the server. It contacts the Hugging Face Hub to search and download models and Hub datasets, and only uploads when you press **Push** for a model. Playground conversations are not stored on the server.
 
-### What are the minimum requirements?
+## Requirements and installation
 
-**NVIDIA GPU (Windows/Linux):**
-- Python 3.11.x
-- NVIDIA GPU with 4GB+ VRAM
-- CUDA 11.8 or 12.x
-- 8GB RAM
-- 10GB free disk space
+### What do I need?
 
-**Apple Silicon Mac (macOS):**
-- Python 3.11.x
-- Apple Silicon Mac (M1 or later) with 8GB+ unified memory
-- macOS 12.3 or later
-- 10GB free disk space
+- Python 3.13 or newer.
+- An NVIDIA GPU with CUDA for practical training. More VRAM means larger models.
+- Disk space for base models, checkpoints and outputs.
 
-### Can I run ModelForge without a GPU?
+See [Hardware and memory](../configuration/hardware-profiles.md) for what fits where.
 
-Yes, but training will be extremely slow (10-100x slower). Only recommended for testing with very small models.
+### Can I run it without a GPU?
 
-### Can I use AMD or Intel GPUs?
+Yes, but only for tiny models. CPU-only plans cap the model at 500M parameters (less on machines with little RAM) and train a LoRA adapter on full-precision weights. Expect it to be very slow.
 
-Currently, only NVIDIA GPUs are supported due to CUDA requirements.
+### Does it work on a Mac?
 
-### Does ModelForge work on macOS?
+On Apple Silicon, yes, with limits. MPS memory is counted as 8 GB, bitsandbytes quantization isn't available, and the plan picks full fine-tuning or LoRA bf16 of a small model. See [macOS (Apple Silicon)](../installation/macos-mps.md).
 
-**Yes — Apple Silicon Macs are supported via PyTorch's MPS backend (added in v3).**
+### AMD or Intel GPUs?
 
-Supported chips: M1, M2, M3, M4, M5. Intel Macs are not supported (no MPS).
+Not supported. GPU detection uses NVIDIA's NVML, so other GPUs aren't seen and the machine is planned as CPU-only.
 
-**Limitations on MPS:**
-- HuggingFace provider only (Unsloth requires NVIDIA CUDA)
-- No 4-bit/8-bit quantization (bitsandbytes is CUDA-only)
-- Smaller models recommended (1–7B depending on unified memory)
+### Does it work on Windows?
 
-See the **[macOS Installation Guide](../installation/macos-mps.md)** for full setup instructions.
+Natively, for single-GPU training, once you install a CUDA build of PyTorch. Liger kernels and multi-GPU training need Linux, so use WSL2 for those. See [Windows issues](windows-issues.md).
 
-## Installation
+### Which extras should I install?
 
-### Why Python 3.11 specifically?
-
-Some dependencies don't yet support Python 3.12. We'll add support when the ecosystem catches up.
-
-### How do I check my CUDA version?
+| Extra | Adds | Install when |
+|---|---|---|
+| `[cli]` | click, rich | You want `modelforge cli` or `modelforge tensorboard`. |
+| `[gpu]` | liger-kernel | You train on CUDA under Linux and want lower memory use. |
 
 ```bash
-nvcc --version
+pip install "modelforge-finetuning[cli,gpu]"
 ```
 
-### Can I install ModelForge in a conda environment?
+### Can I use conda or uv?
 
-Yes! Create environment with Python 3.11:
-```bash
-conda create -n modelforge python=3.11
-conda activate modelforge
-pip install modelforge-finetuning
-```
-
-### Installation fails with "No matching distribution"
-
-Make sure you're using Python 3.11:
-```bash
-python --version  # Should show 3.11.x
-```
-
-## Windows-Specific
-
-### Does ModelForge work on Windows?
-
-Yes! The HuggingFace provider works perfectly on native Windows. For Unsloth support, use WSL or Docker.
-
-### Why doesn't Unsloth work on Windows?
-
-Unsloth requires Linux-specific libraries and compilation. Use WSL 2 or Docker for Unsloth support.
-
-### How do I install WSL?
-
-Open PowerShell as Administrator:
-```powershell
-wsl --install -d Ubuntu-22.04
-```
-
-See [Windows Installation Guide](../installation/windows.md) for details.
-
-### Do I need to install NVIDIA drivers in WSL?
-
-No! WSL uses your Windows NVIDIA drivers automatically. Only install CUDA Toolkit in WSL.
+Yes. Any environment with Python 3.13 works. Install with `pip` inside the conda environment, or with `uv pip install` / `uv add`.
 
 ## Training
 
+### Which objective should I use?
+
+- **Supervised (SFT)**: you have examples of the input and the ideal output. Start here.
+- **Preference (DPO)**: you have pairs of a better and a worse answer to the same prompt, and want to steer an already-capable model.
+- **Reinforcement (GRPO)**: you have prompts with one exactly correct answer each, such as arithmetic or short factual answers.
+
+See [Strategies overview](../strategies/overview.md).
+
+### Which use cases are supported?
+
+Instruction Following and Text Generation (supervised, preference, reinforcement), Summarization (supervised) and Extractive QA (supervised). See [Use cases and tasks](../configuration/training-tasks.md).
+
+### How does it decide full fine-tuning vs LoRA vs QLoRA?
+
+It computes a parameter ceiling for each tier from your VRAM, searches the Hub for popular models of the right type under the largest ceiling, picks the largest candidate, then uses the least quantized tier that fits that model. See [How planning works](../configuration/configuration-guide.md) and [LoRA and QLoRA](../strategies/qlora.md).
+
+### Can I change the hyperparameters?
+
+Not in the console, which shows the training config read-only. Through the API you can send an edited plan to `POST /api/runs`; it's used as sent when `model_id` is the plan's first candidate. See [Training config](../api-reference/training-config.md#overriding-the-plan).
+
 ### How long does training take?
 
-Depends on model size, dataset size, and hardware:
+It depends on the model size, dataset size, sequence length and GPU. The defaults train for 3 epochs. The run page shows progress and an estimated time remaining once steps are being logged. See [Performance](performance.md) for ways to speed it up.
 
-| Model Size | Dataset | GPU | Provider | Time |
-|------------|---------|-----|----------|------|
-| 1B | 500 examples | RTX 3060 | HuggingFace | 10 min |
-| 1B | 500 examples | RTX 3060 | Unsloth | 5 min |
-| 7B | 1000 examples | RTX 3090 | HuggingFace | 90 min |
-| 7B | 1000 examples | RTX 3090 | Unsloth | 45 min |
+### Can I train several models at once?
 
-### How much VRAM do I need?
+Not in one server: one run trains at a time, and starting another returns `409`. Running several ModelForge processes at once isn't supported either, because they share one run database and a starting process marks other processes' active runs as failed.
 
-| Model Size | Minimum VRAM | Recommended VRAM |
-|------------|--------------|------------------|
-| < 1B | 4GB | 6GB |
-| 1-3B | 6GB | 8GB |
-| 3-7B | 8GB | 12GB |
-| 7-13B | 12GB | 16GB |
-| 13B+ | 16GB | 24GB+ |
+### Can I pause and resume?
 
-Use QLoRA strategy to reduce memory usage by 30-50%.
+There's no pause, but there is resume. Checkpoints are saved every 500 steps. Cancel a run, then press **Resume** beside a checkpoint to start a new run that continues from it. See [Checkpoints](../user-guide/checkpoints.md).
 
-### Can I train multiple models simultaneously?
+### What happens if the server stops mid-run?
 
-Not recommended. Training uses all available VRAM. Train one model at a time.
+The run ends with it. On the next start it's marked failed with `ModelForge stopped before this run reached a terminal state.` Its checkpoints are intact, so you can resume.
 
-### Can I pause and resume training?
+### How do I know training is working?
 
-Currently not supported. Training must complete in one session. Use checkpointing to save progress.
+Watch the loss in the run's training log; it should trend down over the first few hundred steps. TensorBoard logs are written to `<output dir>/tensorboard` by default. View them with:
 
-### How do I know if training is working?
+```bash
+modelforge tensorboard ./modelforge_output/tensorboard
+```
 
-Monitor in the UI:
-- Loss should decrease over time
-- Accuracy/metrics should improve
-- No errors in console
+### Why did a browser tab with TensorBoard open on the server?
+
+When a run starts with TensorBoard enabled, the trainer launches TensorBoard on `127.0.0.1:6006` on the training machine and asks the system to open it in a browser. On a headless server nothing opens. To view it from another machine, forward port 6006 over SSH.
+
+### Can I use multiple GPUs?
+
+On Linux, yes. Every detected GPU is used by default, with data parallel, or FSDP for full fine-tunes too large for one card. Use `gpu_indices` through the API to train on a subset. DeepSpeed and tensor parallelism are not supported. See [Multi-GPU training](../strategies/multi-gpu.md).
 
 ## Datasets
 
-### What dataset format does ModelForge use?
+### What formats can I use?
 
-JSONL (JSON Lines). Each line is one JSON object.
+Local `.jsonl`, `.json`, `.csv`, `.parquet`, `.arrow` and `.txt` files, a directory of shards, or a Hugging Face Hub dataset ID. Column names depend on the use case and objective; for example supervised Instruction Following needs `prompt` and `completion` (or `instruction` and `response`). See [Dataset formats](../configuration/dataset-formats.md).
 
-See [Dataset Formats](../configuration/dataset-formats.md) for details.
+### Can I use a chat `messages` column?
+
+Not through the built-in use cases. Their validation requires prompt/completion columns (or their aliases) for supervised training. Convert multi-turn chats into prompt/completion pairs.
 
 ### How many examples do I need?
 
-Minimum: 100 examples  
-Recommended: 1,000+ examples  
-Optimal: 5,000+ examples  
+There's no fixed minimum. A few hundred clean, consistent examples are often enough to change a model's format or style; teaching new knowledge or skills takes far more. Quality matters more than quantity.
 
-Quality > quantity!
+### Where should the dataset be?
 
-### Can I use datasets from HuggingFace?
+On the machine running the server. Local paths are resolved there, relative to the folder `modelforge run` was started in. Use **Validate** to check the path and columns before you train.
 
-Yes! Convert them to JSONL format:
+### Can I use private or gated Hub datasets?
 
-```python
-from datasets import load_dataset
-import json
-
-dataset = load_dataset("your-dataset", split="train")
-
-with open('dataset.jsonl', 'w') as f:
-    for item in dataset:
-        f.write(json.dumps({"input": item["text"], "output": item["label"]}) + '\n')
-```
-
-### Can I fine-tune on copyrighted data?
-
-Check the license of your data. Fine-tuning on copyrighted material may violate copyright laws.
+Yes, after `hf auth login` on the server machine with an account that has access.
 
 ## Models
 
-### What models are supported?
+### Which base models can I use?
 
-All HuggingFace models compatible with Transformers:
-- Llama (1, 2, 3)
-- Mistral
-- Qwen
-- Gemma
-- Phi
-- BART
-- T5
-- And many more!
+Any Hub model with the right pipeline tag for the use case, a published safetensors parameter count, and a size that fits your hardware. The planner suggests popular ones; you can type any other ID. Models that need `trust_remote_code` aren't loaded by the Playground's one-shot path. See [Hugging Face provider](../providers/huggingface.md).
 
-### Can I use gated models (like Llama)?
+### Can I use gated models like Llama?
 
-Yes! You need:
-1. Accept license on HuggingFace
-2. Use access token with proper permissions
+Yes. Accept the licence on the model's Hub page, then run `hf auth login` on the server machine.
 
-### Can I use local models?
+### Can I fine-tune a model from a local folder?
 
-Yes! Provide local path instead of HuggingFace ID:
+Not from the console. Planning and model validation look the model up on the Hub, so a local path is refused there. Through the API, a full `recommendation` whose first `recommended_models` entry is the local path skips that lookup and the folder is loaded with `from_pretrained`, but this path isn't tested and nothing checks the model fits.
 
-```json
-{
-  "model_name": "/path/to/local/model"
-}
-```
+### What do I get at the end?
 
-### How do I download my trained model?
+The output directory you chose contains the trained model (the full model for full fine-tuning, just the adapter for LoRA and QLoRA), the tokenizer, every checkpoint, TensorBoard logs, and `modelforge_config.json`. Adapters aren't merged into the base weights.
 
-Navigate to Models tab in UI and click Download, or find checkpoints in:
-- Linux: `~/.local/share/modelforge/model_checkpoints/`
-- Windows: `C:\Users\<user>\AppData\Local\modelforge\model_checkpoints\`
+### How do I use the trained model elsewhere?
 
-## Providers
+Load it with Transformers (`from_pretrained` on the folder), or with PEFT on top of the base model named in `modelforge_config.json` for adapter runs. Or push it to the Hub from **Artifacts**.
 
-### What's the difference between HuggingFace and Unsloth?
+### Can I chat with the model before training finishes?
 
-| Feature | HuggingFace | Unsloth |
-|---------|-------------|---------|
-| Speed | 1x | 2x |
-| Memory | Baseline | -20% |
-| Platform | All | Linux/WSL/Docker |
-| Compatibility | All models | Llama, Mistral, Qwen, Gemma, Phi |
+Yes. The Playground can load any registered checkpoint, including from a run that is still training. During training it runs on CPU and disk so it doesn't take the trainer's VRAM. See [Playground](../user-guide/playground.md).
 
-### Should I use Unsloth?
+## Strategies and providers
 
-Use Unsloth if:
-- Running on Linux or WSL
-- Using supported models
-- Need faster training
-- Have limited VRAM
+### What's the difference between LoRA and QLoRA?
 
-Use HuggingFace if:
-- On native Windows
-- Using unsupported models
-- Maximum compatibility needed
+Both freeze the base model and train small adapter matrices. QLoRA additionally stores the frozen weights in 8-bit or 4-bit form, so larger models fit, at some cost in speed and quality. See [LoRA and QLoRA](../strategies/qlora.md).
 
-### Why does Unsloth require max_seq_length?
+### Can I write my own reward function for GRPO?
 
-Unsloth pre-allocates memory for performance. Auto-inference (`-1`) is not supported.
+No. GRPO uses one built-in reward: 1.0 when the completion, trimmed of surrounding whitespace, exactly equals the row's `answer`, otherwise 0.0. Executable reward functions are deliberately not accepted. See [GRPO](../strategies/grpo.md).
 
-## Strategies
+### Is Unsloth supported?
 
-### What's the difference between SFT and QLoRA?
+No. v4 has one provider, Hugging Face. Providers are pluggable in code; see [Custom providers](../providers/custom-providers.md).
 
-**SFT**: Standard supervised fine-tuning with LoRA
-**QLoRA**: Quantized LoRA using 4-bit quantization for lower memory
+### Can I add my own strategy or use case?
 
-QLoRA uses 30-50% less memory with minimal quality loss.
+Yes, in code. See [Custom strategies](../strategies/custom-strategies.md) and [Adding a use case](../contributing/use-cases.md).
 
-### When should I use RLHF vs DPO?
+## API and deployment
 
-In ModelForge, both RLHF and DPO use TRL's `DPOTrainer` internally. The difference is in default hyperparameters:
+### Can I script ModelForge?
 
-- **RLHF**: More conservative defaults (lr=1.41e-5, 1 epoch) — suited for careful alignment
-- **DPO**: Standard defaults (lr=5e-7, 3 epochs) — good general-purpose preference learning
-
-Both require preference data (prompt/chosen/rejected) and `"task": "text-generation"`. Start with SFT for most use cases.
-
-### What is `modelforge cli`?
-
-`modelforge cli` launches an 8-step interactive wizard in the terminal. It's ideal for headless servers, SSH sessions, or Jupyter notebooks where a browser isn't available. Install the CLI extra first:
-
-```bash
-pip install modelforge-finetuning[cli]
-```
-
-### Why do I get "bitsandbytes is required" error?
-
-bitsandbytes is now an optional dependency. Install it with:
-
-```bash
-pip install modelforge-finetuning[quantization]
-```
-
-### What happened to legacy tuners (CausalLLMTuner, Finetuner, etc.)?
-
-Legacy tuners were removed in v2.1. Use the provider/strategy pattern instead:
-
-```json
-{
-  "provider": "huggingface",
-  "strategy": "sft"
-}
-```
-
-### What's the difference between RLHF and DPO in ModelForge?
-
-Both use TRL's `DPOTrainer` internally — no PPO, no reward model needed. The only difference is default hyperparameters. RLHF uses more conservative settings (lower learning rate, fewer epochs) while DPO uses standard settings.
-
-### Can I mix strategies?
-
-No. Choose one strategy per training run.
-
-## Errors
-
-### "CUDA out of memory"
-
-Solutions:
-1. Reduce `per_device_train_batch_size`
-2. Use QLoRA strategy
-3. Reduce `max_seq_length`
-4. Enable `gradient_checkpointing`
-5. Use smaller model
-
-### "Model not found"
-
-Check:
-1. Model ID is correct
-2. HuggingFace token is set
-3. You have access to gated models
-4. Internet connection is working
-
-### "Dataset validation failed"
-
-Check:
-1. File is valid JSONL
-2. Required fields are present
-3. All values are strings
-4. At least 10 examples
-
-### "Provider not found"
-
-Check:
-1. Provider is installed (`pip install unsloth`)
-2. Provider name is correct (`huggingface` or `unsloth`)
-3. On correct platform (Unsloth needs Linux/WSL)
-
-## Performance
-
-### Training is very slow
-
-1. Use Unsloth provider (2x faster)
-2. Use QLoRA strategy
-3. Increase batch size if you have VRAM
-4. Use fp16 or bf16
-5. Enable gradient checkpointing
-
-### How do I speed up training?
-
-Best practices:
-- Use Unsloth provider
-- Larger batch size (if VRAM allows)
-- Use bf16 on Ampere+ GPUs (RTX 30xx/40xx)
-- Reduce gradient accumulation steps
-- Use NVMe SSD for dataset storage
-
-### How do I reduce memory usage?
-
-Best practices:
-- Use QLoRA strategy
-- Enable 4-bit quantization
-- Reduce batch size
-- Reduce max_seq_length
-- Enable gradient checkpointing
-
-## API
-
-### Can I use ModelForge via API?
-
-Yes! ModelForge provides a REST API. See [API Documentation](../api-reference/rest-api.md).
-
-### Can I integrate ModelForge into my app?
-
-Yes! Use the API or import ModelForge as a library.
+Yes. Everything the console does goes through a token-authenticated JSON API on the same server. Start the server with `--token` so the token stays fixed. See [REST API](../api-reference/rest-api.md).
 
 ### Is there a Python SDK?
 
-Not yet, but you can use the REST API with `requests`.
+There's no separate client package. Use any HTTP client against the REST API, or call the Python modules directly (`workflow.service.WorkflowService`, `workflow.jobs.TrainingJobManager`), which is what the notebook interface does. See [Architecture](../contributing/architecture.md).
 
-## Deployment
+### Is there a Docker image?
 
-### Can I deploy ModelForge to production?
+No official image is published.
 
-Yes! ModelForge is production-ready. Deploy with:
-- Docker containers
-- Systemd services
-- Cloud platforms (AWS, GCP, Azure)
+### Can I expose ModelForge on the internet?
 
-### How do I expose ModelForge to the internet?
+It isn't designed for that. The only protection is the startup token, there's no TLS and no user accounts, and anyone with the token can start runs and push models with your Hub login. Bind to `127.0.0.1` and use an SSH tunnel. If you must expose it, put it behind a reverse proxy with TLS and its own authentication.
 
-Use reverse proxy (nginx/Apache) with SSL:
+### Where is run history stored?
 
-```nginx
-server {
-    listen 443 ssl;
-    location / {
-        proxy_pass http://localhost:8000;
-    }
-}
-```
-
-### Can I use PostgreSQL instead of SQLite?
-
-Yes! ModelForge uses SQLAlchemy. Easy to switch to PostgreSQL.
+In a SQLite database, `modelforge.db`, in your user data folder: `~/.local/share/ModelForge` on Linux, `~/Library/Application Support/ModelForge` on macOS, `%LOCALAPPDATA%\ForgeOpus\ModelForge` on Windows. Deleting it clears run history and the model registry, but not the output folders.
 
 ## Contributing
 
 ### How can I contribute?
 
-See [Contributing Guide](../contributing/contributing.md) for:
-- Reporting bugs
-- Suggesting features
-- Submitting PRs
-- Adding model configurations
+Bug reports, documentation fixes and pull requests are welcome at [github.com/ForgeOpus/ModelForge](https://github.com/ForgeOpus/ModelForge). See [Contributing](../contributing/contributing.md) and [Development setup](../contributing/development.md).
 
-### How do I add a new provider?
+## See also
 
-Create provider class and register in factory. See [Custom Providers](../providers/custom-providers.md).
-
-### How do I add model recommendations?
-
-Add JSON config file to `model_configs/`. See [Model Configurations](../contributing/model-configs.md).
-
-## Still Have Questions?
-
-- Check [Troubleshooting Guide](common-issues.md)
-- Search [GitHub Issues](https://github.com/forgeopus/modelforge/issues)
-- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
-- Create new issue if bug
-
----
-
-**Can't find your answer?** Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)!
+- [Common issues](common-issues.md)
+- [Performance and out-of-memory](performance.md)
+- [Windows issues](windows-issues.md)
+- [Quickstart](../getting-started/quickstart.md)

@@ -1,5 +1,5 @@
 # Documentation build requirements for Read the Docs
-mkdocs>=1.5.0
-mkdocs-material>=9.5.0
-mkdocs-awesome-pages-plugin>=2.9.0
+mkdocs>=1.6,<2
+mkdocs-material>=9.5
+mkdocs-redirects>=1.2
 pymdown-extensions>=10.0

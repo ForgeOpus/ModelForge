@@ -1,10 +1,11 @@
 site_name: ModelForge Documentation
-site_description: Complete documentation for ModelForge - A no-code toolkit for fine-tuning Large Language Models
+site_description: Documentation for ModelForge, a hardware-aware fine-tuning toolkit with browser, terminal and notebook interfaces
 site_author: R3tr0 M1ll3r
-site_url: https://modelforge.readthedocs.io
+site_url: https://modelforge-finetuning.readthedocs.io/
 
-repo_name: forgeopus/modelforge
-repo_url: https://github.com/forgeopus/modelforge
+repo_name: ForgeOpus/ModelForge
+repo_url: https://github.com/ForgeOpus/ModelForge
+edit_uri: edit/main/docs/
 
 theme:
   name: material
@@ -32,7 +33,12 @@ theme:
 
 markdown_extensions:
   - admonition
-  - codehilite
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
   - pymdownx.superfences
   - pymdownx.tabbed:
       alternate_style: true
@@ -45,61 +51,67 @@ markdown_extensions:
 
 nav:
   - Home: README.md
-  
   - Getting Started:
-    - Quick Start Guide: getting-started/quickstart.md
-    - What's New in v3: getting-started/whats-new.md
-  
+    - Quick Start: getting-started/quickstart.md
+    - What's New in v4: getting-started/whats-new.md
+    - Fine-Tuning Concepts: getting-started/concepts.md
   - Installation:
-    - Windows Installation: installation/windows.md
-    - Linux Installation: installation/linux.md
+    - Windows: installation/windows.md
+    - Linux: installation/linux.md
     - macOS (Apple Silicon): installation/macos-mps.md
     - Post-Installation Setup: installation/post-installation.md
-  
+  - User Guide:
+    - Browser Console: user-guide/browser-console.md
+    - Playground: user-guide/playground.md
+    - Terminal Wizard: user-guide/terminal-cli.md
+    - Notebooks: user-guide/notebooks.md
+    - Checkpoints and Resuming: user-guide/checkpoints.md
   - Configuration:
-    - Configuration Guide: configuration/configuration-guide.md
+    - How Planning Works: configuration/configuration-guide.md
     - Dataset Formats: configuration/dataset-formats.md
-    - Training Tasks: configuration/training-tasks.md
-    - Hardware Profiles: configuration/hardware-profiles.md
-  
+    - Use Cases and Tasks: configuration/training-tasks.md
+    - Hardware and Memory: configuration/hardware-profiles.md
   - Providers:
     - Provider Overview: providers/overview.md
-    - HuggingFace Provider: providers/huggingface.md
-    - Unsloth Provider: providers/unsloth.md
-    - Adding Custom Providers: providers/custom-providers.md
-  
+    - Hugging Face Provider: providers/huggingface.md
+    - Adding a Provider: providers/custom-providers.md
   - Training Strategies:
     - Strategy Overview: strategies/overview.md
     - Supervised Fine-Tuning (SFT): strategies/sft.md
-    - QLoRA Strategy: strategies/qlora.md
-    - RLHF Strategy: strategies/rlhf.md
-    - DPO Strategy: strategies/dpo.md
-    - Adding Custom Strategies: strategies/custom-strategies.md
-  
+    - Preference Training (DPO): strategies/dpo.md
+    - Reinforcement Training (GRPO): strategies/grpo.md
+    - Full Fine-Tuning: strategies/full-finetuning.md
+    - LoRA and QLoRA: strategies/qlora.md
+    - Multi-GPU (Data Parallel and FSDP): strategies/multi-gpu.md
+    - Memory Optimizations: strategies/memory-optimizations.md
+    - Adding a Strategy: strategies/custom-strategies.md
   - API Reference:
-    - REST API Documentation: api-reference/rest-api.md
-    - Training Configuration Schema: api-reference/training-config.md
-    - Response Formats: api-reference/responses.md
-  
+    - REST API: api-reference/rest-api.md
+    - Training Configuration: api-reference/training-config.md
+    - Responses and Events: api-reference/responses.md
+    - CLI Commands: api-reference/cli.md
   - Troubleshooting:
     - Common Issues: troubleshooting/common-issues.md
     - Windows-Specific Issues: troubleshooting/windows-issues.md
     - FAQ: troubleshooting/faq.md
-    - Performance Optimization: troubleshooting/performance.md
-  
+    - Performance and Memory: troubleshooting/performance.md
   - Contributing:
     - Contributing Guide: contributing/contributing.md
     - Development Setup: contributing/development.md
     - Architecture Overview: contributing/architecture.md
-    - Model Configurations: contributing/model-configs.md
+    - Adding a Use Case: contributing/use-cases.md
 
 plugins:
   - search
-  - awesome-pages
+  - redirects:
+      redirect_maps:
+        providers/unsloth.md: providers/overview.md
+        strategies/rlhf.md: strategies/grpo.md
+        contributing/model-configs.md: contributing/use-cases.md
 
 extra:
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/forgeopus/modelforge
+      link: https://github.com/ForgeOpus/ModelForge
     - icon: fontawesome/brands/python
       link: https://pypi.org/project/modelforge-finetuning/

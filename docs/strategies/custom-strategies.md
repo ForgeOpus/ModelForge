@@ -1,544 +1,382 @@
-# Adding Custom Strategies
+# Custom strategies
 
-Extend ModelForge with your own training strategies.
+This is a developer guide to adding a training strategy to ModelForge v4: the base class contract, how registration works, how to make the strategy reachable from a use case or objective, how to set its memory multipliers, and which tests to add. It assumes a source checkout. See [Development setup](../contributing/development.md).
 
-## Overview
+A strategy owns one training algorithm. It declares what tasks and providers it supports and how much memory it needs, builds a hardware-aware default config, and runs training. It doesn't choose the model, the PEFT tier or the parallelism strategy. The recommendation engine does that. See [Strategies overview](overview.md).
 
-ModelForge's strategy system is designed to be extensible. You can add support for new training algorithms, optimization techniques, or custom fine-tuning approaches.
+## Where strategies plug in
 
-## What is a Strategy?
-
-A **strategy** defines how models are trained:
-- Model preparation (adapters, PEFT configuration)
-- Dataset formatting and preprocessing
-- Trainer setup and configuration
-- Training algorithm and optimization
-- Evaluation metrics
-
-## Strategy Interface
-
-All strategies must implement these core methods:
-
-```python
-from typing import Any, Dict, List
-
-class TrainingStrategy:
-    """Base interface for training strategies."""
-    
-    def get_strategy_name(self) -> str:
-        """Return the strategy name."""
-        ...
-    
-    def prepare_model(self, model: Any, config: Dict) -> Any:
-        """Prepare model for training (add adapters, etc.)."""
-        ...
-    
-    def prepare_dataset(
-        self,
-        dataset: Any,
-        tokenizer: Any,
-        config: Dict
-    ) -> Any:
-        """Format and prepare dataset for training."""
-        ...
-    
-    def create_trainer(
-        self,
-        model: Any,
-        train_dataset: Any,
-        eval_dataset: Any,
-        tokenizer: Any,
-        config: Dict,
-        callbacks: List = None
-    ) -> Any:
-        """Create and configure the trainer."""
-        ...
-    
-    def get_required_dataset_fields(self) -> List[str]:
-        """Return required dataset field names."""
-        ...
+```text
+use case + objective
+   │  RecommendationEngine._resolve_use_case_and_strategy
+   ▼
+strategy class  ── extra_model_copies, batch_multiplier ──► tier ceilings, model search
+   │  build_recommended_config(peft_tier, hardware, chosen_model)
+   ▼
+Recommendation(strategy_slug, strategy_config, peft_config, ...)
+   │  WorkflowService.validate_dataset ─► Strategy.validate_data_format(split)
+   │  workflow/training.py::assemble_and_train
+   ▼
+strategy = Strategy()
+strategy.set_config({...})
+strategy.finetune(model_id, dataset, task_slug, provider, ...)   # once per GPU, via Accelerate
 ```
 
-## Creating a Custom Strategy
+## The base class
 
-### Step 1: Create Strategy Class
+`finetuning_strategies/strategies/strategy.py` defines `FinetuningStrategy(ABC)`.
 
-Create a new file in `ModelForge/strategies/`:
+### Required class attributes
+
+`__init_subclass__` checks these when the class is defined and raises `ValueError` if one is missing or invalid:
+
+| Attribute | Type | Rule |
+|---|---|---|
+| `slug` | `str` | Unique across all strategies. A duplicate raises `Duplicate slug '...'`. |
+| `name` | `str` | Display name. |
+| `description` | `str` | Shown in `/api/system`. |
+| `supported_providers` | `list[str]` | Must be a **list** of strings, for example `["huggingface"]`. |
+| `supported_tasks` | `list[str]` | Non-empty list of task slugs: `causal_language_modeling`, `seq2seq_modeling`, `question_answering` or `token_classification`. |
+| `extra_model_copies` | `int` | `>= 0`. Additional full model copies in VRAM. |
+| `batch_multiplier` | `float` | `> 0.0`. Activation memory relative to SFT's 1.0. |
+
+### Abstract methods
+
+These are the exact signatures in `strategy.py`:
 
 ```python
-# ModelForge/strategies/custom_strategy.py
+@abstractmethod
+def set_config(self, config: Dict[str, Any]) -> None: ...
 
-from typing import Any, Dict, List
-from peft import LoraConfig, get_peft_model, TaskType, prepare_model_for_kbit_training
-from transformers import TrainingArguments, Trainer
+@abstractmethod
+def finetune(self, model, data, task_slug: str, provider,
+             peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"],
+             output_dir: str, peft_config=None, callbacks=None,
+             resume_from_checkpoint: str | None = None) -> Any: ...
 
-from ..logging_config import logger
-from ..exceptions import TrainingError
-
-class CustomStrategy:
-    """Custom training strategy implementation."""
-    
-    def __init__(self):
-        """Initialize the custom strategy."""
-        logger.info("Initializing CustomStrategy")
-    
-    def get_strategy_name(self) -> str:
-        """Return strategy name."""
-        return "custom"
-    
-    def prepare_model(self, model: Any, config: Dict) -> Any:
-        """
-        Prepare model for custom training.
-        
-        Args:
-            model: Base model instance
-            config: Configuration dictionary
-            
-        Returns:
-            Prepared model
-        """
-        logger.info("Preparing model for custom strategy")
-        
-        # Apply quantization preparation if needed
-        if config.get("use_4bit") or config.get("use_8bit"):
-            model = prepare_model_for_kbit_training(model)
-        
-        # Apply LoRA adapters
-        if config.get("use_lora", True):
-            peft_config = LoraConfig(
-                r=config.get("lora_r", 16),
-                lora_alpha=config.get("lora_alpha", 32),
-                lora_dropout=config.get("lora_dropout", 0.1),
-                bias="none",
-                task_type=TaskType.CAUSAL_LM,
-                target_modules=config.get("target_modules", "all-linear"),
-            )
-            model = get_peft_model(model, peft_config)
-        
-        # Apply your custom model modifications here
-        model = self._apply_custom_modifications(model, config)
-        
-        logger.info("Model prepared successfully")
-        return model
-    
-    def prepare_dataset(
-        self,
-        dataset: Any,
-        tokenizer: Any,
-        config: Dict
-    ) -> Any:
-        """
-        Prepare dataset for custom training.
-        
-        Args:
-            dataset: Raw dataset
-            tokenizer: Tokenizer instance
-            config: Configuration dictionary
-            
-        Returns:
-            Prepared dataset
-        """
-        logger.info("Preparing dataset for custom strategy")
-        
-        # Validate required fields
-        required_fields = self.get_required_dataset_fields()
-        missing_fields = [f for f in required_fields if f not in dataset.column_names]
-        
-        if missing_fields:
-            raise TrainingError(
-                f"Dataset missing required fields: {missing_fields}. "
-                f"Required fields: {required_fields}"
-            )
-        
-        # Apply custom dataset transformations
-        dataset = self._transform_dataset(dataset, tokenizer, config)
-        
-        logger.info(f"Dataset prepared: {len(dataset)} examples")
-        return dataset
-    
-    def create_trainer(
-        self,
-        model: Any,
-        train_dataset: Any,
-        eval_dataset: Any,
-        tokenizer: Any,
-        config: Dict,
-        callbacks: List = None
-    ) -> Any:
-        """
-        Create custom trainer.
-        
-        Args:
-            model: Prepared model
-            train_dataset: Training dataset
-            eval_dataset: Evaluation dataset
-            tokenizer: Tokenizer instance
-            config: Training configuration
-            callbacks: Optional callbacks
-            
-        Returns:
-            Trainer instance
-        """
-        logger.info("Creating custom trainer")
-        
-        # Setup training arguments
-        training_args = TrainingArguments(
-            output_dir=config.get("output_dir", "./results"),
-            num_train_epochs=config.get("num_train_epochs", 3),
-            per_device_train_batch_size=config.get("per_device_train_batch_size", 4),
-            per_device_eval_batch_size=config.get("per_device_eval_batch_size", 4),
-            gradient_accumulation_steps=config.get("gradient_accumulation_steps", 4),
-            learning_rate=config.get("learning_rate", 2e-4),
-            weight_decay=config.get("weight_decay", 0.01),
-            warmup_ratio=config.get("warmup_ratio", 0.03),
-            lr_scheduler_type=config.get("lr_scheduler_type", "cosine"),
-            logging_steps=config.get("logging_steps", 10),
-            evaluation_strategy="steps",
-            eval_steps=config.get("eval_steps", 100),
-            save_strategy="steps",
-            save_steps=config.get("save_steps", 500),
-            fp16=config.get("fp16", False),
-            bf16=config.get("bf16", False),
-            gradient_checkpointing=config.get("gradient_checkpointing", True),
-            optim=config.get("optim", "paged_adamw_32bit"),
-        )
-        
-        # Create custom trainer or use standard Trainer
-        trainer = Trainer(
-            model=model,
-            args=training_args,
-            train_dataset=train_dataset,
-            eval_dataset=eval_dataset,
-            tokenizer=tokenizer,
-            callbacks=callbacks or [],
-        )
-        
-        return trainer
-    
-    def get_required_dataset_fields(self) -> List[str]:
-        """Return required dataset fields."""
-        return ["input", "output"]  # Customize based on your needs
-    
-    def _apply_custom_modifications(self, model: Any, config: Dict) -> Any:
-        """Apply custom model modifications."""
-        # Example: Add custom layers, freeze certain parameters, etc.
-        logger.info("Applying custom model modifications")
-        
-        # Your custom logic here
-        # model.add_custom_layer()
-        # freeze_base_model(model)
-        
-        return model
-    
-    def _transform_dataset(
-        self,
-        dataset: Any,
-        tokenizer: Any,
-        config: Dict
-    ) -> Any:
-        """Transform dataset for custom training."""
-        logger.info("Transforming dataset")
-        
-        # Example: Custom tokenization, formatting, etc.
-        def format_example(example):
-            # Your custom formatting logic
-            formatted = {
-                "input_ids": tokenizer.encode(
-                    example["input"],
-                    max_length=config.get("max_seq_length", 512),
-                    truncation=True,
-                    padding="max_length"
-                ),
-                "labels": tokenizer.encode(
-                    example["output"],
-                    max_length=config.get("max_seq_length", 512),
-                    truncation=True,
-                    padding="max_length"
-                )
-            }
-            return formatted
-        
-        dataset = dataset.map(
-            format_example,
-            remove_columns=dataset.column_names
-        )
-        
-        return dataset
+@classmethod
+@abstractmethod
+def build_recommended_config(cls, peft_tier: str, hardware: Any, chosen_model: Any) -> tuple[Any, Any | None]: ...
 ```
 
-### Step 2: Register Strategy in Factory
+### What callers actually rely on
 
-Edit `ModelForge/strategies/strategy_factory.py`:
+The abstract signatures are loose. The launch and validation code expects more than they state:
 
-```python
-from .custom_strategy import CustomStrategy
+- **A no-argument constructor.** `assemble_and_train` calls `strategy_cls()`.
+- **A static `validate_data_format(dataset)`.** It isn't declared on the base class, but `WorkflowService.validate_dataset` and the terminal wizard call `strategy_cls.validate_data_format(split)` on the alias-normalized dataset. Raise `ValueError` with a clear message on bad data. Without it, dataset validation fails with `AttributeError`.
+- **`finetune` called as:**
 
-STRATEGY_REGISTRY = {
-    "sft": SFTStrategy,
-    "qlora": QLoRAStrategy,
-    "rlhf": RLHFStrategy,
-    "dpo": DPOStrategy,
-    "custom": CustomStrategy,  # Add your strategy here
+    ```python
+    strategy.finetune(
+        model_id,                 # str: Hub ID, not a loaded model
+        dataset,                  # datasets.Dataset, aliases already renamed to canonical columns
+        recommendation.task_slug,
+        provider,                 # Provider instance: use provider.load_model / load_tokenizer
+        peft_approach=recommendation.peft_approach,
+        output_dir=output_dir,
+        peft_config=peft_config,  # peft.LoraConfig with task_type set, or None for full fine-tuning
+        callbacks=callbacks,      # list of transformers.TrainerCallback
+        resume_from_checkpoint=resume_from_checkpoint,
+    )
+    ```
+
+    The first four arguments are positional. Name the first two parameters `model_name` and `dataset` as the shipped strategies do. No evaluation dataset is passed.
+
+- **`set_config` receives a single dict** containing:
+    - `output_dir`;
+    - every non-`None` field of your recommended config. After a round trip through the HTTP API this is a plain dict, possibly edited by the user;
+    - when TensorBoard is on: `report_to=["tensorboard"]`, `logging_dir`, `logging_first_step=True`;
+    - under FSDP with 2+ GPUs: `fsdp`, `fsdp_config`, `gradient_checkpointing=False`, `use_liger_kernel=False`, `activation_offloading=False`.
+
+    Your `set_config` must accept all of these. If it forwards them to a TRL or Transformers config class that lacks one of them, the run fails.
+
+- **Pass `callbacks` to your Trainer.** `JobEventCallback` streams progress to the browser, records checkpoints from `args.output_dir/checkpoint-<step>` and stops training on cancel. Without it, runs show no progress and can't be cancelled.
+- **Save to `output_dir`.** Use `trainer.save_model(output_dir)` for full fine-tuning, `trainer.model.save_pretrained(output_dir)` for adapters, and save the tokenizer. The playground and the model registry read from there.
+- **Call `self.launch_tensorboard(args, trainer=trainer)`** before `trainer.train(...)`. It's a no-op unless `report_to` includes TensorBoard and the process is rank 0. It also points Transformers 5's TensorBoard callback at the run's log directory.
+
+`build_recommended_config` returns `(strategy_config, peft_config_or_None)`, both Pydantic models. The engine stores them without inspection. Return `None` as the second item for `full_finetune`. A `peft_config` needs `r`, `lora_alpha` and `target_modules`; `assemble_and_train` reads exactly those three. You can reuse `LoraRecommendedConfig` from `sft.py`.
+
+`hardware` is a `HardwareDetector.HardwareSpecs`. GPUs are dicts with `name` and `total_memory_gb`, which is a float, or `"N/A"` on MPS. `chosen_model` is a `RecommendedModel` with `model_id`, `num_parameters` and `downloads`.
+
+## Skeleton
+
+This example trains a causal LM with the Transformers `Trainer` on `prompt` and `completion` columns. Replace the training body with your algorithm. Everything around it matches what the launcher expects.
+
+```python title="finetuning_strategies/strategies/my_strategy.py"
+from __future__ import annotations
+
+from typing import Any, Dict, Literal, Optional, Union
+
+from datasets import Dataset, IterableDataset
+from peft import PeftConfig, get_peft_model
+from pydantic import BaseModel
+from transformers import DataCollatorForLanguageModeling, Trainer, TrainingArguments
+
+from finetuning_strategies.model_factory import TaskModels
+from finetuning_strategies.strategies.strategy import FinetuningStrategy
+from finetuning_strategies.strategies.sft import LoraRecommendedConfig
+from providers.provider import Provider
+from recommendation_engine.validation_models.recommendation import RecommendedModel
+from utilities.hardware_detector import HardwareDetector
+from utilities.precision import training_precision
+
+
+class MyRecommendedConfig(BaseModel):
+    per_device_train_batch_size: int
+    gradient_accumulation_steps: int
+    gradient_checkpointing: bool
+    max_length: int
+    learning_rate: float
+    bf16: bool
+    fp16: bool
+    model_init_kwargs: dict
+    num_train_epochs: float = 3.0
+    logging_steps: int = 10
+    save_steps: int = 500
+    seed: int = 42
+
+
+QUANTIZATION = {
+    "full_finetune": {},
+    "lora_bf16": {},
+    "qlora_8bit": {"quantization_config": {"load_in_8bit": True}},
+    "qlora_4bit": {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4",
+                                           "bnb_4bit_use_double_quant": True}},
 }
 
-def create_strategy(strategy_name: str) -> Any:
-    """Create a strategy instance."""
-    strategy_class = STRATEGY_REGISTRY.get(strategy_name.lower())
-    
-    if not strategy_class:
-        raise ValueError(
-            f"Unknown strategy: {strategy_name}. "
-            f"Available strategies: {list(STRATEGY_REGISTRY.keys())}"
+# Keys the launcher may add that TrainingArguments accepts.
+_PASSTHROUGH = {"report_to", "logging_dir", "logging_first_step", "fsdp", "fsdp_config"}
+
+
+class MyStrategy(FinetuningStrategy):
+    name = "My Strategy"
+    slug = "my_strategy"
+    description = "One sentence on what this trains and what data it needs."
+    supported_providers = ["huggingface"]
+    supported_tasks = ["causal_language_modeling"]
+    extra_model_copies = 0
+    batch_multiplier = 1.0
+
+    def __init__(self) -> None:
+        self.config: dict[str, Any] = {}
+
+    @staticmethod
+    def validate_data_format(dataset: Dataset | IterableDataset) -> bool:
+        missing = {"prompt", "completion"} - set(dataset.column_names)
+        if missing:
+            raise ValueError(f"My Strategy requires prompt and completion columns. Missing: {', '.join(sorted(missing))}.")
+        return True
+
+    def set_config(self, config: Dict[str, Any]) -> None:
+        # Accept every key; read only the ones this strategy uses. FSDP adds
+        # gradient_checkpointing=False, use_liger_kernel and activation_offloading.
+        self.config.update({k: v for k, v in config.items() if v is not None})
+
+    @classmethod
+    def build_recommended_config(
+        cls,
+        peft_tier: str,
+        hardware: HardwareDetector.HardwareSpecs,
+        chosen_model: RecommendedModel,
+    ) -> tuple[MyRecommendedConfig, LoraRecommendedConfig | None]:
+        if peft_tier not in QUANTIZATION:
+            raise ValueError(f"Unknown peft_tier '{peft_tier}'.")
+        raw_vram_gb = sum(g["total_memory_gb"] for g in hardware.gpus
+                          if isinstance(g["total_memory_gb"], (int, float)))
+        bf16, fp16 = training_precision(hardware)
+        config = MyRecommendedConfig(
+            per_device_train_batch_size=1,
+            gradient_accumulation_steps=16 if raw_vram_gb < 12 else 8,
+            gradient_checkpointing=True,
+            max_length=512 if raw_vram_gb < 12 else 1024,
+            learning_rate=2e-5,
+            bf16=bf16,
+            fp16=fp16,
+            # bitsandbytes needs CUDA: no quantization on CPU or MPS.
+            model_init_kwargs=QUANTIZATION[peft_tier] if raw_vram_gb > 0 else {},
         )
-    
-    return strategy_class()
-```
+        if peft_tier == "full_finetune":
+            return config, None
+        rank = 8 if chosen_model.num_parameters < 1_000_000_000 else 16
+        return config, LoraRecommendedConfig(r=rank, lora_alpha=rank * 2, target_modules="all-linear")
 
-### Step 3: Update Validation Schema
+    def finetune(
+        self,
+        model_name: str,
+        dataset: Union[Dataset, IterableDataset],
+        task_slug: str,
+        provider: Provider,
+        peft_approach: Literal["full_finetune", "lora_bf16", "qlora_8bit", "qlora_4bit"],
+        output_dir: str,
+        peft_config: Optional[PeftConfig] = None,
+        callbacks: Optional[list] = None,
+        resume_from_checkpoint: Optional[str] = None,
+    ) -> Trainer:
+        if task_slug not in self.supported_tasks:
+            raise ValueError(f"My Strategy only supports {self.supported_tasks}; got '{task_slug}'.")
+        self.validate_data_format(dataset)
+        cfg = self.config
+        task_class = TaskModels.get_task_class(task_slug)
+        model = provider.load_model(model_name, task_class.model_class, **cfg.get("model_init_kwargs", {}))
+        tokenizer = provider.load_tokenizer(model_name)
 
-Edit `ModelForge/schemas/training_schemas.py`:
-
-```python
-VALID_STRATEGIES = ["sft", "qlora", "rlhf", "dpo", "custom"]  # Add your strategy
-```
-
-### Step 4: Test Your Strategy
-
-```python
-# test_custom_strategy.py
-
-from ModelForge.strategies.strategy_factory import create_strategy
-from transformers import AutoModelForCausalLM, AutoTokenizer
-from datasets import load_dataset
-
-def test_custom_strategy():
-    # Create strategy instance
-    strategy = create_strategy("custom")
-    
-    # Load model and tokenizer
-    model_id = "meta-llama/Llama-3.2-3B"
-    model = AutoModelForCausalLM.from_pretrained(model_id)
-    tokenizer = AutoTokenizer.from_pretrained(model_id)
-    
-    # Prepare model
-    config = {
-        "lora_r": 16,
-        "lora_alpha": 32,
-        "use_4bit": True,
-    }
-    model = strategy.prepare_model(model, config)
-    print("✅ Model prepared successfully")
-    
-    # Load and prepare dataset
-    dataset = load_dataset("your-dataset")
-    train_dataset = strategy.prepare_dataset(
-        dataset["train"],
-        tokenizer,
-        config
-    )
-    print("✅ Dataset prepared successfully")
-    
-    # Create trainer
-    trainer = strategy.create_trainer(
-        model=model,
-        train_dataset=train_dataset,
-        eval_dataset=dataset.get("validation"),
-        tokenizer=tokenizer,
-        config=config
-    )
-    print("✅ Trainer created successfully")
-
-if __name__ == "__main__":
-    test_custom_strategy()
-```
-
-## Advanced Examples
-
-### Example 1: Curriculum Learning Strategy
-
-Strategy that gradually increases task difficulty:
-
-```python
-class CurriculumLearningStrategy:
-    """Strategy with curriculum learning."""
-    
-    def prepare_dataset(self, dataset, tokenizer, config):
-        # Sort by difficulty (e.g., sequence length)
-        dataset = dataset.sort("length")
-        
-        # Divide into stages
-        n_stages = 3
-        stage_size = len(dataset) // n_stages
-        
-        # Return datasets for each stage
-        stages = []
-        for i in range(n_stages):
-            start = i * stage_size
-            end = start + stage_size
-            stages.append(dataset[start:end])
-        
-        return stages
-    
-    def create_trainer(self, model, train_dataset, eval_dataset, tokenizer, config, callbacks):
-        # Train on each stage sequentially
-        for stage_idx, stage_data in enumerate(train_dataset):
-            logger.info(f"Training stage {stage_idx + 1}/{len(train_dataset)}")
-            
-            trainer = Trainer(
-                model=model,
-                train_dataset=stage_data,
-                eval_dataset=eval_dataset,
-                ...
-            )
-            
-            trainer.train()
-        
-        return model
-```
-
-### Example 2: Multi-Task Strategy
-
-Strategy that trains on multiple tasks simultaneously:
-
-```python
-class MultiTaskStrategy:
-    """Strategy for multi-task learning."""
-    
-    def get_required_dataset_fields(self):
-        return ["input", "output", "task_type"]
-    
-    def prepare_dataset(self, dataset, tokenizer, config):
-        def format_with_task(example):
-            # Prepend task type to input
-            formatted_input = f"[{example['task_type']}] {example['input']}"
-            return {
-                "input": formatted_input,
-                "output": example["output"]
-            }
-        
-        return dataset.map(format_with_task)
-```
-
-### Example 3: Knowledge Distillation Strategy
-
-Strategy that uses a teacher model:
-
-```python
-class KnowledgeDistillationStrategy:
-    """Strategy with knowledge distillation."""
-    
-    def __init__(self, teacher_model_id: str):
-        self.teacher_model_id = teacher_model_id
-        self.teacher_model = None
-    
-    def prepare_model(self, model, config):
-        # Load teacher model
-        self.teacher_model = AutoModelForCausalLM.from_pretrained(
-            self.teacher_model_id
+        max_length = cfg.get("max_length", 1024)
+        dataset = dataset.map(
+            lambda batch: tokenizer(
+                [p + c for p, c in zip(batch["prompt"], batch["completion"])],
+                truncation=True, max_length=max_length,
+            ),
+            batched=True, remove_columns=dataset.column_names,
         )
-        self.teacher_model.eval()
-        
-        # Prepare student model
-        model = prepare_model_for_kbit_training(model)
-        return model
-    
-    def create_trainer(self, model, train_dataset, eval_dataset, tokenizer, config, callbacks):
-        # Custom training loop with distillation loss
-        # loss = student_loss + alpha * distillation_loss
-        ...
+        if peft_config is not None:
+            model = get_peft_model(model, peft_config)
+
+        args = TrainingArguments(
+            output_dir=output_dir,
+            per_device_train_batch_size=cfg.get("per_device_train_batch_size", 1),
+            gradient_accumulation_steps=cfg.get("gradient_accumulation_steps", 8),
+            gradient_checkpointing=cfg.get("gradient_checkpointing", True),
+            learning_rate=cfg.get("learning_rate", 2e-5),
+            num_train_epochs=cfg.get("num_train_epochs", 3.0),
+            logging_steps=cfg.get("logging_steps", 10),
+            save_steps=cfg.get("save_steps", 500),
+            seed=cfg.get("seed", 42),
+            bf16=cfg.get("bf16", False),
+            fp16=cfg.get("fp16", False),
+            **{k: cfg[k] for k in _PASSTHROUGH if k in cfg},
+        )
+        trainer = Trainer(
+            model=model,
+            args=args,
+            train_dataset=dataset,
+            processing_class=tokenizer,
+            data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+            callbacks=callbacks,
+        )
+        self.launch_tensorboard(args, trainer=trainer)
+        trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        if peft_approach == "full_finetune":
+            trainer.save_model(output_dir)
+        else:
+            trainer.model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
+        return trainer
 ```
 
-## Best Practices
+## Register it
 
-### ✅ Do's
+Subclasses register themselves when their module is imported. Nothing has to be added to `FinetuningStrategies` in `strategy_factory.py`: `get_strategy_class(slug)` and `list_strategies()` read the same `FinetuningStrategy._registry`. The module still has to be imported in two places:
 
-1. **Implement all required methods** - Follow the interface completely
-2. **Add comprehensive logging** - Help with debugging
-3. **Validate inputs** - Check dataset fields, config values
-4. **Handle errors gracefully** - Use proper exception handling
-5. **Document requirements** - List dependencies and constraints
-6. **Test thoroughly** - Test with various models and datasets
-7. **Optimize memory usage** - Be mindful of VRAM constraints
+1. `finetuning_strategies/strategies/__init__.py`:
 
-### ❌ Don'ts
+    ```python
+    from finetuning_strategies.strategies.my_strategy import MyStrategy
+    __all__ = ["FinetuningStrategy", "SFT", "DPO", "GRPO", "ExtractiveQA", "MyStrategy"]
+    ```
 
-1. **Don't break compatibility** - Maintain the interface contract
-2. **Don't hardcode values** - Use configuration parameters
-3. **Don't ignore existing strategies** - Learn from SFT, QLoRA implementations
-4. **Don't skip validation** - Always validate dataset fields
-5. **Don't forget edge cases** - Handle empty datasets, missing fields
+2. `workflow/registries.py::load_core_registries`, which the web, terminal and notebook entry points call before reading registries:
 
-## Integration with ModelForge
+    ```python
+    import finetuning_strategies.strategies.my_strategy  # noqa: F401
+    ```
 
-### Configuration via API
+Check it:
 
 ```bash
-curl -X POST http://localhost:8000/api/start_training \
-  -H "Content-Type: application/json" \
-  -d '{
-    "strategy": "custom",
-    "model_name": "meta-llama/Llama-3.2-3B",
-    "dataset": "/path/to/dataset.jsonl",
-    ...
-  }'
+python -c "from workflow.registries import load_core_registries; load_core_registries(); \
+from finetuning_strategies.strategy_factory import FinetuningStrategies; \
+print(FinetuningStrategies.get_strategy_class('my_strategy'))"
 ```
 
-### Configuration via UI
+It also appears under `strategies` in `GET /api/system`.
 
-Your custom strategy will automatically appear in the UI strategy dropdown once registered.
+## Make it reachable
 
-## Troubleshooting
+A registered strategy isn't used until a use case resolves to it. The engine takes the use case's `strategy_slug` if set, otherwise `OBJECTIVE_STRATEGY_MAP[objective]`. It then checks that the use case's `task_slug` is in your `supported_tasks`. There are two ways in.
 
-### Strategy Not Found
+### Option A: a use case that always uses it
 
-**Problem**: `Unknown strategy: custom`
+Set `strategy_slug` on a use case, as `ExtractiveQAUseCase` does with `"qa"`. That replaces the objective mapping for **every** objective of that use case. It's the right choice for a new use case with one supervised path. Adding a use case is covered in [Adding a use case](../contributing/use-cases.md).
 
-**Solution**: Ensure strategy is registered in `STRATEGY_REGISTRY` and `VALID_STRATEGIES`.
+```python
+class MyUseCase(LanguageUseCase):
+    ...
+    task_slug = "causal_language_modeling"
+    strategy_slug = "my_strategy"
+    compatible_objectives = [TrainingObjective.SUPERVISED]
+    data_formats = {TrainingObjective.SUPERVISED: DataFormatSpec(
+        user_facing_description="A dataset with 'prompt' and 'completion' columns.",
+        column_aliases={"prompt": "prompt", "completion": "completion"},
+    )}
+```
 
-### Dataset Validation Fails
+`column_aliases` maps source names to the canonical names your `validate_data_format` and `finetune` read. Every key is required unless it's listed in `optional_column_aliases`.
 
-**Problem**: Missing required fields
+### Option B: a new objective
 
-**Solution**: Check `get_required_dataset_fields()` matches your dataset.
+To offer the strategy as a new objective on existing use cases:
 
-### Training Fails
+1. Add a member to `TrainingObjective` in `utilities/training_objective.py`.
+2. Map it in `OBJECTIVE_STRATEGY_MAP` in `utilities/recommendation_engine.py`.
+3. Map it in `_OBJECTIVE_TO_SLUG` in `cli/wizard.py`. The terminal wizard keeps its own copy of the mapping to decide which objectives to offer.
+4. Add it to each use case's `compatible_objectives`, with a `DataFormatSpec` in `data_formats`. Use-case definition fails without the matching spec.
+5. Add any objective-specific plan warnings in `RecommendationEngine.recommend`, as the preference objective does.
 
-**Problem**: Trainer crashes during training
+The browser console's objective selector lists `supervised`, `preference` and `reinforcement` explicitly, so a new objective also needs a frontend change before it shows up there. The HTTP API and notebook accept it as soon as the backend does.
 
-**Solution**: Add detailed logging in `create_trainer()` to debug.
+Objectives whose strategy is missing, or doesn't support the use case's task, are hidden from `/api/use-cases` automatically and reported under `unavailable_use_cases` in `/api/system`.
 
-## Contributing Your Strategy
+### If you add a task
 
-Want to contribute your strategy to ModelForge?
+A new `FinetuningTask` also needs entries in `_TASK_SLUG_TO_PEFT_TASK_TYPE` (`workflow/training.py`) for LoRA, and in `_TASK_SLUG_TO_AUTO_CLASS` and `_TASK_SLUG_TO_PIPELINE` (`workflow/jobs.py`) so the playground can reload the result.
 
-1. **Create a Pull Request** on GitHub
-2. **Include documentation** - Add strategy docs
-3. **Add tests** - Include unit and integration tests
-4. **Update README** - Document new strategy
-5. **Provide examples** - Include usage examples
+## VRAM multipliers
 
-See [Contributing Guide](../contributing/contributing.md) for details.
+The planner turns raw VRAM into an adjusted budget before computing any tier ceiling (`RecommendationEngine._compute_adjusted_vram`):
 
-## Example Strategies to Implement
+```text
+adjusted = (raw VRAM − (batch_multiplier − 1) × 2.0 GB) / (1 + extra_model_copies)
+```
 
-### Ideas for Custom Strategies
+| Strategy | `extra_model_copies` | `batch_multiplier` | Adjusted on 24 GB |
+|---|---|---|---|
+| `sft` | 0 | 1.0 | 24 GB |
+| `qa` | 0 | 1.0 | 24 GB |
+| `grpo` | 0 | 4.0 | 18 GB |
+| `dpo` | 1 | 2.0 | 11 GB |
 
-1. **Few-Shot Learning** - Train with very few examples
-2. **Active Learning** - Iteratively select best training examples
-3. **Meta-Learning** - Learn to learn across tasks
-4. **Continual Learning** - Learn new tasks without forgetting
-5. **Adapter Tuning** - Use adapter layers instead of LoRA
-6. **Prefix Tuning** - Optimize only input prefixes
-7. **BitFit** - Fine-tune only bias terms
-8. **IA3** - Infused Adapter by Inhibiting and Amplifying
+How to choose them:
 
-## Next Steps
+- **`extra_model_copies`:** count the full models resident besides the one being trained, such as a frozen reference, a teacher or a reward model. Each copy gets a whole baseline training budget, so this is deliberately conservative. DPO uses 1 even though its adapter tiers don't load a second copy.
+- **`batch_multiplier`:** how many sequences' worth of activations a step holds compared with SFT. DPO processes chosen and rejected (2.0), GRPO four sampled completions (4.0).
+- If the result is negative on a GPU machine, `recommend` raises `Strategy '...' requires more VRAM than is available on this hardware for any viable model size.`
 
-- **[Strategy Overview](overview.md)** - Understand the strategy system
-- **[SFT Strategy](sft.md)** - Study the standard implementation
-- **[QLoRA Strategy](qlora.md)** - See memory-efficient strategy
-- **[Contributing Guide](../contributing/contributing.md)** - Submit your strategy
+The ceilings then follow from the adjusted budget. See [Full fine-tuning](full-finetuning.md) and [LoRA and QLoRA](qlora.md).
 
----
+## Tests to add
 
-**Extend ModelForge with custom strategies!** Support any training algorithm or optimization technique.
+Tests live in `tests/unit_tests/` as `*_test.py` and run with:
+
+```bash
+uv run pytest
+```
+
+Use the existing files as templates:
+
+| Test | Model it on | What to assert |
+|---|---|---|
+| Registration and attribute validation | `finetuning_strategy_test.py` | The slug is in `FinetuningStrategy._registry`. Use the `clean_strategy_registry` fixture pattern for throwaway subclasses. |
+| Factory lookup | `strategy_factory_test.py` | `FinetuningStrategies.get_strategy_class("my_strategy") is MyStrategy`. |
+| Data contract | `grpo_test.py`, `sft_test.py` | `validate_data_format` accepts good columns and raises `ValueError` with your message for missing ones. |
+| Recommended config | `grpo_test.py`, `qa_test.py` | For each tier and a few VRAM sizes (`HardwareDetector.HardwareSpecs` with fake `gpus`): quantization kwargs, no quantization at 0 GB, `None` adapter for `full_finetune`, and constraints such as divisibility. |
+| Resolution | `grpo_test.py`, `recommendation_engine_test.py` | `RecommendationEngine._resolve_use_case_and_strategy(use_case, objective)` returns your class and the expected task. |
+| Launch keys | `fsdp_config_test.py` | `set_config({"output_dir": ..., **config.model_dump(), **build_fsdp_config(), "report_to": ["tensorboard"], "logging_dir": ..., "logging_first_step": True})` doesn't raise. This catches the GRPO-style bug. |
+| Training path | `dpo_training_test.py`, `seq2seq_training_test.py` | With a mocked provider and trainer: callbacks reach the Trainer, `resume_from_checkpoint` is forwarded, and the right save method is used per tier. |
+
+## See also
+
+- [Architecture](../contributing/architecture.md)
+- [Adding a use case](../contributing/use-cases.md)
+- [Custom providers](../providers/custom-providers.md)
+- [Strategies overview](overview.md)

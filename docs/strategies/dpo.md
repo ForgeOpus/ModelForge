@@ -1,457 +1,149 @@
-# DPO Strategy (Direct Preference Optimization)
+# Direct Preference Optimization (DPO)
 
-Simpler and more stable alternative to RLHF for aligning models with human preferences.
+DPO trains a model to prefer one answer over another, using pairs of chosen and rejected responses instead of a reward model. This page covers the `dpo` strategy: data, including implicit-prompt pairs, defaults, memory, outputs and limitations.
 
-## Overview
+## What it does
 
-DPO (Direct Preference Optimization) is a breakthrough training method that achieves RLHF-quality results without the complexity of reward models and reinforcement learning. It directly optimizes the model using preference pairs.
+For each pair, DPO raises the likelihood of the chosen response relative to the rejected one, measured against a frozen reference copy of the starting model. `beta` controls how far the model may drift from that reference. ModelForge runs TRL's `DPOTrainer` (`finetuning_strategies/strategies/dpo.py`) with the sigmoid loss.
 
-## What is DPO?
+The reference model depends on the tier:
 
-**DPO** simplifies preference learning by:
-- ✅ **No reward model needed** - Direct optimization on preferences
-- ✅ **More stable training** - No RL instability issues
-- ✅ **Simpler implementation** - Supervised learning approach
-- ✅ **Better performance** - Often matches or exceeds RLHF
-- ✅ **Lower memory** - No value head or PPO buffers
+- **Full fine-tuning:** ModelForge loads a second copy of the base model, freezes it and passes it as `ref_model`.
+- **LoRA and QLoRA:** no second copy. `DPOTrainer` uses the frozen base weights, with the adapter disabled, as the reference.
 
-## Features
+## When to use it
 
-✅ **Simpler than RLHF** - No reward model or PPO required  
-✅ **More stable** - Standard supervised training  
-✅ **High quality** - Matches RLHF performance  
-✅ **Faster training** - More efficient than RLHF  
-✅ **Less memory** - Lower VRAM requirements  
-✅ **Easy to tune** - Fewer hyperparameters  
+- The model already produces reasonable answers, and you want it to prefer some styles, levels of detail or safety behaviours over others.
+- You can rank two responses more easily than you can write the ideal one.
+- After [SFT](sft.md). DPO aligns existing behaviour. For instruction following, start from an instruct or chat checkpoint, or run SFT first. A chat template doesn't teach a base model to chat, and the plan includes a warning saying so.
 
-## When to Use DPO
+## Use cases
 
-### ✅ Use DPO When:
+| Use case | Objective | Task |
+|---|---|---|
+| Instruction Following | Preference | `causal_language_modeling` |
+| Text Generation | Preference | `causal_language_modeling` |
 
-- Aligning model outputs with human preferences
-- Training conversational AI or assistants
-- Have preference pairs (chosen/rejected examples)
-- Want RLHF-quality without complexity
-- More stable training than RLHF
-- Mid-range to high-end hardware (12GB+ VRAM)
+## Data
 
-### ❌ Don't Use DPO When:
+| Use case | Required | Optional | Aliases |
+|---|---|---|---|
+| Instruction Following | `chosen`, `rejected` | `prompt` | `preferred_response` → `chosen`, `dispreferred_response` → `rejected`, `instruction` → `prompt` |
+| Text Generation | `chosen`, `rejected` | `prompt` | `preferred_continuation` → `chosen`, `rejected_continuation` → `rejected`, `input_text` → `prompt` |
 
-- First time fine-tuning (start with SFT)
-- Limited VRAM (< 12GB) - use QLoRA instead
-- Simple supervised learning task (use SFT)
-- Don't have preference data (use SFT)
+See [Dataset formats](../configuration/dataset-formats.md) for alias rules.
 
-## Dataset Format
+=== "Explicit prompt"
 
-DPO requires the same preference pair format as RLHF:
+    ```json
+    {"prompt": "Explain LoRA in one sentence.", "chosen": "LoRA trains two small low-rank matrices beside frozen weights.", "rejected": "It is a thing for models."}
+    ```
 
-```jsonl
-{"prompt": "What is the capital of France?", "chosen": "The capital of France is Paris.", "rejected": "I don't know."}
-{"prompt": "Explain photosynthesis", "chosen": "Photosynthesis is the process by which plants convert light energy...", "rejected": "Plants make food."}
-{"prompt": "Write a professional email", "chosen": "Dear [Name],\n\nI hope this email finds you well...", "rejected": "Hey, what's up?"}
+=== "Implicit prompt (text)"
+
+    ```json
+    {"chosen": "Q: What is 2 + 2?\nA: 4", "rejected": "Q: What is 2 + 2?\nA: 5"}
+    ```
+
+=== "Implicit prompt (conversation)"
+
+    ```json
+    {"chosen":   [{"role": "user", "content": "What colour is the sky?"}, {"role": "assistant", "content": "Blue."}],
+     "rejected": [{"role": "user", "content": "What colour is the sky?"}, {"role": "assistant", "content": "Green."}]}
+    ```
+
+=== "Assistant-only with prompt"
+
+    ```json
+    {"prompt": "What colour is the sky?",
+     "chosen":   [{"role": "assistant", "content": "Blue."}],
+     "rejected": [{"role": "assistant", "content": "Green."}]}
+    ```
+
+### How pairs are normalized
+
+Every row, including evaluation rows, goes through `utilities/chat_format.py::normalize_preference` before TRL sees it. The result is always a shared `prompt` conversation plus assistant-only `chosen` and `rejected` turns.
+
+| Input | What happens |
+|---|---|
+| Strings with a `prompt` | The prompt becomes a user turn and each response becomes an assistant turn. |
+| Strings without a `prompt` (implicit) | TRL's `extract_prompt` takes the longest shared prefix of `chosen` and `rejected` as the prompt. In the example above the prompt is `"Q: What is 2 + 2?\nA:"`. If there is no shared prefix, the row is rejected: `Text preference pairs need a shared prompt. Add a prompt column.` |
+| Full conversations | The shared leading turns become the prompt. The prompt must end with a `user` or `tool` turn. An explicit `prompt` column that disagrees with the conversations is rejected. |
+| Assistant-only conversations | A `prompt` column is required. |
+| One string and one conversation | Rejected: `Chosen and rejected must both be strings or both be conversations.` |
+
+The tokenizer's chat template is then applied. Tokenizers without one get the same `User:` / `Assistant:` fallback template as SFT.
+
+## Default hyperparameters
+
+`DPO.build_recommended_config` produces a `DPORecommendedConfig`. VRAM is the total across the selected GPUs. CPU and MPS machines get the "under 12 GB" values.
+
+| Setting | Under 12 GB | 12 to under 32 GB | 32 GB or more |
+|---|---|---|---|
+| `per_device_train_batch_size` | 1 | 1 | 1 |
+| `gradient_accumulation_steps` | 32 | 16 | 8 |
+| `max_length` | 512 | 1024 | 2048 |
+| `activation_offloading` | `true` (GPU only) | `false` | `false` |
+
+Gradient accumulation is twice SFT's at each size, to make up for the doubled activation cost of processing two responses.
+
+Learning rate depends on tier and model size:
+
+| Tier | Model size | `learning_rate` |
+|---|---|---|
+| `full_finetune` | any | `1e-7` |
+| adapter tiers | under 1B | `5e-6` |
+| adapter tiers | 1B to under 7B | `5e-7` |
+| adapter tiers | 7B to under 13B | `2e-7` |
+| adapter tiers | 13B or more | `1e-7` |
+
+Fixed values:
+
+| Setting | Value |
+|---|---|
+| `beta` | 0.1 |
+| `loss_type` | `"sigmoid"` |
+| `gradient_checkpointing` | `true` |
+| `use_liger_kernel` | `true` when a CUDA GPU is present and `liger-kernel` is installed |
+| `bf16` / `fp16` | As for [SFT](sft.md#default-hyperparameters) |
+| `num_train_epochs` | 3.0 |
+| `per_device_eval_batch_size` | 8 |
+| `weight_decay` | 0.0 |
+| `warmup_ratio` | 0.1 |
+| `lr_scheduler_type` | `"cosine"` |
+| `optim` | `"adamw_torch"` |
+| `max_grad_norm` | 1.0 |
+| `logging_steps` / `save_steps` | 10 / 500 |
+| `seed` | 42 |
+
+DPO doesn't pack. LoRA rank and alpha follow the same size table as [SFT](sft.md#lora-settings): `r` of 8, 16, 32 or 64 and `lora_alpha = 2 × r`, with `target_modules="all-linear"`.
+
+## Memory
+
+DPO declares `extra_model_copies = 1` and `batch_multiplier = 2.0`. The planner computes:
+
+```text
+adjusted VRAM = (raw VRAM − (2.0 − 1) × 2.0 GB) / (1 + 1)
 ```
 
-**Required Fields**:
-- `prompt`: Input prompt or question
-- `chosen`: Preferred/better response (high-quality)
-- `rejected`: Non-preferred/worse response (lower-quality)
+On one 24 GB GPU that's (24 − 2) ÷ 2 = 11 GB, so full fine-tuning fits models up to about (11 − 2) ÷ 18 ≈ 0.5B parameters.
 
-### Creating Good Preference Pairs
+The extra copy is only loaded for full fine-tuning. Adapter tiers use the frozen base as the reference, so the planner over-estimates their memory slightly. That is a deliberate, conservative choice in the code.
 
-#### ✅ Good Examples
+## Outputs
 
-**High Contrast**:
-```json
-{
-  "prompt": "Explain machine learning to a beginner",
-  "chosen": "Machine learning is a type of AI where computers learn from examples without being explicitly programmed. For instance, a spam filter learns to identify spam emails by looking at thousands of examples.",
-  "rejected": "It's when computers learn stuff."
-}
-```
+Same layout as SFT: full weights for `full_finetune`, the adapter only for LoRA and QLoRA, plus the tokenizer, checkpoints every 500 steps and TensorBoard logs. See [SFT outputs](sft.md#outputs).
 
-**Clear Preference**:
-```json
-{
-  "prompt": "Write a polite decline",
-  "chosen": "Thank you for your invitation. Unfortunately, I won't be able to attend, but I appreciate you thinking of me.",
-  "rejected": "No thanks."
-}
-```
+## Limitations
 
-#### ❌ Bad Examples
+- Only the sigmoid loss is configured. Other TRL loss types are reachable only by editing `loss_type` in a recommendation sent to the HTTP API.
+- No evaluation split is used, so TRL's reward accuracy and margin metrics are only logged for training batches.
+- Pairs with no shared prompt, either explicit or as a common prefix, can't be trained.
+- Small or random test models are excluded from recommendations because they can't produce meaningful preference behaviour.
 
-**Too Similar**:
-```json
-{
-  "prompt": "What is 2+2?",
-  "chosen": "The answer is 4.",
-  "rejected": "2+2 equals 4."
-}
-```
+## See also
 
-**No Clear Winner**:
-```json
-{
-  "prompt": "Describe a sunset",
-  "chosen": "The sunset was beautiful.",
-  "rejected": "The sunset was pretty."
-}
-```
-
-## Configuration
-
-### Basic DPO Configuration
-
-```json
-{
-  "strategy": "dpo",
-  "task": "text-generation",
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  "dataset": "/path/to/preference-data.jsonl",
-  "provider": "huggingface",
-  
-  "num_train_epochs": 3,
-  "per_device_train_batch_size": 2,
-  "gradient_accumulation_steps": 4,
-  "learning_rate": 5e-7,
-  
-  "lora_r": 16,
-  "lora_alpha": 32,
-  "use_4bit": true,
-  "bf16": true
-}
-```
-
-### Advanced DPO Configuration
-
-```json
-{
-  "strategy": "dpo",
-  "task": "text-generation",
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  "dataset": "/path/to/preference-data.jsonl",
-  "provider": "unsloth",
-  
-  "num_train_epochs": 3,
-  "per_device_train_batch_size": 4,
-  "gradient_accumulation_steps": 2,
-  "learning_rate": 5e-7,
-  
-  "lora_r": 64,
-  "lora_alpha": 128,
-  "use_4bit": true,
-  "bf16": true,
-  
-  "max_seq_length": 2048,
-  "warmup_ratio": 0.1,
-  "eval_split": 0.1
-}
-```
-
-## How DPO Works
-
-### Training Process
-
-```
-1. Load Pre-trained Model
-        ↓
-2. Apply LoRA Adapters
-        ↓
-3. Load Preference Dataset
-        ↓
-4. DPO Training Loop:
-   - Process prompt
-   - Score chosen response
-   - Score rejected response
-   - Optimize to prefer chosen
-        ↓
-5. Save Fine-tuned Model
-```
-
-### Mathematical Objective
-
-DPO directly optimizes the model to:
-- Increase probability of chosen responses
-- Decrease probability of rejected responses
-- Stay close to reference model (via KL penalty)
-
-```
-Loss = -log(σ(β * log(π(chosen)/π_ref(chosen)) - β * log(π(rejected)/π_ref(rejected))))
-```
-
-Where:
-- `π` = Policy (fine-tuned model)
-- `π_ref` = Reference model (base model)
-- `β` = Temperature parameter (controls strength)
-- `σ` = Sigmoid function
-
-## Hardware Requirements
-
-### Minimum Requirements
-
-- **GPU**: 12GB+ VRAM
-- **RAM**: 16GB+ system RAM
-- **Recommended**: Mid-range to high-end profile
-
-### Memory Usage
-
-DPO uses **less memory** than RLHF:
-
-**Example** (7B model):
-- SFT with 4-bit: ~6-8 GB VRAM
-- DPO with 4-bit: ~8-10 GB VRAM
-- RLHF with 4-bit: ~10-12 GB VRAM
-
-## Recommended Settings by Hardware
-
-### Mid Range (12-16GB VRAM)
-
-```json
-{
-  "strategy": "dpo",
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  "use_4bit": true,
-  "per_device_train_batch_size": 2,
-  "gradient_accumulation_steps": 4,
-  "lora_r": 16,
-  "max_seq_length": 1024
-}
-```
-
-### High End (16GB+ VRAM)
-
-```json
-{
-  "strategy": "dpo",
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  "use_4bit": true,
-  "per_device_train_batch_size": 4,
-  "gradient_accumulation_steps": 2,
-  "lora_r": 64,
-  "max_seq_length": 2048
-}
-```
-
-## Hyperparameter Tuning
-
-### Learning Rate
-
-DPO uses **very low learning rates**:
-
-- **SFT**: 2e-4
-- **DPO**: 5e-7 (recommended)
-- **Range**: 1e-7 to 1e-6
-
-**Why?** DPO is sensitive to learning rate. Too high causes instability.
-
-### Beta Parameter
-
-The beta (β) parameter controls preference strength:
-
-- **Low (0.1)**: Weak preference signal
-- **Medium (0.5)**: Balanced (recommended)
-- **High (2.0)**: Strong preference signal
-
-**Default**: Usually set internally by TRL library.
-
-### LoRA Configuration
-
-```json
-{
-  "lora_r": 16,        // 16, 32, or 64
-  "lora_alpha": 32,    // Usually 2x rank
-  "lora_dropout": 0.05 // Low dropout
-}
-```
-
-### Training Epochs
-
-```json
-{
-  "num_train_epochs": 3  // DPO can use more epochs than RLHF
-}
-```
-
-DPO is **more stable** than RLHF, so you can safely use 2-4 epochs.
-
-## Evaluation
-
-DPO models are evaluated using:
-
-1. **Accuracy**: How often model prefers chosen over rejected
-2. **Reward Margin**: Difference in scores between chosen and rejected
-3. **KL Divergence**: Deviation from base model
-4. **Human Evaluation**: Manual quality assessment
-
-## Common Issues
-
-### Training Instability
-
-**Problem**: Loss oscillates or doesn't converge
-
-**Solutions**:
-- Lower learning rate (try 1e-7)
-- Increase warmup steps
-- Check dataset quality
-- Ensure clear preference distinctions
-
-### High Memory Usage
-
-**Problem**: DPO runs out of memory
-
-**Solutions**:
-- Use 4-bit quantization
-- Reduce batch size
-- Increase gradient accumulation
-- Reduce sequence length
-- Use smaller model
-
-### Poor Preference Learning
-
-**Problem**: Model doesn't learn preferences well
-
-**Solutions**:
-- Check dataset has clear chosen/rejected distinctions
-- Increase training epochs (2-4)
-- Adjust beta parameter
-- Use more diverse preference data
-- Ensure sufficient data (500+ examples)
-
-## DPO vs RLHF vs SFT
-
-### Comparison Table
-
-| Feature | SFT | DPO | RLHF |
-|---------|-----|-----|------|
-| **Complexity** | Simple | Medium | High |
-| **Stability** | Very Stable | Stable | Less Stable |
-| **Quality** | High | Very High | Very High |
-| **Speed** | Fast | Medium | Slow |
-| **Memory** | Low | Medium | High |
-| **Setup** | Easy | Easy | Complex |
-| **Preference Learning** | No | Yes | Yes |
-| **Reward Model** | No | No | Not required (DPO-based in ModelForge) |
-
-### When to Use Each
-
-```
-Need basic fine-tuning?
-    → SFT
-
-Have preference data + want simplicity?
-    → DPO
-
-Have preference data + want conservative defaults?
-    → RLHF
-
-Limited VRAM?
-    → QLoRA (with any strategy)
-```
-
-> **Note**: In ModelForge, both RLHF and DPO strategies use TRL's `DPOTrainer`. RLHF uses more conservative hyperparameter defaults (lr=1.41e-5, 1 epoch, warmup=0.1) compared to DPO (lr=5e-7, 3 epochs).
-
-## Example: Training a Helpful Assistant
-
-### Step 1: Prepare Preference Dataset
-
-```jsonl
-{"prompt": "How do I reset my password?", "chosen": "To reset your password: 1. Click 'Forgot Password' 2. Enter your email 3. Check your inbox for the reset link 4. Follow the instructions in the email", "rejected": "Just reset it."}
-{"prompt": "What's the weather like?", "chosen": "I don't have access to real-time weather data. Please check a weather service like weather.com or your local weather app for current conditions.", "rejected": "It's sunny."}
-```
-
-### Step 2: Configure Training
-
-```json
-{
-  "strategy": "dpo",
-  "task": "text-generation",
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  "dataset": "/data/assistant-preferences.jsonl",
-  "provider": "unsloth",
-  
-  "num_train_epochs": 3,
-  "per_device_train_batch_size": 4,
-  "gradient_accumulation_steps": 2,
-  "learning_rate": 5e-7,
-  "warmup_ratio": 0.1,
-  
-  "lora_r": 64,
-  "lora_alpha": 128,
-  "use_4bit": true,
-  "bf16": true,
-  
-  "max_seq_length": 2048,
-  "eval_split": 0.1
-}
-```
-
-### Step 3: Train and Evaluate
-
-Monitor:
-- ✅ Preference accuracy should increase
-- ✅ Reward margin should grow
-- ✅ KL divergence should stay reasonable (< 10)
-
-## Best Practices
-
-1. ✅ **Start with SFT** - Fine-tune base model first, then apply DPO
-2. ✅ **High-quality data** - Clear preference distinctions are critical
-3. ✅ **Diverse prompts** - Cover various scenarios
-4. ✅ **Low learning rate** - 5e-7 is a good starting point
-5. ✅ **Monitor KL** - Ensure model doesn't drift too far
-6. ✅ **Sufficient data** - 500+ preference pairs recommended
-7. ✅ **Validate preferences** - Ensure chosen is actually better
-
-## Advanced Topics
-
-### Two-Stage Training
-
-For best results, use two-stage approach:
-
-**Stage 1: SFT**
-```json
-{
-  "strategy": "sft",
-  "dataset": "/data/demonstrations.jsonl",
-  "num_train_epochs": 3
-}
-```
-
-**Stage 2: DPO**
-```json
-{
-  "strategy": "dpo",
-  "model_name": "/path/to/sft-model",
-  "dataset": "/data/preferences.jsonl",
-  "num_train_epochs": 3
-}
-```
-
-### Dataset Augmentation
-
-Generate synthetic preferences:
-
-```python
-from transformers import pipeline
-
-generator = pipeline("text-generation", model="meta-llama/Llama-3.1-8B-Instruct")
-
-prompt = "Explain recursion"
-responses = generator(prompt, num_return_sequences=2, max_length=100)
-
-# Manual or automated ranking
-chosen = responses[0] if better_quality(responses[0], responses[1]) else responses[1]
-rejected = responses[1] if chosen == responses[0] else responses[0]
-```
-
-## Next Steps
-
-- **[RLHF Strategy](rlhf.md)** - Compare with RLHF approach
-- **[SFT Strategy](sft.md)** - Start here before DPO
-- **[QLoRA Strategy](qlora.md)** - Memory-efficient training
-- **[Strategy Overview](overview.md)** - Compare all strategies
-
----
-
-**DPO: RLHF quality without the complexity!** 🚀 The modern way to align models.
+- [SFT](sft.md), the usual first stage
+- [GRPO](grpo.md), when an answer can be checked instead of compared
+- [Full fine-tuning](full-finetuning.md) for the reference-model cost
+- [Dataset formats](../configuration/dataset-formats.md)

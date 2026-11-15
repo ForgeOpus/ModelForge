@@ -1,184 +1,142 @@
-# Quick Start Guide
+# Quick Start
 
-Get started with ModelForge in just a few minutes!
+This page takes you from an empty environment to a finished fine-tune in the browser console. It assumes an NVIDIA GPU on Linux. On Windows or macOS, read the installation page for your platform first, then come back for the first run.
 
-## Prerequisites
+## Requirements
 
-Before you begin, ensure you have:
+- **Python 3.13** or newer. v4 does not run on Python 3.11 or 3.12.
+- **An NVIDIA GPU with CUDA** for real training. Apple Silicon (MPS) and CPU-only machines work, but only with small models. See [Hardware and Memory](../configuration/hardware-profiles.md).
+- **Disk space** for base models, checkpoints and outputs. The plan warns when free space looks too small for the model's weights.
 
-- **Python 3.11.x** (Python 3.12 is not yet supported)
-- **NVIDIA GPU** with at least 4GB VRAM (6GB+ recommended)
-- **CUDA** installed and configured
-- **HuggingFace Account** with an access token ([Create one here](https://huggingface.co/settings/tokens))
+## 1. Install
 
-> **Windows Users**: See the [Windows Installation Guide](../installation/windows.md) for important platform-specific instructions, especially if you want to use the Unsloth provider.
-
-## Installation
-
-### 1. Install ModelForge
+Create a virtual environment and install the package:
 
 ```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
 pip install modelforge-finetuning
-
-# Optional extras
-pip install modelforge-finetuning[cli]           # CLI wizard (required for `modelforge cli`)
-pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization support
 ```
 
-### 2. Install PyTorch with CUDA Support
+Optional extras:
 
-Visit the [PyTorch installation page](https://pytorch.org/get-started/locally/) and select your CUDA version.
-
-For example, for CUDA 12.6:
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-```
-
-For CUDA 11.8:
-```bash
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-### 3. Set Your HuggingFace Token
-
-**Linux:**
-```bash
-export HUGGINGFACE_TOKEN=your_huggingface_token
-```
-
-**Windows PowerShell:**
-```powershell
-$env:HUGGINGFACE_TOKEN="your_huggingface_token"
-```
-
-**Windows CMD:**
-```cmd
-set HUGGINGFACE_TOKEN=your_huggingface_token
-```
-
-**Or use a .env file (all platforms):**
-```bash
-echo "HUGGINGFACE_TOKEN=your_huggingface_token" > .env
-```
-
-## Launch ModelForge
+| Extra | Adds | When to use it |
+|---|---|---|
+| `[cli]` | click, rich | The terminal wizard (`modelforge cli`) and `modelforge tensorboard`. |
+| `[gpu]` | liger-kernel | Fused kernels that cut memory on CUDA GPUs. No CPU or Windows wheels. |
 
 ```bash
-modelforge
+pip install "modelforge-finetuning[cli,gpu]"
 ```
 
-Open your browser and navigate to:
-```
-http://localhost:8000
-```
+PyTorch is not a direct dependency. It is pulled in by `accelerate`, `peft` and `bitsandbytes`. On Linux the default PyPI wheel includes CUDA. On Windows it does not, so install a CUDA build first. See [Windows](../installation/windows.md).
 
-That's it! You should see the ModelForge web interface.
-
-## Using the CLI Wizard
-
-ModelForge also offers a terminal-based interactive wizard — useful for headless servers or SSH sessions where a browser isn't available:
+Check that PyTorch can see your GPU:
 
 ```bash
-pip install modelforge-finetuning[cli]   # Install CLI dependencies first
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
+```
+
+## 2. Start the server
+
+```
+$ modelforge run
+ModelForge v4 browser UI
+Serving on: http://0.0.0.0:8000
+Open:       http://127.0.0.1:8000/app?token=…
+The startup token is required for API and WebSocket access.
+```
+
+Your browser opens the **Open** link automatically. The console stores the token, removes it from the address bar, and sends it with every request. A new token is generated each time the server starts.
+
+| Flag | Default | Effect |
+|---|---|---|
+| `--host` | `0.0.0.0` | Interface to bind. |
+| `--port` | `8000` | Port to bind. |
+| `--no-browser` | off | Print the link without opening a browser. Use this on remote machines. |
+| `--token` | random | Use a fixed token so bookmarks keep working across restarts. |
+
+!!! warning "The server listens on every interface by default"
+    Anyone on your network who has the token can start runs and read your data. Pass `--host 127.0.0.1` on shared networks, and reach a remote machine through an SSH tunnel. See [Post-Installation Setup](../installation/post-installation.md).
+
+Public models and datasets need no login. For gated models such as Llama, accept the licence on the model's Hub page and run `hf auth login` once on the machine running the server.
+
+## 3. Prepare a small dataset
+
+Save this as `data/train.jsonl`. It is an instruction-following dataset for the supervised objective: one JSON object per line with `prompt` and `completion`.
+
+```json
+{"prompt": "Summarise this ticket: The app logs me out every time I update it.", "completion": "Customer is logged out after each update."}
+{"prompt": "Summarise this ticket: I was charged twice for my March invoice.", "completion": "Customer was double-charged for the March invoice."}
+{"prompt": "Summarise this ticket: The export button does nothing in Firefox.", "completion": "Export button is unresponsive in Firefox."}
+```
+
+`instruction` and `response` are accepted as aliases. Three rows is enough to check the pipeline end to end, not to train a useful model; a real dataset needs hundreds to thousands of rows. Column requirements for every use case and objective are in [Dataset Formats](../configuration/dataset-formats.md).
+
+Paths are resolved on the server's machine, relative to the directory where you ran `modelforge run`.
+
+## 4. Plan and start a run
+
+Open **New run** in the console. The left side is a four-step form; the right side is the **Plan**.
+
+1. **Task.** Pick **Instruction Following**, then the **Supervised** objective. Objectives a use case can't train are greyed out.
+2. **Dataset.** Enter `./data/train.jsonl`, keep **Local** selected, and press **Validate**. It reports the normalized columns or the first problem it finds.
+3. **Base model.** Press **Generate recommendation**. The server detects your hardware, picks a tier, and searches the Hub for up to five models that fit. Pick one from the table, or type any Hub model ID into **Or enter a different model ID**.
+4. **Output.** Set an output directory, for example `./modelforge_output/first-run`, leave **Write TensorBoard logs** on, and press **Start training**.
+
+Before you start, read the Plan: the tier and model, the strategy and parallelism, the **VRAM estimate**, the **PEFT decision**, the full **Training config** and any warnings. The config is read-only. [How Planning Works](../configuration/configuration-guide.md) explains each part.
+
+!!! tip "Give each run its own output directory"
+    The form defaults to `./modelforge_output`. Two runs writing to the same folder overwrite each other's weights and checkpoints.
+
+## 5. Watch it train
+
+Starting a run takes you to its detail page:
+
+- **Training log** streams status, loss and step updates live.
+- **Checkpoints** lists each saved step (every 500 steps), with **Resume** on failed or cancelled runs.
+- **Cancel run** stops after the current step.
+
+Only one run trains at a time. Starting another while one is active is refused.
+
+To see the loss curves, launch TensorBoard on the output folder (needs the `[cli]` extra):
+
+```bash
+modelforge tensorboard ./modelforge_output/first-run
+```
+
+It serves on `http://127.0.0.1:6006` by default.
+
+## 6. Try the result
+
+When the run completes, open **Playground**, pick the run, choose **Final model** or a checkpoint, and send a message. See [Playground](../user-guide/playground.md).
+
+The output directory holds the trained weights (or only the adapter for LoRA and QLoRA runs), the tokenizer, checkpoints, TensorBoard logs and a `modelforge_config.json` describing how the model was trained.
+
+## Without a browser
+
+On a headless server, use the terminal wizard instead. It asks the same questions and trains in the terminal:
+
+```bash
+pip install "modelforge-finetuning[cli]"
 modelforge cli
 ```
 
-This launches a step-by-step prompt that guides you through dataset selection, model configuration, and training — no browser required.
-
-**In Jupyter notebooks**, you can also run the CLI wizard:
-
-```python
-from ModelForge.notebook_cli import run_cli
-run_cli()
-```
-
-| Interface | Command | Best for |
-|-----------|---------|----------|
-| Web UI | `modelforge` | Local machines with a browser |
-| CLI Wizard | `modelforge cli` | Headless servers, SSH, notebooks |
-
-## Your First Fine-Tuning Job
-
-### 1. Prepare Your Dataset
-
-Create a JSONL file with your training data. The format depends on your task:
-
-**Text Generation:**
-```jsonl
-{"input": "What is machine learning?", "output": "Machine learning is a subset of AI..."}
-{"input": "Explain neural networks", "output": "Neural networks are computing systems..."}
-```
-
-**Summarization:**
-```jsonl
-{"input": "Long article text here...", "output": "Short summary here."}
-```
-
-**Question Answering:**
-```jsonl
-{"context": "Context paragraph...", "question": "What is X?", "answer": "X is..."}
-```
-
-See [Dataset Formats](../configuration/dataset-formats.md) for detailed information.
-
-### 2. Upload Your Dataset
-
-1. In the ModelForge UI, click **"Upload Dataset"**
-2. Select your JSONL file
-3. Wait for validation to complete
-
-### 3. Configure Training
-
-Select your training options:
-
-- **Task**: Choose text-generation, summarization, or extractive-question-answering
-- **Model**: Pick a recommended model for your GPU (or browse for others)
-- **Provider**: Choose `huggingface` (standard) or `unsloth` (2x faster, requires WSL/Docker on Windows)
-- **Strategy**: Choose `sft` (standard) or `qlora` (memory-efficient)
-- **Hardware Profile**: Select based on your GPU VRAM
-
-### 4. Start Training
-
-Click **"Start Training"** and monitor progress in real-time!
-
-### 5. Test Your Model
-
-Once training completes:
-1. Navigate to the **Playground** tab
-2. Select your fine-tuned model
-3. Enter a prompt and see the results!
-
-## Next Steps
-
-- **Learn about configuration options**: [Configuration Guide](../configuration/configuration-guide.md)
-- **Optimize for your hardware**: [Hardware Profiles](../configuration/hardware-profiles.md)
-- **Try different strategies**: [Training Strategies](../strategies/overview.md)
-- **Use the API**: [REST API Documentation](../api-reference/rest-api.md)
-
-## Stopping ModelForge
-
-To stop the application and free up resources:
+To see what the planner would choose without training:
 
 ```bash
-# Press Ctrl+C in the terminal running ModelForge
+modelforge recommend --use-case instruction_following --objective supervised
 ```
 
-## Running ModelForge Again
+See [Terminal Wizard](../user-guide/terminal-cli.md) and [CLI Commands](../api-reference/cli.md).
 
-Simply run:
+## Stopping and restarting
 
-```bash
-modelforge
-```
+Press Ctrl+C in the terminal running `modelforge run`. Any run that was queued or running when the server stopped is marked failed on the next start; its checkpoints are intact, so you can resume it. See [Checkpoints and Resuming](../user-guide/checkpoints.md).
 
-Your previous models and settings are preserved!
+## Next steps
 
-## Need Help?
-
-- Check the [FAQ](../troubleshooting/faq.md) for common questions
-- See [Troubleshooting](../troubleshooting/common-issues.md) for common issues
-- Ask in [GitHub Discussions](https://github.com/forgeopus/modelforge/discussions)
-
----
-
-**Congratulations! You're ready to start fine-tuning LLMs!** 🎉
+- [Fine-Tuning Concepts](concepts.md) if you are new to fine-tuning.
+- [Dataset Formats](../configuration/dataset-formats.md) to prepare real data.
+- [Browser Console](../user-guide/browser-console.md) for every page of the console.
+- [Common Issues](../troubleshooting/common-issues.md) if something goes wrong.

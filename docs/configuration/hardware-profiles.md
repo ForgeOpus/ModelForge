@@ -1,376 +1,228 @@
-# Hardware Profiles
+# Hardware and memory
 
-Optimize ModelForge for your GPU with hardware-aware model recommendations and configurations.
+ModelForge plans every run from the hardware it detects. It turns GPU memory into a budget, works out the largest model each training method can fit, and scales a few training settings to the memory available. This page explains what is detected, how the budget is calculated, and what changes on multi-GPU, Apple Silicon and CPU-only machines.
 
-## Overview
+!!! info "No more hardware profiles"
+    ModelForge 3 sorted machines into low, mid and high-end profiles with fixed settings per profile. ModelForge 4 has no profiles. The planner computes a parameter ceiling for each training method directly from your VRAM, so the plan changes smoothly with the hardware instead of jumping between three presets.
 
-Hardware profiles automatically detect your system capabilities and recommend optimal models and settings. This ensures you get the best performance without manual configuration.
+## What is detected
 
-## How Hardware Profiles Work
+`utilities/hardware_detector.py` collects:
 
-```
-System Scan
-    ↓
-Detect GPU VRAM + System RAM
-    ↓
-Classify into Profile (low_end/mid_range/high_end)
-    ↓
-Recommend Models + Settings
-    ↓
-Apply Optimizations
-```
+| Field | Source | Used for |
+|---|---|---|
+| `gpus` | NVML (NVIDIA driver), or PyTorch MPS | The VRAM budget, precision, parallelism |
+| `ram_gb` | `psutil` total memory | CPU-only parameter ceiling |
+| `physical_core_count` | `psutil` | Reported only |
+| `disk_storage_gb`, `available_disk_storage_gb` | `psutil` usage of the filesystem root `/` | Low-disk warning |
 
-## Available Profiles
-
-ModelForge classifies hardware into three profiles based on GPU VRAM and system RAM:
-
-### 1. Low End Profile
-
-**Hardware Requirements:**
-- **GPU VRAM**: < 7.2 GB
-- **OR**: GPU VRAM < 15.2 GB AND System RAM < 15.2 GB
-
-**Typical Hardware:**
-- NVIDIA GTX 1650 (4GB)
-- NVIDIA GTX 1660 (6GB)
-- NVIDIA RTX 3050 (4-6GB)
-- NVIDIA RTX A2000 (6GB)
-
-**Recommended Settings:**
-```json
-{
-  "compute_specs": "low_end",
-  "use_4bit": true,
-  "per_device_train_batch_size": 1,
-  "gradient_accumulation_steps": 8,
-  "max_seq_length": 512
-}
-```
-
-**Recommended Models:**
-
-| Task | Primary Model | Size | VRAM Usage |
-|------|---------------|------|------------|
-| Text Generation | qwen/Qwen2.5-3B | 3B params | ~4-5 GB |
-| Summarization | google/flan-t5-large | 770M params | ~3-4 GB |
-| Question Answering | deepset/roberta-base-squad2 | 125M params | ~2-3 GB |
-
-**Optimization Tips:**
-- ✅ Use 4-bit quantization (`use_4bit: true`)
-- ✅ Small batch size (1-2)
-- ✅ Higher gradient accumulation (8-16)
-- ✅ Shorter sequences (512-1024 tokens)
-- ✅ QLoRA strategy for memory efficiency
-
----
-
-### 2. Mid Range Profile
-
-**Hardware Requirements:**
-- **GPU VRAM**: 7.2 - 15.2 GB
-- **System RAM**: ≥ 15.2 GB
-- **OR**: GPU VRAM ≥ 15.2 GB AND System RAM < 15.2 GB
-
-**Typical Hardware:**
-- NVIDIA RTX 2070/2080 (8GB)
-- NVIDIA RTX 3060 Ti (8GB)
-- NVIDIA RTX 3070 (8GB)
-- NVIDIA RTX 4060 Ti (8-16GB)
-- NVIDIA RTX A4000 (12GB)
-
-**Recommended Settings:**
-```json
-{
-  "compute_specs": "mid_range",
-  "use_4bit": true,
-  "per_device_train_batch_size": 2,
-  "gradient_accumulation_steps": 4,
-  "max_seq_length": 1024
-}
-```
-
-**Recommended Models:**
-
-| Task | Primary Model | Size | VRAM Usage |
-|------|---------------|------|------------|
-| Text Generation | mistralai/Mistral-Small-3.1-24B-Base-2503 | 24B params | ~12-14 GB |
-| Text Generation (alt) | meta-llama/Llama-3.1-8B-Instruct | 8B params | ~8-10 GB |
-| Summarization | google/flan-t5-large | 770M params | ~4-5 GB |
-| Question Answering | meta-llama/Llama-3.1-8B-Instruct | 8B params | ~8-10 GB |
-
-**Optimization Tips:**
-- ✅ 4-bit quantization recommended
-- ✅ Moderate batch size (2-4)
-- ✅ Standard gradient accumulation (4-8)
-- ✅ Medium sequences (1024-2048 tokens)
-- ✅ Unsloth provider for 2x speedup
-- ✅ Both SFT and QLoRA strategies work well
-
----
-
-### 3. High End Profile
-
-**Hardware Requirements:**
-- **GPU VRAM**: ≥ 15.2 GB
-- **System RAM**: ≥ 15.2 GB
-
-**Typical Hardware:**
-- NVIDIA RTX 3080/3090 (10-24GB)
-- NVIDIA RTX 4080/4090 (12-24GB)
-- NVIDIA RTX A5000/A6000 (24-48GB)
-- NVIDIA Tesla V100 (16-32GB)
-- NVIDIA A100 (40-80GB)
-
-**Recommended Settings:**
-```json
-{
-  "compute_specs": "high_end",
-  "use_4bit": false,
-  "bf16": true,
-  "per_device_train_batch_size": 4,
-  "gradient_accumulation_steps": 2,
-  "max_seq_length": 2048
-}
-```
-
-**Recommended Models:**
-
-| Task | Primary Model | Size | VRAM Usage |
-|------|---------------|------|------------|
-| Text Generation | meta-llama/Llama-4-Maverick-17B-128E-Instruct | 17B params | ~16-18 GB |
-| Text Generation (large) | qwen/Qwen2.5-32B | 32B params | ~20-24 GB |
-| Summarization | meta-llama/Llama-4-Maverick-17B-128E-Instruct | 17B params | ~16-18 GB |
-| Question Answering | qwen/Qwen2.5-32B | 32B params | ~20-24 GB |
-
-**Optimization Tips:**
-- ✅ Optional 4-bit quantization (not required)
-- ✅ Use BF16 precision on Ampere+ GPUs (RTX 30xx/40xx)
-- ✅ Larger batch size (4-8)
-- ✅ Lower gradient accumulation (2-4)
-- ✅ Longer sequences (2048-4096 tokens)
-- ✅ Unsloth provider highly recommended
-- ✅ Can use advanced strategies (RLHF, DPO)
-
----
-
-## Profile Classification Rules
-
-ModelForge uses these rules to classify your hardware:
-
-```python
-if gpu_vram < 7.2 GB:
-    profile = "low_end"
-    
-elif gpu_vram < 15.2 GB and ram < 15.2 GB:
-    profile = "low_end"
-    
-elif gpu_vram < 15.2 GB and ram >= 15.2 GB:
-    profile = "mid_range"
-    
-elif gpu_vram >= 15.2 GB and ram < 15.2 GB:
-    profile = "mid_range"
-    
-else:  # gpu_vram >= 15.2 GB and ram >= 15.2 GB
-    profile = "high_end"
-```
-
-## Automatic Hardware Detection
-
-### Via UI
-
-When you start training in the UI:
-
-1. Select your task
-2. Click **"Detect Hardware"**
-3. ModelForge automatically:
-   - Scans GPU and RAM
-   - Classifies into profile
-   - Recommends optimal models
-   - Pre-fills configuration
-
-### Via API
-
-```bash
-curl -X POST http://localhost:8000/api/finetune/detect \
-  -H "Content-Type: application/json" \
-  -d '{"task": "text-generation"}'
-```
-
-**Response:**
-```json
-{
-  "hardware_specs": {
-    "gpu_name": "NVIDIA RTX 3070",
-    "gpu_memory_gb": 8.0,
-    "ram_gb": 16.0,
-    "cuda_version": "12.6"
-  },
-  "compute_profile": "mid_range",
-  "recommended_model": "meta-llama/Llama-3.1-8B-Instruct",
-  "possible_models": [
-    "meta-llama/Llama-3.1-8B-Instruct",
-    "qwen/Qwen2.5-7B",
-    "mistralai/Mistral-Small-3.1-24B-Base-2503"
-  ]
-}
-```
-
-## Manual Profile Selection
-
-You can override automatic detection:
+See it with `GET /api/hardware`, or at the start of the terminal wizard:
 
 ```json
 {
-  "compute_specs": "mid_range",  // Force mid-range profile
-  "model_name": "meta-llama/Llama-3.1-8B-Instruct",
-  ...
+  "physical_core_count": 16,
+  "disk_storage_gb": 1862.0,
+  "available_disk_storage_gb": 940.5,
+  "ram_gb": 62.7,
+  "gpus": [{"name": "NVIDIA GeForce RTX 4090", "total_memory_gb": 23.99}]
 }
 ```
 
-## Profile-Specific Optimizations
+Memory figures are in GiB (bytes ÷ 1024³).
 
-### Memory Optimization by Profile
+### CUDA, MPS or CPU
 
-| Profile | Quantization | Batch Size | Grad Accum | Max Seq Len |
-|---------|--------------|------------|------------|-------------|
-| Low End | 4-bit (required) | 1 | 8-16 | 512-1024 |
-| Mid Range | 4-bit (recommended) | 2-4 | 4-8 | 1024-2048 |
-| High End | Optional | 4-8 | 2-4 | 2048-4096 |
+| Machine | What is detected | Treated as |
+|---|---|---|
+| NVIDIA GPU(s) | One entry per GPU NVML reports, with its **total** memory | CUDA. VRAM is the sum of the selected GPUs. |
+| Apple Silicon with MPS available | One entry, `Apple Silicon GPU`, memory `"N/A"` | MPS. Counted as 8 GB. NVML is not queried. |
+| Anything else | No GPUs | CPU-only. |
 
-### Provider Recommendations by Profile
+Notes:
 
-| Profile | Primary Provider | Secondary | Speedup |
-|---------|------------------|-----------|---------|
-| Low End | HuggingFace | - | 1x |
-| Mid Range | Unsloth | HuggingFace | 2x |
-| High End | Unsloth | HuggingFace | 2x |
+- Detection reads **total** GPU memory, not free memory. Memory used by other processes, a desktop session or a loaded playground model is not subtracted.
+- Only NVIDIA GPUs are detected. If NVML is unavailable or fails, the machine is treated as CPU-only.
+- NVML lists every NVIDIA GPU in the machine. To plan and train on a subset, pass `gpu_indices` to the API, or choose GPUs in the terminal wizard. The browser console always uses every detected GPU.
 
-> **Note**: Unsloth requires Linux, WSL, or Docker. Not available on native Windows.
+### Precision
 
-### Strategy Recommendations by Profile
+Training precision comes from the GPUs that will run training (`utilities/precision.py`):
 
-| Profile | Recommended Strategy | Alternative |
-|---------|---------------------|-------------|
-| Low End | QLoRA | SFT |
-| Mid Range | QLoRA or SFT | RLHF, DPO |
-| High End | SFT, QLoRA, RLHF, DPO | Any |
+| Hardware | `bf16` | `fp16` |
+|---|---|---|
+| CUDA, every GPU with compute capability 8.0 or newer (Ampere, Ada, Hopper and later) | true | false |
+| CUDA, any GPU older than 8.0 (for example Turing or Volta) | false | true |
+| Apple MPS | false | false (fp32) |
+| CPU-only | false | false (fp32) |
 
-## VRAM Usage Estimation
+If PyTorch can't read a GPU's compute capability, fp16 is used.
 
-### Formula
+## The memory model
 
-```
-VRAM Usage ≈ Model Size × Precision Factor × Overhead Factor
-```
+Rather than simulate every allocation, the planner uses a fixed cost per parameter for each training method (**tier**) plus two constants:
 
-### Precision Factors
+| Constant | Value | Covers |
+|---|---|---|
+| Activation budget | 2.0 GB | Activations for one sequence at a time with gradient checkpointing on |
+| Adapter cost | 0.1 GB | LoRA adapters, their optimizer state and QLoRA dequantization buffers |
 
-- **4-bit**: ~0.5 GB per billion parameters
-- **8-bit**: ~1 GB per billion parameters  
-- **16-bit (FP16/BF16)**: ~2 GB per billion parameters
-- **32-bit (FP32)**: ~4 GB per billion parameters
+| Tier | Bytes per parameter | What sits on the GPU |
+|---|---|---|
+| `full_finetune` | 18 | Weights, gradients and Adam optimizer state for every parameter |
+| `lora_bf16` | 2 | Frozen 16-bit weights plus adapters |
+| `qlora_8bit` | 1 | Frozen 8-bit weights plus adapters |
+| `qlora_4bit` | 0.5 | Frozen 4-bit NF4 weights plus adapters |
 
-### Example Calculations
+### Raw VRAM
 
-**7B model with 4-bit quantization:**
-```
-7B × 0.5 GB/B × 1.5 (overhead) = ~5.25 GB VRAM
-```
+The sum of total memory across the selected GPUs. MPS is 8 GB. CPU-only is 0.
 
-**7B model with 16-bit precision:**
-```
-7B × 2 GB/B × 1.5 (overhead) = ~21 GB VRAM
-```
+### Per-strategy adjustment
 
-**32B model with 4-bit quantization:**
-```
-32B × 0.5 GB/B × 1.5 (overhead) = ~24 GB VRAM
+Some objectives hold more than one model or more than one sequence in memory. The planner converts raw VRAM into an **adjusted** budget first:
+
+```text
+adjusted = (raw − (batch_multiplier − 1) × 2.0 GB) / (1 + extra_model_copies)
 ```
 
-## Troubleshooting
+| Strategy | Extra model copies | Batch multiplier | Why |
+|---|---|---|---|
+| `sft` | 0 | 1.0 | One model, one sequence. |
+| `dpo` | 1 | 2.0 | A frozen reference model (counted for adapter tiers too, to stay conservative), and chosen and rejected answers in each step. |
+| `grpo` | 0 | 4.0 | Four sampled completions per prompt. |
+| `qa` | 0 | 1.0 | One model, one window. |
 
-### Out of Memory (OOM) Errors
+A negative adjusted budget on a GPU machine stops planning with `Strategy '<slug>' requires more VRAM than is available...`. GRPO needs more than 6 GB raw, DPO more than 2 GB.
 
-**Error**: `CUDA out of memory`
+### Tier ceilings
 
-**Solutions**:
-1. Reduce batch size: `per_device_train_batch_size: 1`
-2. Increase gradient accumulation: `gradient_accumulation_steps: 16`
-3. Enable 4-bit quantization: `use_4bit: true`
-4. Reduce sequence length: `max_seq_length: 512`
-5. Enable gradient checkpointing: `gradient_checkpointing: true`
-6. Try a smaller model
+The largest trainable model for each tier, in billions of parameters:
 
-### Slow Training
+| Tier | Ceiling |
+|---|---|
+| `full_finetune` | (adjusted − 2.0) / 18 |
+| `lora_bf16` | (adjusted − 2.1) / 2 |
+| `qlora_8bit` | (adjusted − 2.1) / 1 |
+| `qlora_4bit` | (adjusted − 2.1) / 0.5 |
 
-**Problem**: Training is taking too long
+A ceiling below zero is 0. The planner searches the Hub up to the largest ceiling, takes the largest model on the shortlist, and gives it the least quantized tier whose ceiling it fits under. See [How planning works](configuration-guide.md#step-6-picking-the-model-and-tier).
 
-**Solutions**:
-1. **Use Unsloth provider** for 2x speedup (if on Linux/WSL)
-2. Increase batch size if you have VRAM headroom
-3. Reduce gradient accumulation steps
-4. Use mixed precision (BF16 on RTX 30xx/40xx)
-5. Consider a smaller model
+## Worked examples
 
-### Wrong Profile Detection
+### A single GPU
 
-**Problem**: ModelForge detects wrong profile
+Ceilings in billions of parameters, for one GPU of each size:
 
-**Solutions**:
-1. Manually specify profile: `"compute_specs": "mid_range"`
-2. Check GPU drivers are up to date
-3. Verify CUDA is properly installed
-4. Check `nvidia-smi` output matches expected VRAM
+| GPU | Strategy | Adjusted | Full | LoRA bf16 | QLoRA 8-bit | QLoRA 4-bit |
+|---|---|---|---|---|---|---|
+| 8 GB | sft / qa | 8 GB | 0.33 | 2.95 | 5.9 | 11.8 |
+| 8 GB | dpo | 3 GB | 0.06 | 0.45 | 0.9 | 1.8 |
+| 8 GB | grpo | 2 GB | 0 | 0 | 0 | 0 |
+| 12 GB | sft / qa | 12 GB | 0.56 | 4.95 | 9.9 | 19.8 |
+| 12 GB | dpo | 5 GB | 0.17 | 1.45 | 2.9 | 5.8 |
+| 12 GB | grpo | 6 GB | 0.22 | 1.95 | 3.9 | 7.8 |
+| 16 GB | sft / qa | 16 GB | 0.78 | 6.95 | 13.9 | 27.8 |
+| 16 GB | dpo | 7 GB | 0.28 | 2.45 | 4.9 | 9.8 |
+| 16 GB | grpo | 10 GB | 0.44 | 3.95 | 7.9 | 15.8 |
+| 24 GB | sft / qa | 24 GB | 1.22 | 10.95 | 21.9 | 43.8 |
+| 24 GB | dpo | 11 GB | 0.5 | 4.45 | 8.9 | 17.8 |
+| 24 GB | grpo | 18 GB | 0.89 | 7.95 | 15.9 | 31.8 |
+| 80 GB | sft / qa | 80 GB | 4.33 | 38.95 | 77.9 | 155.8 |
+| 80 GB | dpo | 39 GB | 2.06 | 18.45 | 36.9 | 73.8 |
+| 80 GB | grpo | 74 GB | 4.0 | 35.95 | 71.9 | 143.8 |
 
-## Best Practices
+!!! example "SFT on a 24 GB GPU"
+    Adjusted VRAM is 24 GB. The full fine-tuning ceiling is (24 − 2) / 18 ≈ 1.22B.
 
-### For Low End Hardware
+    - A 0.5B model trains as `full_finetune`.
+    - A 3B model trains as `lora_bf16` (3 ≤ 10.95).
+    - An 8B model trains as `lora_bf16` (8 ≤ 10.95).
+    - A 14B model trains as `qlora_8bit` (14 ≤ 21.9).
+    - A 32B model trains as `qlora_4bit` (32 ≤ 43.8), with a warning.
 
-1. ✅ Always use 4-bit quantization
-2. ✅ Start with smallest recommended models
-3. ✅ Use QLoRA strategy
-4. ✅ Batch size = 1, gradient accumulation = 8-16
-5. ✅ Keep sequences short (512-1024)
-6. ✅ Close other GPU applications
+!!! example "DPO on a 24 GB GPU"
+    Adjusted VRAM is (24 − 1 × 2) / 2 = 11 GB. A 1.5B model fits LoRA bf16 (1.5 ≤ 4.45). An 8B model needs QLoRA 8-bit (8 ≤ 8.9).
 
-### For Mid Range Hardware
+!!! example "GRPO on an 8 GB GPU"
+    Adjusted VRAM is 8 − 3 × 2 = 2 GB, which leaves nothing after the activation and adapter reserve. Every ceiling is 0, the plan warns `No single-GPU tier is viable`, and no model is found. Use SFT, or a larger GPU.
 
-1. ✅ Use 4-bit quantization for large models (7B+)
-2. ✅ Unsloth provider for best performance
-3. ✅ Batch size = 2-4
-4. ✅ Try both SFT and QLoRA strategies
-5. ✅ Medium sequences (1024-2048)
+The plan's **VRAM estimate** (`vram_estimate` in the API) shows the same numbers for your machine: `raw_vram_gb`, `adjusted_vram_gb`, the two constants, `bytes_per_param` for the chosen tier and `max_params_by_tier`.
 
-### For High End Hardware
+### Multiple GPUs
 
-1. ✅ Unsloth provider mandatory for speed
-2. ✅ Can skip quantization for small models
-3. ✅ Use BF16 on Ampere+ GPUs
-4. ✅ Larger batch sizes (4-8)
-5. ✅ Try advanced strategies (RLHF, DPO)
-6. ✅ Longer sequences (2048-4096)
 
-## Performance Comparison
+The planner adds the memory of every selected GPU, but uses that sum only where it is safe:
 
-### Training Time Estimates (1000 examples, 3 epochs)
+- **Full fine-tuning** uses the summed budget, because FSDP can shard parameters, gradients and optimizer state across GPUs.
+- **Adapter tiers** (LoRA, QLoRA) use the **smallest** GPU's budget, because each data-parallel process keeps a full copy of the frozen weights.
 
-| Model Size | Profile | Provider | Strategy | Time |
-|------------|---------|----------|----------|------|
-| 3B | Low End | HuggingFace | QLoRA | ~2 hours |
-| 7B | Mid Range | Unsloth | QLoRA | ~45 min |
-| 7B | Mid Range | HuggingFace | QLoRA | ~90 min |
-| 17B | High End | Unsloth | SFT | ~60 min |
-| 32B | High End | Unsloth | QLoRA | ~90 min |
+!!! example "SFT on two 24 GB GPUs"
+    Raw VRAM is 48 GB.
 
-> Times are approximate and vary based on exact hardware and configuration.
+    - Full fine-tuning ceiling from the sum: (48 − 2) / 18 ≈ 2.56B.
+    - Adapter ceilings from one 24 GB card: LoRA bf16 10.95B, 8-bit 21.9B, 4-bit 43.8B.
 
-## Next Steps
+    A 1B model at full fine-tuning needs 1 × 18 + 2 = 20 GB, which fits one card, so the plan uses **data parallel**. A 2B model needs 38 GB, which doesn't fit one card, so the plan uses **FSDP** across both. An 8B model is planned as LoRA bf16 with data parallel.
 
-- **[Configuration Guide](configuration-guide.md)** - Detailed configuration options
-- **[Provider Overview](../providers/overview.md)** - Choose HuggingFace or Unsloth
-- **[Training Strategies](../strategies/overview.md)** - Select optimal strategy
-- **[Performance Optimization](../troubleshooting/performance.md)** - Fine-tune performance
+When the tier is an adapter tier, `adjusted_vram_gb` in the plan reports the smallest GPU's budget. Training starts one process per selected GPU through Accelerate. See [Multi-GPU training](../strategies/multi-gpu.md) for data parallel vs. FSDP and the override.
 
----
+### Apple Silicon (MPS)
 
-**Hardware profiles make ModelForge accessible to everyone!** From 4GB to 80GB VRAM, we've got you covered.
+- Memory is counted as a flat 8 GB, whatever the machine's unified memory.
+- `qlora_8bit` and `qlora_4bit` are disabled, because bitsandbytes doesn't support MPS. The plan is either `full_finetune` (up to 0.33B for SFT) or `lora_bf16` (up to 2.95B for SFT).
+- Training runs in fp32, and the plan warns that MPS is capped at LoRA bf16.
+- Parallelism is always data parallel on a single device.
+- GRPO's adjusted budget on MPS is 2 GB, so no tier is viable for reinforcement training. DPO's ceilings are small (0.45B for LoRA).
+
+See [macOS (Apple Silicon)](../installation/macos-mps.md).
+
+### CPU-only
+
+- The only tier is `qlora_4bit`, with a ceiling of the smaller of 500M parameters and RAM in bytes ÷ 3. On a 16 GB machine that's 500M.
+- Quantization is switched off in the generated config (bitsandbytes needs CUDA), so it trains a LoRA adapter on full-precision weights.
+- fp32, no Liger kernels, no activation offloading.
+- The plan warns that training will be extremely slow.
+
+## VRAM-scaled defaults
+
+A few training settings in the generated `strategy_config` depend on **total** raw VRAM, summed across the selected GPUs. MPS and CPU-only machines get the smallest settings.
+
+| Setting | Below 12 GB | 12 to 32 GB | 32 GB and above |
+|---|---|---|---|
+| SFT, DPO `max_length` | 512 | 1024 | 2048 |
+| SFT, DPO `activation_offloading` | true (false on CPU and MPS) | false | false |
+| SFT `gradient_accumulation_steps` | 16 | 8 | 4 |
+| DPO `gradient_accumulation_steps` | 32 | 16 | 8 |
+| GRPO `max_completion_length` | 128 | 256 | 512 |
+| GRPO `gradient_accumulation_steps` | 32 | 16 | 8 |
+
+| Setting | Below 12 GB | 12 GB and above |
+|---|---|---|
+| QA `max_length` | 256 | 384 |
+| QA `per_device_train_batch_size` | 1 | 4 |
+| QA `gradient_accumulation_steps` | 8 | 1 |
+| QA `gradient_checkpointing` | true | false |
+
+Other settings don't scale with memory: SFT, DPO and GRPO always use `per_device_train_batch_size = 1` with gradient checkpointing on. SFT always enables packing. Liger kernels are enabled for SFT and DPO when a CUDA GPU is present and `liger-kernel` is installed. Quantization settings (`model_init_kwargs.quantization_config`) follow the tier. See [Memory optimizations](../strategies/memory-optimizations.md) and the [training config reference](../api-reference/training-config.md).
+
+!!! note "Summed VRAM and per-GPU limits"
+    These thresholds use the total across GPUs. Two 16 GB GPUs count as 32 GB and get `max_length = 2048`, even though each process runs on a 16 GB card. If that runs out of memory, send an edited plan with a smaller `max_length`. See [How planning works](configuration-guide.md#through-the-http-api).
+
+## What the budget leaves out
+
+The estimates are conservative planning bounds, not measured guarantees.
+
+- The 2 GB activation budget assumes batch size 1 with gradient checkpointing. Very long sequences can exceed it.
+- Other processes on the GPU, a desktop session, or a model loaded in the playground use memory the planner thinks is free.
+- System RAM is never counted as extra VRAM, and CPU offloading for training is not configured.
+- The disk check compares free space on `/` with the model's weight size only. Checkpoints need more, and your output directory may be on another disk.
+
+If a run still runs out of memory, see [Performance and out-of-memory](../troubleshooting/performance.md).
+
+## See also
+
+- [How planning works](configuration-guide.md)
+- [Multi-GPU training](../strategies/multi-gpu.md)
+- [LoRA and QLoRA](../strategies/qlora.md)
+- [Full fine-tuning](../strategies/full-finetuning.md)
+- [Performance and out-of-memory](../troubleshooting/performance.md)

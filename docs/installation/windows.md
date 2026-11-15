@@ -1,469 +1,195 @@
-# Windows Installation Guide
+# Windows Installation
 
-Complete setup guide for ModelForge on Windows, including native installation and options for full feature support.
+This page installs ModelForge v4 on Windows 10 or 11 with an NVIDIA GPU. You can run it natively, which works for single-GPU training, or inside WSL2, which behaves like Linux and supports everything ModelForge does.
 
-## 🚨 Important: Platform Limitations
+## Choosing native Windows or WSL2
 
-**The Unsloth provider is NOT supported on native Windows.** Unsloth requires a Linux environment.
+| | Native Windows | WSL2 (Ubuntu) |
+|---|---|---|
+| Single-GPU training (SFT, DPO, GRPO, summarization, QA) | Yes | Yes |
+| QLoRA 8-bit and 4-bit (bitsandbytes) | Yes, bitsandbytes ships a Windows wheel | Yes |
+| Liger kernels (`[gpu]` extra) | No. Liger depends on Triton, which has no Windows wheels | Yes |
+| Multi-GPU (data parallel, FSDP) | Not supported, see below | Yes |
+| PyTorch install | Must install a CUDA build from pytorch.org | Default PyPI wheel includes CUDA |
 
-If you want to use Unsloth for 2x faster training, you have two options:
-1. **[Windows Subsystem for Linux (WSL)](#option-2-wsl-installation-recommended)** - Recommended
-2. **[Docker with NVIDIA Container Toolkit](#option-3-docker-installation)** - Alternative
+!!! note "Multi-GPU on native Windows"
+    Multi-GPU runs are started with Accelerate's `notebook_launcher`, which forks worker processes and uses NCCL for communication. Native Windows has neither `fork` nor NCCL in PyTorch's builds. If you have more than one GPU, use WSL2, or train on one GPU: pick it in the terminal wizard, or pass `gpu_indices` to the REST API. The browser console always uses every detected GPU.
 
-For standard training with the HuggingFace provider, native Windows works perfectly.
+The ModelForge CI runs on Linux only, so native Windows is less tested than Linux or WSL2.
 
----
-
-## Option 1: Native Windows Installation
-
-Use this if you're okay with the HuggingFace provider only (no Unsloth support).
-
-### Prerequisites
-
-1. **Windows 10/11** (64-bit)
-2. **Python 3.11.x** - [Download from python.org](https://www.python.org/downloads/)
-   - ⚠️ Python 3.12 is NOT supported yet
-   - During installation, check "Add Python to PATH"
-3. **NVIDIA GPU** with 4GB+ VRAM (6GB+ recommended)
-4. **NVIDIA Drivers** - Latest Game Ready or Studio drivers
-5. **CUDA Toolkit** - [Download CUDA 11.8 or 12.x](https://developer.nvidia.com/cuda-downloads)
-6. **HuggingFace Account** - [Create account](https://huggingface.co/) and [generate access token](https://huggingface.co/settings/tokens)
-
-### Verify Python Installation
-
-Open **PowerShell** or **Command Prompt**:
-
-```powershell
-python --version
-```
-
-Should show: `Python 3.11.x`
-
-### Verify CUDA Installation
-
-```powershell
-nvcc --version
-```
-
-Should show your CUDA version (e.g., `release 12.6`)
-
-### Installation Steps
-
-#### 1. Create a Virtual Environment (Recommended)
-
-```powershell
-# Create project directory
-mkdir ModelForge
-cd ModelForge
-
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-.\venv\Scripts\Activate
-```
-
-#### 2. Install ModelForge
-
-```powershell
-pip install modelforge-finetuning
-
-# Optional extras
-pip install modelforge-finetuning[cli]           # CLI wizard
-pip install modelforge-finetuning[quantization]   # 4-bit/8-bit quantization
-```
-
-#### 3. Install PyTorch with CUDA Support
-
-Visit [PyTorch Installation Page](https://pytorch.org/get-started/locally/) and select:
-- **PyTorch Build**: Stable
-- **Your OS**: Windows
-- **Package**: Pip
-- **Language**: Python
-- **Compute Platform**: CUDA 11.8 or CUDA 12.6
-
-**For CUDA 12.6:**
-```powershell
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-```
-
-**For CUDA 11.8:**
-```powershell
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
-
-#### 4. Verify GPU Detection
-
-```powershell
-python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"None\"}')"
-```
-
-Should show:
-```
-CUDA Available: True
-GPU: NVIDIA GeForce RTX 3060
-```
-
-#### 5. Set HuggingFace Token
-
-**Option A: Environment Variable (PowerShell)**
-```powershell
-$env:HUGGINGFACE_TOKEN="your_token_here"
-```
-
-**Option B: Environment Variable (CMD)**
-```cmd
-set HUGGINGFACE_TOKEN=your_token_here
-```
-
-**Option C: .env File (Persistent)**
-```powershell
-echo HUGGINGFACE_TOKEN=your_token_here > .env
-```
-
-#### 6. Run ModelForge
-
-```powershell
-modelforge          # Launch web UI
-modelforge cli      # Launch CLI wizard (headless/SSH alternative)
-```
-
-Open browser to: `http://localhost:8000`
-
-### ⚠️ Native Windows Limitations
-
-- **No Unsloth provider** - Only HuggingFace provider available
-- **Standard training speed** - Cannot use 2x speedup from Unsloth
-- **All other features work** - SFT, QLoRA, RLHF, DPO strategies are available
-
----
-
-## Option 2: WSL Installation (Recommended)
-
-Windows Subsystem for Linux provides a full Linux environment on Windows, enabling **all ModelForge features** including Unsloth.
+## Option 1: Native Windows
 
 ### Prerequisites
 
-- Windows 10 (Build 19041+) or Windows 11
-- NVIDIA GPU with latest drivers (525.60+)
-- At least 16GB RAM recommended
+- Windows 10 or 11, 64-bit.
+- An NVIDIA GPU with a current driver from [nvidia.com/drivers](https://www.nvidia.com/Download/index.aspx). You don't need the separate CUDA Toolkit; PyTorch wheels bundle the CUDA runtime.
+- **Python 3.13** (64-bit) from [python.org](https://www.python.org/downloads/windows/). Tick **Add python.exe to PATH** in the installer. ModelForge v4 does not run on Python 3.11 or 3.12.
 
-### Step 1: Install WSL
-
-Open **PowerShell as Administrator**:
+Check both:
 
 ```powershell
-wsl --install -d Ubuntu-22.04
-```
-
-This installs WSL 2 with Ubuntu 22.04. Restart your computer when prompted.
-
-### Step 2: Set Up WSL
-
-After restart, Ubuntu will open automatically:
-
-1. Create a username and password
-2. Update packages:
-
-```bash
-sudo apt update && sudo apt upgrade -y
-```
-
-### Step 3: Install NVIDIA CUDA on WSL
-
-**IMPORTANT**: Do NOT install NVIDIA drivers in WSL - use your Windows drivers!
-
-Install CUDA Toolkit in WSL:
-
-```bash
-# Add NVIDIA package repository
-wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
-sudo dpkg -i cuda-keyring_1.1-1_all.deb
-sudo apt-get update
-
-# Install CUDA Toolkit
-sudo apt-get install -y cuda-toolkit-12-6
-```
-
-Add CUDA to PATH:
-
-```bash
-echo 'export PATH=/usr/local/cuda/bin:$PATH' >> ~/.bashrc
-echo 'export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH' >> ~/.bashrc
-source ~/.bashrc
-```
-
-Verify:
-```bash
-nvcc --version
+py -3.13 --version
 nvidia-smi
 ```
 
-### Step 4: Install Python 3.11 in WSL
+### 1. Create a virtual environment
 
-```bash
-sudo apt install -y software-properties-common
-sudo add-apt-repository ppa:deadsnakes/ppa -y
-sudo apt update
-sudo apt install -y python3.11 python3.11-venv python3.11-dev python3-pip
+```powershell
+mkdir C:\modelforge
+cd C:\modelforge
+py -3.13 -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 ```
 
-Make Python 3.11 default:
-```bash
-sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
+If PowerShell refuses to run the activation script, allow local scripts for your user once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 ```
+
+### 2. Install PyTorch with CUDA first
+
+PyTorch is not a direct dependency of ModelForge; it comes in through `accelerate`, `peft` and `bitsandbytes`. On Windows, the PyTorch wheel on PyPI is CPU-only. If you install ModelForge first, you get that CPU build and training silently runs on the CPU.
+
+Install a CUDA build from the PyTorch index before ModelForge. Pick the command for your CUDA version from the selector at [pytorch.org/get-started/locally](https://pytorch.org/get-started/locally/) (Stable, Windows, Pip, Python, a CUDA version). It looks like this:
+
+```powershell
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+Replace `cu128` with the CUDA tag the selector shows. Your driver must support that CUDA version; `nvidia-smi` prints the highest CUDA version the driver supports in its header.
 
 Verify:
-```bash
-python3 --version  # Should show Python 3.11.x
+
+```powershell
+python -c "import torch; print(torch.__version__, torch.version.cuda, torch.cuda.is_available())"
 ```
 
-### Step 5: Install ModelForge in WSL
+The last value must be `True`.
 
-```bash
-# Create virtual environment
-mkdir ~/ModelForge
-cd ~/ModelForge
-python3 -m venv venv
-source venv/bin/activate
+### 3. Install ModelForge
 
-# Install ModelForge
+```powershell
 pip install modelforge-finetuning
-
-# Install PyTorch with CUDA
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-
-# Install Unsloth
-pip install unsloth
+# terminal wizard and TensorBoard helper
+pip install "modelforge-finetuning[cli]"
 ```
 
-### Step 6: Set HuggingFace Token
+Don't install the `[gpu]` extra on native Windows. `liger-kernel` itself installs, but it needs Triton, which has no Windows wheels, so the install fails. ModelForge works without it and only enables Liger when the package is importable.
 
-```bash
-export HUGGINGFACE_TOKEN="your_token_here"
+Because a CUDA build of `torch` is already installed and satisfies the requirement, pip keeps it. If `torch.cuda.is_available()` turns `False` after this step, pip replaced it; repeat step 2 with `--force-reinstall`.
 
-# Or add to .env file
-echo "HUGGINGFACE_TOKEN=your_token_here" > .env
+### 4. Start ModelForge
+
+```powershell
+modelforge run
 ```
 
-### Step 7: Run ModelForge
+The browser opens the printed link with the startup token. Then continue with [Post-Installation Setup](post-installation.md).
 
-```bash
-modelforge
-```
+!!! warning "Check what the planner sees"
+    ModelForge detects GPUs through NVML (the NVIDIA driver), not through PyTorch. With a CPU-only PyTorch build the console still shows your GPU and plans for its VRAM, but training runs on the CPU. Always confirm `torch.cuda.is_available()` is `True`.
 
-Access from Windows browser: `http://localhost:8000`
+## Option 2: WSL2
 
-### ✅ WSL Benefits
-
-- **Full Unsloth support** - 2x faster training
-- **All features available** - No limitations
-- **Better performance** - Native Linux environment
-- **Easy file access** - Access WSL files from Windows Explorer at `\\wsl$\Ubuntu-22.04\`
-
----
-
-## Option 3: Docker Installation
-
-Use Docker for isolated environments and easy deployment.
+WSL2 runs a real Linux kernel with access to your NVIDIA GPU through the Windows driver. Everything on the [Linux](linux.md) page applies inside it.
 
 ### Prerequisites
 
-1. **Docker Desktop for Windows** - [Download](https://www.docker.com/products/docker-desktop/)
-2. **NVIDIA GPU** with latest drivers
-3. **WSL 2** backend (enabled by default in Docker Desktop)
+- Windows 10 21H2 or newer, or Windows 11.
+- The current NVIDIA Windows driver. Install it on Windows only. Don't install an NVIDIA Linux driver inside WSL; the Windows driver provides GPU access.
 
-### Step 1: Install Docker Desktop
+### 1. Install WSL2 and Ubuntu
 
-1. Download and install Docker Desktop
-2. Enable WSL 2 backend in Settings
-3. Restart computer
-
-### Step 2: Install NVIDIA Container Toolkit
-
-Open **PowerShell as Administrator**:
+In an administrator PowerShell:
 
 ```powershell
-# Install WSL if not already installed
-wsl --install
-
-# Switch to WSL Ubuntu
-wsl -d Ubuntu-22.04
+wsl --install -d Ubuntu-24.04
 ```
 
-In WSL Ubuntu terminal:
+Restart when asked, open **Ubuntu** from the Start menu, and create a Linux user. Check the GPU from inside Ubuntu:
 
 ```bash
-# Add NVIDIA repository
-distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add -
-curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list
-
-# Install nvidia-container-toolkit
-sudo apt-get update
-sudo apt-get install -y nvidia-container-toolkit
-
-# Configure Docker to use NVIDIA runtime
-sudo nvidia-ctk runtime configure --runtime=docker
+nvidia-smi
 ```
 
-Restart Docker Desktop.
+### 2. Install Python 3.13
 
-### Step 3: Verify GPU Access
+Ubuntu 24.04 ships Python 3.12, so install 3.13 separately. Two common ways:
+
+=== "uv"
+
+    ```bash
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    source ~/.bashrc
+    uv python install 3.13
+    uv venv --python 3.13 ~/modelforge/.venv
+    ```
+
+=== "deadsnakes PPA"
+
+    ```bash
+    sudo add-apt-repository ppa:deadsnakes/ppa
+    sudo apt update
+    sudo apt install python3.13 python3.13-venv
+    python3.13 -m venv ~/modelforge/.venv
+    ```
+
+### 3. Install ModelForge
 
 ```bash
-docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
+source ~/modelforge/.venv/bin/activate
+pip install "modelforge-finetuning[cli,gpu]"
+python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
 ```
 
-Should show your GPU information.
+(With a uv-created environment, use `uv pip install` instead of `pip install`; uv environments don't include pip.)
 
-### Step 4: Create Dockerfile
+On Linux the default PyTorch wheel from PyPI includes CUDA, so no extra index is needed. If `torch.cuda.is_available()` is `False`, see [Linux](linux.md#pytorch-and-cuda).
 
-Create `Dockerfile`:
+### 4. Start ModelForge
 
-```dockerfile
-FROM nvidia/cuda:12.6.0-devel-ubuntu22.04
-
-# Install Python 3.11
-RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3.11-venv \
-    python3.11-dev \
-    python3-pip \
-    git \
-    && rm -rf /var/lib/apt/lists/*
-
-# Set Python 3.11 as default
-RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
-
-# Install ModelForge
-RUN pip install --no-cache-dir modelforge-finetuning
-
-# Install PyTorch with CUDA
-RUN pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-
-# Install Unsloth
-RUN pip install --no-cache-dir unsloth
-
-# Set working directory
-WORKDIR /workspace
-
-# Expose port
-EXPOSE 8000
-
-# Run ModelForge
-CMD ["modelforge", "--host", "0.0.0.0"]
+```bash
+modelforge run
 ```
 
-### Step 5: Build and Run
+WSL2 forwards `localhost` to Windows, so the printed `http://127.0.0.1:8000/app?token=…` link opens in a Windows browser. If the browser doesn't open by itself, copy the link.
 
-```powershell
-# Build image
-docker build -t modelforge:latest .
-
-# Run container
-docker run --gpus all -p 8000:8000 -e HUGGINGFACE_TOKEN=your_token_here modelforge:latest
-```
-
-Access at: `http://localhost:8000`
-
-### Docker with Persistent Storage
-
-To preserve data between container restarts:
-
-```powershell
-docker run --gpus all -p 8000:8000 \
-  -v modelforge-data:/root/.local/share/modelforge \
-  -e HUGGINGFACE_TOKEN=your_token_here \
-  modelforge:latest
-```
-
----
-
-## Operational Constraints
-
-### Important: max_sequence_length in Unsloth
-
-When using the **Unsloth provider**, you **MUST** specify a fixed `max_sequence_length`. Auto-inference (value `-1`) is **not supported**.
-
-**Example Configuration:**
-
-```json
-{
-  "provider": "unsloth",
-  "model_name": "meta-llama/Llama-3.2-3B",
-  "max_seq_length": 2048,  // REQUIRED: Must be a positive integer
-  "strategy": "sft",
-  ...
-}
-```
-
-**Valid values:**
-- `512`, `1024`, `2048`, `4096`, `8192`, etc.
-
-**Invalid values:**
-- `-1` (auto-inference - NOT supported)
-- `0` or negative numbers
-
-This limitation is specific to Unsloth and does not apply to the HuggingFace provider.
-
----
+!!! tip "Keep data inside the Linux file system"
+    Datasets, output directories and the Hugging Face cache are much faster under `~` than under `/mnt/c/`. Paths you type into the console are resolved inside WSL.
 
 ## Troubleshooting
 
-### CUDA Not Detected
+### `torch.cuda.is_available()` is `False`
 
-**Problem**: `torch.cuda.is_available()` returns `False`
+You have the CPU build, or a CUDA build newer than your driver supports. Reinstall from the PyTorch index with a CUDA tag your driver supports:
 
-**Solutions**:
-1. Verify NVIDIA drivers: `nvidia-smi`
-2. Reinstall PyTorch with correct CUDA version
-3. Check CUDA installation: `nvcc --version`
-4. Restart computer after installing CUDA
+```powershell
+pip uninstall -y torch
+pip install torch --index-url https://download.pytorch.org/whl/cu126
+```
 
-### Unsloth Import Error on Native Windows
+### `liger-kernel` or `triton` fails to install
 
-**Problem**: `ImportError: No module named 'unsloth'`
+You installed the `[gpu]` extra on native Windows. Install without it: `pip install modelforge-finetuning`.
 
-**Solution**: Unsloth requires Linux. Use WSL or Docker (see above).
+### `modelforge` is not recognized
 
-### WSL GPU Not Accessible
+The virtual environment is not active. Run `.venv\Scripts\Activate.ps1` again, or call `.venv\Scripts\modelforge.exe run`.
 
-**Problem**: `nvidia-smi` works in Windows but not in WSL
+### Long path errors during install
 
-**Solutions**:
-1. Update Windows to latest version
-2. Update NVIDIA drivers (525.60+)
-3. Ensure WSL 2 is installed: `wsl --status`
-4. Restart WSL: `wsl --shutdown` then reopen
+Enable long paths once in an administrator PowerShell, then reinstall:
 
-### Docker GPU Not Accessible
+```powershell
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+```
 
-**Problem**: Docker can't access GPU
+More in [Windows-Specific Issues](../troubleshooting/windows-issues.md).
 
-**Solutions**:
-1. Ensure WSL 2 backend is enabled in Docker Desktop
-2. Install nvidia-container-toolkit in WSL (see above)
-3. Restart Docker Desktop
-4. Verify: `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi`
+## Next steps
 
-### Permission Denied Errors
-
-**Problem**: Cannot write to directories
-
-**Solutions**:
-- **WSL**: Ensure you own the directory: `sudo chown -R $USER:$USER ~/ModelForge`
-- **Docker**: Use volume mounts with correct permissions
-
----
-
-## Next Steps
-
-- **[Post-Installation Setup](post-installation.md)** - Configure ModelForge
-- **[Quick Start Guide](../getting-started/quickstart.md)** - Run your first training job
-- **[Configuration Guide](../configuration/configuration-guide.md)** - Learn all options
-- **[Unsloth Provider](../providers/unsloth.md)** - Learn about Unsloth features
-
----
-
-**Need Help?** Check the [Windows-Specific Troubleshooting](../troubleshooting/windows-issues.md) guide.
+- [Post-Installation Setup](post-installation.md)
+- [Quick Start](../getting-started/quickstart.md)
+- [Hardware and Memory](../configuration/hardware-profiles.md)

@@ -1,587 +1,136 @@
-# Performance Optimization
+# Performance and out-of-memory
 
-Advanced techniques for maximizing ModelForge performance.
+This page explains how to make ModelForge runs faster and what to do when a run, or the Playground, runs out of memory. ModelForge's plan is tuned to fit first and be fast second, so most speed gains come from giving back some of that safety margin through an edited recommendation.
 
-## Overview
+Most changes here need the [REST API](../api-reference/rest-api.md), because the console shows the training config read-only. See [Training config: overriding the plan](../api-reference/training-config.md#overriding-the-plan) for how to send edited values.
 
-This guide covers advanced optimization techniques to get the best training performance from ModelForge on your hardware.
+## What the plan optimizes for
 
-## Quick Wins
+Every plan uses `per_device_train_batch_size: 1` with gradient accumulation to reach a useful effective batch, gradient checkpointing on (except QA on 12 GB or more), and a fixed 2 GB activation budget. That's the configuration least likely to run out of memory, and it's also slower than what many GPUs can manage.
 
-### 1. Use Unsloth Provider
+| Plan setting | Memory effect | Speed cost |
+|---|---|---|
+| Batch size 1 with accumulation (4 to 32 steps) | Activations for one sequence at a time | GPU underused on large cards |
+| Gradient checkpointing | Stores a fraction of activations | Roughly 20 to 30% slower |
+| Activation offloading (SFT, DPO under 12 GB) | Moves saved activations to CPU RAM | Extra transfers every step |
+| QLoRA 8-bit / 4-bit | 1 or 0.5 bytes per frozen weight | Dequantization on every forward pass |
 
-**Impact**: 2x faster training  
-**Effort**: Low
+## Making training faster
 
-```json
-{
-  "provider": "unsloth"
-}
-```
+### Check the basics first
 
-**Requirements**:
-- Linux or WSL (not native Windows)
-- Compatible model architecture (Llama, Mistral, Qwen, Gemma, Phi)
+- **Is it actually on the GPU?** If the plan shows `bf16: false` and `fp16: false` on an NVIDIA machine, PyTorch can't see CUDA and the run is on the CPU. See [Common issues](common-issues.md#a-gpu-is-listed-but-training-runs-on-the-cpu-or-precision-is-fp32).
+- **Is something else using the GPU?** Check `nvidia-smi` during a run. A desktop session, notebook or second job slows training as well as risking OOM.
+- **Is the first run slow because of downloads?** The base model is downloaded to the Hugging Face cache on first use. Later runs reuse it.
+- **Precision.** bf16 is chosen automatically on compute capability 8.0 and newer (Ampere, Ada, Hopper). Older GPUs use fp16, which is fine for speed but can overflow; see [below](#loss-becomes-nan-on-older-gpus).
 
-**Speedup**: Unsloth provides 2x faster training through optimized kernels.
-
----
-
-### 2. Enable BF16 on Ampere+ GPUs
-
-**Impact**: 20-30% faster  
-**Effort**: Low
-
-```json
-{
-  "bf16": true,
-  "fp16": false
-}
-```
-
-**Requirements**:
-- NVIDIA RTX 30xx, 40xx, or A100 GPUs
-- PyTorch 2.0+
-
-**Benefits**:
-- Faster training than FP16
-- Better numerical stability
-- No accuracy degradation
-
----
-
-### 3. Optimize Batch Size
-
-**Impact**: Variable (can be 2-3x faster)  
-**Effort**: Medium
-
-**Strategy**:
-1. Start with smallest batch size (1)
-2. Gradually increase until you hit OOM
-3. Back off to the largest size that fits
-
-```json
-{
-  "per_device_train_batch_size": 4,  // Increase from default 1
-  "gradient_accumulation_steps": 2   // Decrease from default 4
-}
-```
-
-**Formula**:
-```
-Effective Batch Size = per_device_train_batch_size × gradient_accumulation_steps
-```
-
-Keep effective batch size constant while maximizing `per_device_train_batch_size`.
-
----
-
-### 4. Use Flash Attention
-
-**Impact**: 20-40% faster for long sequences  
-**Effort**: Medium
-
-Flash Attention is automatically used by Unsloth when available.
-
-**Manual Installation**:
-```bash
-pip install flash-attn --no-build-isolation
-```
-
-**Benefits**:
-- Faster attention computation
-- Lower memory usage
-- Enables longer sequences
-
----
-
-### 5. Reduce Sequence Length
-
-**Impact**: Proportional to reduction  
-**Effort**: Low
-
-```json
-{
-  "max_seq_length": 1024  // Instead of 2048
-}
-```
-
-**Trade-off**: Shorter context windows, but much faster training.
-
-**Recommendations**:
-- Text generation: 1024-2048
-- Summarization: 512-1024
-- Question answering: 512
-
----
-
-## VRAM Optimization
-
-### Memory Usage Formula
-
-```
-VRAM ≈ (Model Size × Precision Factor) + (Batch Size × Sequence Length × Hidden Size)
-```
-
-### Reduce Memory Usage
-
-#### 1. Use 4-bit Quantization
-
-**Savings**: ~75% model memory
-
-> **Note**: Quantization requires the `[quantization]` extra: `pip install modelforge-finetuning[quantization]`
-
-```json
-{
-  "use_4bit": true,
-  "bnb_4bit_compute_dtype": "bfloat16",
-  "bnb_4bit_quant_type": "nf4"
-}
-```
-
-#### 2. Enable Gradient Checkpointing
-
-**Savings**: ~30-50% activation memory  
-**Cost**: 10-15% slower
-
-```json
-{
-  "gradient_checkpointing": true
-}
-```
-
-#### 3. Reduce LoRA Rank
-
-**Savings**: Proportional to rank reduction
-
-```json
-{
-  "lora_r": 16  // Instead of 64
-}
-```
-
-**Trade-off**: May reduce model quality with very low ranks.
-
-#### 4. Use Paged Optimizers
-
-**Savings**: Optimizer states paged to CPU RAM
-
-```json
-{
-  "optim": "paged_adamw_32bit"
-}
-```
-
----
-
-## CPU Optimization
-
-### 1. Set Number of Workers
-
-```python
-import os
-os.environ["TOKENIZERS_PARALLELISM"] = "true"
-```
-
-### 2. Use Multiple CPU Cores
-
-Set in environment:
-```bash
-export OMP_NUM_THREADS=8  # Use 8 CPU cores
-```
-
-### 3. Pin Memory
-
-```json
-{
-  "dataloader_pin_memory": true
-}
-```
-
----
-
-## Data Loading Optimization
-
-### 1. Preprocess Dataset
-
-Tokenize dataset once before training:
-
-```python
-from datasets import load_dataset
-from transformers import AutoTokenizer
-
-dataset = load_dataset("json", data_files="data.jsonl")
-tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.1-8B")
-
-def tokenize_function(examples):
-    return tokenizer(examples["text"], truncation=True, max_length=2048)
-
-tokenized_dataset = dataset.map(tokenize_function, batched=True)
-tokenized_dataset.save_to_disk("preprocessed_dataset")
-```
-
-Then use preprocessed dataset in training.
-
-### 2. Group by Length
-
-**Impact**: 10-20% faster
-
-```json
-{
-  "group_by_length": true
-}
-```
-
-Groups similar-length sequences to minimize padding.
-
-### 3. Enable Packing
-
-**Impact**: 20-40% faster for short sequences
-
-```json
-{
-  "packing": true
-}
-```
-
-Packs multiple sequences into one to maximize GPU utilization.
-
-**Caution**: May reduce quality for some tasks.
-
----
-
-## Training Hyperparameter Tuning
-
-### Learning Rate
-
-**Higher LR** = faster convergence but less stable
-
-**Recommendations**:
-- Start with default (2e-4)
-- Increase to 3e-4 or 5e-4 if training is stable
-- Decrease to 1e-4 if seeing instability
-
-```json
-{
-  "learning_rate": 3e-4
-}
-```
-
-### Warmup Ratio
-
-**Lower warmup** = faster initial training
-
-```json
-{
-  "warmup_ratio": 0.03  // 3% of training
-}
-```
-
-### Learning Rate Scheduler
-
-```json
-{
-  "lr_scheduler_type": "cosine"  // Recommended
-}
-```
-
-**Options**:
-- `cosine`: Best for most cases
-- `linear`: Simpler, sometimes faster
-- `constant`: No decay, fastest but may not converge well
-
----
-
-## Model-Specific Optimizations
-
-### Llama Models
-
-```json
-{
-  "provider": "unsloth",
-  "use_4bit": true,
-  "bf16": true,
-  "max_seq_length": 2048,
-  "gradient_checkpointing": true
-}
-```
-
-### Qwen Models
-
-```json
-{
-  "provider": "unsloth",
-  "use_4bit": true,
-  "bf16": true,
-  "max_seq_length": 2048
-}
-```
-
-### T5/BART Models
-
-```json
-{
-  "provider": "huggingface",  // Unsloth doesn't support encoder-decoder
-  "use_4bit": true,
-  "bf16": true,
-  "max_seq_length": 1024
-}
-```
-
----
-
-## Hardware-Specific Optimizations
-
-### RTX 30xx/40xx (Ampere/Ada)
-
-```json
-{
-  "provider": "unsloth",
-  "bf16": true,
-  "fp16": false,
-  "use_4bit": true,
-  "per_device_train_batch_size": 4,
-  "gradient_accumulation_steps": 2
-}
-```
-
-**Key Features**:
-- BF16 support
-- Tensor cores
-- High memory bandwidth
-
-### RTX 20xx (Turing)
-
-```json
-{
-  "provider": "unsloth",
-  "fp16": true,
-  "bf16": false,
-  "use_4bit": true,
-  "per_device_train_batch_size": 2,
-  "gradient_accumulation_steps": 4
-}
-```
-
-**Key Features**:
-- FP16 support (no BF16)
-- Tensor cores
-
-### GTX 16xx/10xx (Pascal/Turing)
-
-```json
-{
-  "provider": "huggingface",  // Unsloth may not work well
-  "fp16": true,
-  "use_4bit": true,
-  "per_device_train_batch_size": 1,
-  "gradient_accumulation_steps": 8,
-  "max_seq_length": 512
-}
-```
-
-**Limitations**:
-- Limited FP16 support
-- No tensor cores
-- Lower memory bandwidth
-
----
-
-## Benchmarking
-
-### Measure Training Speed
-
-Monitor:
-- **Iterations per second**
-- **Samples per second**
-- **Seconds per epoch**
-
-### Find Optimal Settings
-
-```python
-# Test different batch sizes
-for batch_size in [1, 2, 4, 8]:
-    for grad_accum in [16, 8, 4, 2]:
-        if batch_size * grad_accum == 16:  # Keep effective batch size constant
-            print(f"Testing: batch={batch_size}, grad_accum={grad_accum}")
-            # Run short training and measure speed
-```
-
-### Performance Metrics
-
-Track these metrics:
-- VRAM usage (`nvidia-smi`)
-- Training speed (samples/sec)
-- Time per epoch
-- GPU utilization (should be >90%)
-
----
-
-## Common Bottlenecks
-
-### 1. Low GPU Utilization
-
-**Symptoms**: GPU utilization < 80%
-
-**Causes**:
-- CPU preprocessing bottleneck
-- Small batch size
-- Data loading slow
-
-**Solutions**:
-- Increase batch size
-- Preprocess dataset
-- Increase data loading workers
-
-### 2. OOM (Out of Memory)
-
-**Symptoms**: CUDA out of memory error
-
-**Solutions**:
-1. Reduce batch size
-2. Increase gradient accumulation
-3. Enable 4-bit quantization
-4. Reduce sequence length
-5. Enable gradient checkpointing
-6. Use smaller LoRA rank
-
-### 3. Slow Data Loading
-
-**Symptoms**: GPU waits for data
-
-**Solutions**:
-- Preprocess dataset
-- Increase num_workers
-- Use faster storage (SSD vs HDD)
-- Enable data caching
-
-### 4. Gradient Overflow (FP16)
-
-**Symptoms**: Loss becomes NaN
-
-**Solutions**:
-- Use BF16 instead of FP16
-- Reduce learning rate
-- Enable gradient clipping
-- Use mixed precision with loss scaling
-
----
-
-## Advanced Techniques
-
-### 1. Gradient Accumulation Optimization
-
-Find optimal balance:
-```python
-total_batch_size = 16
-
-# Test configurations
-configs = [
-    (1, 16),   # batch=1, grad_accum=16
-    (2, 8),    # batch=2, grad_accum=8
-    (4, 4),    # batch=4, grad_accum=4
-    (8, 2),    # batch=8, grad_accum=2
-]
-
-# Larger batch_size usually faster if it fits in VRAM
-```
-
-### 2. Mixed Precision Training
-
-```json
-{
-  "bf16": true,
-  "fp16": false,
-  "tf32": true  // Enable TF32 on Ampere+
-}
-```
-
-### 3. Compilation (PyTorch 2.0+)
-
-```python
-import torch
-model = torch.compile(model, mode="max-autotune")
-```
-
-**Benefits**: 10-30% speedup  
-**Caution**: Experimental, may cause issues
-
-### 4. Multi-GPU Training
-
-For multiple GPUs, ModelForge automatically uses DataParallel.
+### Install Liger kernels (Linux)
 
 ```bash
-CUDA_VISIBLE_DEVICES=0,1 modelforge
+pip install "modelforge-finetuning[gpu]"
 ```
 
----
+Liger replaces common layers (RMSNorm, RoPE, SwiGLU, cross-entropy) with fused Triton kernels that use less memory and are often a little faster. SFT and DPO turn it on automatically when it's installed and a CUDA GPU is present. GRPO, QA and Summarization don't use it, and it's off under FSDP. It needs Triton, so it's Linux-only. See [Memory optimizations](../strategies/memory-optimizations.md).
 
-## Performance Checklist
+### Train fewer, fuller steps
 
-Before training, ensure:
+| Change | How | Notes |
+|---|---|---|
+| Fewer epochs | `strategy_config.num_train_epochs` (default 3.0) | Often the biggest win. Watch the loss: if it flattens after one epoch, stop there. |
+| Larger per-device batch, less accumulation | Raise `per_device_train_batch_size`, lower `gradient_accumulation_steps` by the same factor | Keeps the effective batch the same and uses the GPU better. Costs activation memory: try 2 or 4 and check `nvidia-smi`. |
+| Shorter sequences | Lower `max_length` (SFT, DPO, QA) or `max_completion_length` (GRPO) | Cost grows faster than linearly with length. Only if your examples are shorter anyway, or truncation is acceptable. |
+| Gradient checkpointing off | `gradient_checkpointing: false` | Roughly 20 to 30% faster, but activations for every layer stay in memory. Only with plenty of headroom. |
+| Activation offloading off | `activation_offloading: false` (SFT, DPO) | Only under 12 GB is it on; turning it off there often causes OOM. |
+| Fewer GRPO samples | `num_generations` (default 4) | Fewer completions per prompt per step. Must stay at least 2, and TRL requires the effective batch (`per_device_train_batch_size` × `gradient_accumulation_steps` × GPUs) to be divisible by it. Lower `max_completion_length` too if answers are short. |
+| Data loader workers | Add `dataloader_num_workers: 2` (SFT, DPO, GRPO, Summarization) | Helps when tokenization or loading is the bottleneck, which shows as low GPU utilization. |
 
-- [ ] Using Unsloth provider (if compatible)
-- [ ] BF16 enabled (Ampere+ GPUs)
-- [ ] 4-bit quantization enabled
-- [ ] Batch size maximized (no OOM)
-- [ ] Gradient checkpointing enabled
-- [ ] Dataset preprocessed
-- [ ] Sequence length optimized for task
-- [ ] Flash Attention installed
-- [ ] GPU utilization > 90%
+### Packing
 
----
+Supervised Instruction Following and Text Generation runs pack several short examples into each row (`packing: true`, `packing_strategy: "bfd"`), so little compute is spent on padding. Leave it on. DPO, GRPO, Summarization and QA don't pack.
 
-## Troubleshooting Performance Issues
+### Use more GPUs (Linux)
 
-### Training is Slower Than Expected
+With two or more GPUs, runs launch one process per GPU. Data parallel (the default) divides the steps per epoch across GPUs, which is close to a linear speed-up when the model fits on each card. FSDP is chosen only when a full fine-tune doesn't fit on one GPU; it adds communication every layer and is about capacity, not speed. See [Multi-GPU training](../strategies/multi-gpu.md).
 
-1. Check GPU utilization: `nvidia-smi dmon`
-2. Verify Unsloth is being used (check logs)
-3. Ensure BF16 is enabled on compatible GPUs
-4. Check if CPU is bottleneck (htop)
-5. Verify no background processes using GPU
+### Save less often, keep fewer checkpoints
 
-### Memory Usage Too High
+Checkpoints are written every `save_steps` (500) and all of them are kept. Each one includes optimizer state, which for full fine-tuning is several times the model size. On slow disks, raise `save_steps`. For SFT, DPO and GRPO you can also add `save_total_limit` to `strategy_config` to keep only the most recent few. Resuming needs at least one checkpoint, so don't set it to 0. ModelForge still lists every checkpoint it saw saved, so with a limit some listed checkpoints point at folders the trainer has since deleted.
 
-1. Enable 4-bit quantization
-2. Reduce batch size
-3. Reduce sequence length
-4. Lower LoRA rank
-5. Enable gradient checkpointing
+## Fixing out-of-memory errors
 
-### Training is Unstable
+The plan is an estimate, not a guarantee. When a run fails with `CUDA out of memory` (or `torch.OutOfMemoryError`), the run's `error` shows the message. ModelForge doesn't retry automatically.
 
-1. Reduce learning rate
-2. Increase warmup steps
-3. Enable gradient clipping
-4. Switch to BF16 from FP16
-5. Check dataset quality
+### Common causes
 
----
+- **Something else is using the GPU.** The planner counts total VRAM, not free VRAM. A desktop session, a notebook, another training job, or a Playground streaming session in another server all take from the same budget.
+- **Long examples.** The 2 GB activation budget assumes rows up to `max_length` at batch size 1. Large models near the ceiling with long rows can exceed it.
+- **DPO and GRPO.** DPO processes chosen and rejected together and, for full fine-tuning, holds a frozen reference copy. GRPO generates four completions per prompt. Both are more sensitive than SFT.
+- **Uneven GPUs.** Under data parallel every GPU holds the whole model, including the smallest one. The planner accounts for the smallest card for adapter tiers, but other processes on that card still count.
+- **Edited plans.** ModelForge doesn't re-check memory for an edited recommendation. Larger batches, longer sequences or a higher LoRA rank can push it over.
 
-## Performance Comparison
+### What to change, in order
 
-### Training Time (1000 examples, 3 epochs)
+| Fix | How |
+|---|---|
+| Free the GPU | Close other GPU processes, then check with `nvidia-smi`. Close any open Playground session. |
+| Pick a smaller model | Choose a lower row in the recommendation table, or type a smaller model ID. |
+| Install Liger kernels | `pip install "modelforge-finetuning[gpu]"` on Linux, then generate the plan again. Cuts activation memory substantially for SFT and DPO. |
+| Shorten examples | Trim or split very long rows in your dataset, or lower `max_length` through the API. |
+| Turn on memory savers | Through the API: `activation_offloading: true` (SFT, DPO), `gradient_checkpointing: true` (QA on 12 GB or more has it off). |
+| Use a lower tier | Send a recommendation with `peft_approach` set to `qlora_8bit` or `qlora_4bit` and the matching `model_init_kwargs`. See the [example](../api-reference/training-config.md#example-force-qlora-4-bit-on-a-model-that-would-fit-in-lora-bf16). CUDA only. |
+| Lower the LoRA rank | `peft_config.r` (and `lora_alpha` to 2 × r). Small effect; adapters are a minor part of memory. |
+| Add GPUs | With two or more, large full fine-tunes switch to FSDP automatically. |
+| Resume | If it failed partway through, fix the cause and [resume from the last checkpoint](../user-guide/checkpoints.md). |
 
-| Configuration | Time | Speedup |
-|---------------|------|---------|
-| Baseline (HF, FP16, batch=1) | 90 min | 1x |
-| + Unsloth | 45 min | 2x |
-| + BF16 | 35 min | 2.6x |
-| + Larger batch (4) | 25 min | 3.6x |
-| + Optimized settings | 20 min | 4.5x |
+### Reading the plan before you start
 
-**Hardware**: RTX 4070 (12GB), Llama-3.1-8B, QLoRA
+The plan's warnings flag tight situations:
 
----
+- `No single-GPU tier is viable for this hardware. Even QLoRA 4-bit may OOM. Consider multi-GPU setup.`
+- `QLoRA 4-bit was selected because the chosen model exceeds the unquantized and 8-bit training budgets.` The model is near the top of what fits.
+- `Available disk space (...) may be insufficient ...` is about disk, not VRAM, but a full disk fails a run just as surely.
 
-## Next Steps
+`vram_estimate.max_params_by_tier` shows how close the chosen model is to its tier's ceiling. A model at 95% of the ceiling has little margin. See [Hardware and memory](../configuration/hardware-profiles.md) for the budget arithmetic.
 
-- **[Hardware Profiles](../configuration/hardware-profiles.md)** - Optimize for your GPU
-- **[Configuration Guide](../configuration/configuration-guide.md)** - All settings
-- **[Troubleshooting](common-issues.md)** - Fix common problems
+### Loss becomes NaN on older GPUs
 
----
+On GPUs older than Ampere the plan uses fp16, which has a narrow range. If the logged loss becomes `nan` or the gradient norm explodes, lower `learning_rate`, or set `fp16: false` to train in full precision (slower, more memory).
 
-**Maximize your training performance!** Every optimization counts.
+## Out of memory in the Playground
+
+The Playground has two paths, and they behave differently.
+
+### One-shot replies (`POST /api/playground/infer`)
+
+These check memory before loading and refuse rather than crash. Weights are loaded in **float32**, so a model needs about 4 bytes per parameter across GPU, RAM and disk, plus room for the context. Budgets:
+
+- **CPU RAM:** keeps back the larger of 2 GB and a quarter of available RAM when idle, and the larger of 8 GB and half of available RAM while a run is training.
+- **GPU:** only used when no run is training. Each GPU keeps the larger of 1 GB and 10% of its memory free.
+- **Disk:** used last, in a temporary folder deleted afterwards. Needs free space of twice the float32 model size plus 1 GB.
+
+| Refusal | What to do |
+|---|---|
+| `Not enough available RAM for safe inference.` (or `... while training is active.`) | Close other programs, wait for training to finish, or use a smaller model. |
+| `Not enough memory to execute the model, even with disk offload.` | Choose a smaller context window, shorten the conversation, or free RAM. |
+| `Not enough disk space for safe model offload.` | Point `MODELFORGE_OFFLOAD_DIR` at a drive with more space. |
+| `Cannot safely use a GPU while training is active.` | Expected during training; the reply runs on CPU and disk instead. |
+| `This conversation needs N tokens, exceeding the M-token limit...` | Start a new chat or choose a larger context window. |
+
+```bash
+export MODELFORGE_OFFLOAD_DIR=/mnt/fast-ssd/mf-offload   # must exist
+modelforge run
+```
+
+Disk offload is slow: a reply can take minutes when most of the model is on disk. CPU inference also competes with a CPU-bound training run.
+
+### Streaming sessions
+
+Streaming sessions load the model once with `device_map="auto"` in its saved precision and keep it loaded until closed. They aren't budgeted the way one-shot replies are, so a model too large for the GPU spills to CPU through Accelerate, and one that doesn't fit at all fails with `Could not load this model: ...`. They refuse to open while a run is training. Close the session when you're done: an open session holds GPU memory and blocks new training runs.
+
+## See also
+
+- [Memory optimizations](../strategies/memory-optimizations.md)
+- [Hardware and memory](../configuration/hardware-profiles.md)
+- [Training config](../api-reference/training-config.md)
+- [Multi-GPU training](../strategies/multi-gpu.md)
+- [Common issues](common-issues.md)

@@ -1,319 +1,160 @@
-# What's New in ModelForge
+# What's New in v4
 
-## What's New in v3
+ModelForge v4 is a rewrite of the v3 codebase. The package name on PyPI is still `modelforge-finetuning`, but the Python version, the commands, the way a training plan is made and where data is stored have all changed. This page lists what is new, what was removed, and how to move from v3.
 
-### Apple Silicon (MPS) Support
+## What's new in v4
 
-ModelForge v3 adds native support for training on Apple Silicon Macs (M1/M2/M3/M4/M5) via PyTorch's MPS backend:
+### A hardware-aware planner instead of fixed profiles
 
-- **Auto-detection** — set `"device": "auto"` and ModelForge picks MPS automatically on Apple Silicon
-- **MPS-safe defaults** — quantization, mixed-precision flags, and dataloader settings are automatically adjusted for MPS compatibility
-- **Unsloth guard** — clear error if Unsloth provider is selected on MPS (CUDA only), with a prompt to switch to HuggingFace
-- **Memory management** — `PYTORCH_MPS_HIGH_WATERMARK_RATIO` is configured automatically to let macOS manage memory pressure
-- **Supported models** — 1B to 7B models depending on unified memory (8GB → 1-3B, 16GB → up to 3B, 32GB+ → up to 7B)
+v3 picked models from three hand-written JSON profiles (`low_end`, `mid_range`, `high_end`) and let you edit hyperparameters in the UI. v4 computes the plan from the hardware it detects:
 
-See the **[macOS Installation Guide](../installation/macos-mps.md)** for full setup instructions.
+- It sums the VRAM of the selected GPUs (Apple MPS counts as 8 GB), adjusts it for the strategy's extra model copies and batch size, and computes a parameter ceiling for each tier: `full_finetune`, `lora_bf16`, `qlora_8bit` and `qlora_4bit`.
+- It searches the Hugging Face Hub for the most-downloaded models with the right pipeline tag that fit under the ceiling, and builds a training config for the chosen model.
+- The plan shows its reasoning: a VRAM estimate, the PEFT decision, the parallelism decision and warnings. The training config is read-only in the console.
 
-### Interactive CLI Wizard
+See [How Planning Works](../configuration/configuration-guide.md) and [Hardware and Memory](../configuration/hardware-profiles.md).
 
-ModelForge now ships with a terminal-based interactive wizard for users who prefer a headless or SSH workflow:
+### Objectives and trainers
 
-- **`modelforge cli`** — launches the step-by-step interactive wizard in the terminal
-- **`modelforge-nb`** — notebook-friendly entry point for Jupyter environments
-- **`modelforge`** (no args) — still starts the web UI as before
+Training is described by a use case (Instruction Following, Text Generation, Summarization, Extractive QA) and an objective (Supervised, Preference, Reinforcement).
 
-### Optional Quantization
+| Objective | Trainer | Status in v4 |
+|---|---|---|
+| Supervised | TRL `SFTTrainer` (`sft`) | Rewritten. Packs short examples, uses gradient checkpointing. |
+| Preference | TRL `DPOTrainer` (`dpo`) | Rewritten. DPO existed in v3; v4 budgets its frozen reference model in the planner. |
+| Reinforcement | TRL `GRPOTrainer` (`grpo`) | New. Four sampled completions per prompt, exact-match reward. |
+| Summarization | Native encoder-decoder trainer | Rewritten. Uses a sequence-to-sequence trainer instead of a chat-style one. |
+| Extractive QA | QA trainer with start/end labels (`qa`) | Rewritten. Long passages are split into overlapping windows (stride 128 tokens). |
 
-bitsandbytes has been moved to an optional `[quantization]` extra. Install it with:
+Dataset column aliases (for example `instruction`/`response` for `prompt`/`completion`) are applied the same way in the browser, terminal and notebook. See [Dataset Formats](../configuration/dataset-formats.md) and [Strategy Overview](../strategies/overview.md).
+
+### Multi-GPU with FSDP
+
+
+With two or more CUDA GPUs, the planner chooses data parallel by default and FSDP (fully sharded data parallel) when full fine-tuning needs more memory than the smallest GPU has. FSDP is only used with full fine-tuning. See [Multi-GPU](../strategies/multi-gpu.md).
+
+### Memory optimizations
+
+Generated configs turn on gradient checkpointing and packing, enable Liger kernels on CUDA when the optional `[gpu]` extra is installed, and turn on activation offloading for SFT on GPUs with less than 12 GB. See [Memory Optimizations](../strategies/memory-optimizations.md).
+
+### Checkpoints and resume
+
+Every run saves a checkpoint every 500 steps to `<output dir>/checkpoint-<step>`. Failed or cancelled runs show a **Resume** button per checkpoint, which starts a new run with the same plan from that step. If the server stops mid-run, the run is marked failed on the next start and can be resumed. See [Checkpoints and Resuming](../user-guide/checkpoints.md).
+
+### A new browser console
+
+The browser UI is a new React and Vite app with **New run**, **Runs**, **Playground**, **Artifacts**, **Settings** and built-in documentation pages. Run pages stream training logs over a WebSocket. See [Browser Console](../user-guide/browser-console.md).
+
+### An in-browser Playground
+
+v3 opened a chat session in a separate terminal window. v4 has a Playground page in the console that chats with a completed run's final model or any checkpoint, with a choice of context window and Markdown export. See [Playground](../user-guide/playground.md).
+
+### Token authentication
+
+`modelforge run` generates a random startup token and prints a link that carries it. Every API endpoint except `/api/health`, and every WebSocket, requires the token. Use `--token` to fix it across restarts. See [Post-Installation Setup](../installation/post-installation.md#the-startup-token).
+
+### Terminal wizard and notebook entry point
+
+`modelforge cli` (terminal wizard) and `modelforge-nb` (notebook prompts) existed in v3 and were rewritten on top of the same workflow code as the browser. The notebook entry point now uses plain `input()` prompts with no widgets. See [Terminal Wizard](../user-guide/terminal-cli.md) and [Notebooks](../user-guide/notebooks.md).
+
+### New CLI utilities
+
+| Command | Does |
+|---|---|
+| `modelforge recommend` | Prints a recommendation without training. |
+| `modelforge list-tasks` | Lists the available use cases and their objectives. |
+| `modelforge history` | Prints run history. `--legacy` shows terminal-wizard runs. |
+| `modelforge tensorboard [LOGDIR]` | Launches TensorBoard (default `./modelforge_output`, `127.0.0.1:6006`). |
+
+See [CLI Commands](../api-reference/cli.md).
+
+## Removed in v4
+
+| v3 feature | v4 status |
+|---|---|
+| Unsloth provider and the `[unsloth]` extra | Removed. Hugging Face is the only built-in provider. See [Provider Overview](../providers/overview.md). |
+| `rlhf` strategy | Removed. In v3 it was DPO with different defaults. Use the Preference objective. |
+| `qlora` as a separate strategy | Removed. QLoRA is now a PEFT tier (`qlora_8bit`, `qlora_4bit`) the planner picks for any strategy that supports adapters. See [LoRA and QLoRA](../strategies/qlora.md). |
+| `model_configs/*.json` hardware profiles | Removed. Replaced by the planner and Hub search. To change which models are offered, see [Adding a Use Case](../contributing/use-cases.md). |
+| Editable hyperparameters in the UI | Removed. The console shows the generated config read-only. |
+| `[quantization]` extra | Removed. bitsandbytes is now a core dependency. |
+| Built-in evaluation metrics module (perplexity, ROUGE and similar) | Removed. |
+| `HUGGINGFACE_TOKEN` in a `.env` file, `CORS_ORIGINS` | No longer read. Use `hf auth login` or `HF_TOKEN`. |
+| Docker instructions | Not provided for v4. There is no official image. |
+
+## Migrating from v3
+
+### 1. Use Python 3.13
+
+v3 required Python 3.11 exactly (`>=3.11,<3.12`). v4 requires Python 3.13 or newer (`requires-python = ">=3.13"`, and the repository pins 3.13 in `.python-version`). A v3 virtual environment can't be upgraded in place. Create a new one:
 
 ```bash
-pip install modelforge-finetuning[quantization]
+python3.13 -m venv .venv-modelforge4
+source .venv-modelforge4/bin/activate
+pip install --upgrade modelforge-finetuning
 ```
 
-If not installed, ModelForge will gracefully fall back and disable quantization features. This makes the base install lighter and avoids build issues on systems where bitsandbytes is hard to compile.
+On Windows, install a CUDA build of PyTorch into the new environment first. See [Windows](../installation/windows.md).
 
-### Schema Validation
+### 2. Update your extras
 
-New `@model_validator` rules enforce valid configuration combinations at startup:
+| v3 | v4 |
+|---|---|
+| `[cli]` (questionary, rich, ipywidgets, ipython) | `[cli]` (click, rich) |
+| `[quantization]` (bitsandbytes) | Not needed. bitsandbytes is installed by default. |
+| `[unsloth]` | Removed. |
+| none | `[gpu]` (liger-kernel, CUDA on Linux only) |
 
-- **DPO/RLHF** strategies require `"task": "text-generation"` — using them with summarization or QA tasks will raise a clear validation error
-- **Unsloth** provider requires `"task": "text-generation"` — encoder-decoder models are not supported
+### 3. Update your commands
 
-This prevents cryptic training errors by catching incompatible configurations early.
+| v3 | v4 |
+|---|---|
+| `modelforge` starts the server | `modelforge run` starts the server. `modelforge` alone prints help. |
+| Server at `http://localhost:8000`, bound to `127.0.0.1` | Binds `0.0.0.0:8000` by default. Open the printed link with the token, or pass `--host 127.0.0.1`. |
+| Hugging Face login required at startup | Not required. Log in only for gated models or Hub pushes. The terminal wizard offers a login if none is cached. |
+| `modelforge cli` | Unchanged name. Needs the `[cli]` extra. |
+| `modelforge-nb` | Unchanged name. |
 
-### Legacy Tuner Removal
+Scripts that called the v3 REST API need rewriting: v4 has a new set of endpoints under `/api/`, and every request must carry the token. See [REST API](../api-reference/rest-api.md).
 
-The following legacy tuners have been removed:
+### 4. Prepare datasets for the new column names
 
-- `CausalLLMTuner`
-- `Finetuner`
-- `QuestionAnsweringTuner`
-- `Seq2SeqLMTuner`
+v3 configs named a task (`text-generation`, `summarization`, `extractive-question-answering`). v4 uses a use case plus an objective, each with required columns. For example, supervised instruction following expects `prompt` and `completion` (or `instruction` and `response`). A dataset that contains both an alias and its canonical column is rejected as ambiguous. Check your files against [Dataset Formats](../configuration/dataset-formats.md) and use **Validate** before training.
 
-Use the provider/strategy pattern instead (e.g., `"provider": "huggingface"`, `"strategy": "sft"`).
+### 5. Know where your data now lives
 
-### RLHF Clarification
+v3 and v4 store data in different places, and v4 does not read the v3 database.
 
-The RLHF strategy now clearly uses **DPO (Direct Preference Optimization)** internally — no PPO, no reward model needed. Both RLHF and DPO strategies use TRL's `DPOTrainer` with different default hyperparameters.
+| | v3 | v4 |
+|---|---|---|
+| Database | `<v3 data dir>/database/modelforge.sqlite` (SQLAlchemy) | `<v4 data dir>/modelforge.db` (SQLite) |
+| Trained models | `<v3 data dir>/models/` | The output directory you choose per run (default `./modelforge_output`) |
+| Checkpoints | `<v3 data dir>/model_checkpoints/` | `<output dir>/checkpoint-<step>` |
+| TensorBoard logs | `./training_logs` in the directory you started from | `<output dir>/tensorboard/` |
 
-### Bug Fixes
+The data directories, from `platformdirs`:
 
-- Fixed memory management and model offload directory handling
-- Fixed TensorBoard auto-open on training start
-- Fixed perplexity evaluation for text generation tasks
-- Fixed dataset format validation errors
-- Fixed incompatible wizard selections being passed to the trainer
-- CLI subcommand handling improved with clearer usage instructions when invoked incorrectly
+=== "Linux"
 
----
+    v3 and v4 both use `~/.local/share/ModelForge`. The v4 database is a new file (`modelforge.db`) next to v3's `database/` folder; neither overwrites the other.
 
-# What's New in ModelForge v2.0
+=== "macOS"
 
-ModelForge v2.0 represents a complete architectural overhaul that maintains 100% backward compatibility while introducing powerful new features and improvements.
+    v3 and v4 both use `~/Library/Application Support/ModelForge`, with separate database files as on Linux.
 
-## 🚀 Major New Features
+=== "Windows"
 
-### 1. Multiple Provider Support
+    v3: `%LOCALAPPDATA%\ModelForge\ModelForge`. v4: `%LOCALAPPDATA%\ForgeOpus\ModelForge`, because v4 passes `ForgeOpus` as the app author.
 
-**Before**: Only HuggingFace models were supported.
+!!! warning "v3 run history does not carry over"
+    v4 starts with an empty run list. There is no import tool for v3 runs or models. Models you trained with v3 are still on disk in the v3 data directory and can be loaded directly with `transformers` (or with PEFT for adapters), but they won't appear under **Runs**, **Artifacts** or the Playground. Delete the v3 data directory when you no longer need it.
 
-**Now**: Choose from multiple model providers:
+### 6. For contributors
 
-- **HuggingFace** - Standard models from HuggingFace Hub
-- **Unsloth** - 2x faster training with optimized kernels (NEW!)
+The v3 `ModelForge/` package is gone. v4 code is split into top-level packages: `cli/`, `notebook_cli/`, `web/`, `workflow/`, `providers/`, `finetuning_strategies/`, `recommendation_engine/`, `utilities/` and `dataset_manager/`. Providers, strategies, tasks and use cases register themselves by subclassing. A source install builds the browser UI with Node.js and npm. See [Architecture Overview](../contributing/architecture.md) and [Development Setup](../contributing/development.md).
 
-```json
-{
-  "provider": "unsloth",
-  "model_name": "meta-llama/Llama-3.2-3B",
-  ...
-}
-```
+## See also
 
-> **Note**: Unsloth requires WSL or Docker on Windows. See [Windows Installation](../installation/windows.md).
-
-### 2. Multiple Training Strategies
-
-**Before**: Only standard supervised fine-tuning (SFT).
-
-**Now**: Choose from advanced training strategies:
-
-- **SFT** - Standard supervised fine-tuning with LoRA
-- **QLoRA** - Memory-efficient quantized LoRA (NEW!)
-- **RLHF** - Reinforcement Learning from Human Feedback (NEW!)
-- **DPO** - Direct Preference Optimization (NEW!)
-
-```json
-{
-  "strategy": "qlora",
-  "model_name": "meta-llama/Llama-3.2-7B",
-  ...
-}
-```
-
-### 3. Evaluation System
-
-**NEW**: Automatic train/validation splits with task-specific metrics!
-
-- Automatic dataset splitting (configurable ratio)
-- Real-time evaluation during training
-- Task-specific metrics:
-  - **Text Generation**: Perplexity, loss
-  - **Summarization**: ROUGE-1, ROUGE-2, ROUGE-L
-  - **Question Answering**: Exact Match, F1 score
-
-```json
-{
-  "eval_split": 0.2,      // 20% for validation
-  "eval_steps": 100,      // Evaluate every 100 steps
-  ...
-}
-```
-
-### 4. Better Error Handling
-
-- Structured exception hierarchy
-- Clear, actionable error messages
-- Comprehensive logging throughout
-- No more silent failures!
-
-## 🏗️ Architecture Improvements
-
-### Service Layer with Dependency Injection
-
-**Before**: Global singleton pattern with tight coupling.
-
-**Now**: Clean service layer with dependency injection:
-
-- `TrainingService` - Training orchestration
-- `ModelService` - Model management
-- `HardwareService` - Hardware detection
-
-**Benefits**:
-- No global state
-- Easy to test
-- Clear separation of concerns
-
-### Provider Abstraction Layer
-
-**Before**: 15+ files needed modification to add a new provider.
-
-**Now**: Just 2 files to add a provider!
-
-- Protocol-based design
-- Factory pattern
-- Plug-and-play architecture
-
-### Strategy Pattern for Training
-
-**Before**: 10+ files needed modification to add a new strategy.
-
-**Now**: Just 2 files to add a strategy!
-
-- Clean strategy interface
-- Isolated strategy logic
-- Easy to extend
-
-### Database with SQLAlchemy
-
-**Before**: Direct SQLite access, opened/closed on every operation.
-
-**Now**: SQLAlchemy ORM with connection pooling:
-
-- 10 connections in pool
-- 20 max overflow
-- Proper session management
-- Easy migration to PostgreSQL
-
-## 📊 Performance Improvements
-
-| Feature | Before | After | Improvement |
-|---------|--------|-------|-------------|
-| Database Ops | Open/close each | Pooling | ~10x faster |
-| Training Speed | Standard | Unsloth option | 2x faster |
-| Memory Usage | Standard | QLoRA option | 30-50% reduction |
-
-## 🧹 Code Quality Improvements
-
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Code Duplication | 150+ lines | 0 lines | 100% reduction |
-| Router LOC | 563 lines | ~250 lines | 56% reduction |
-| Singleton Usage | 1 global | 0 | Eliminated |
-| Test Coverage | 0% | Ready | Testable architecture |
-
-## 🎯 User-Facing Changes
-
-### No Breaking Changes!
-
-All existing workflows continue to work exactly as before. The v2.0 features are **opt-in**.
-
-### New Optional Configuration Fields
-
-```json
-{
-  "provider": "huggingface",  // NEW: Choose provider (default: huggingface)
-  "strategy": "sft",          // NEW: Choose strategy (default: sft)
-  "eval_split": 0.2,          // NEW: Validation split ratio
-  "eval_steps": 100,          // NEW: Evaluation frequency
-  ... // All existing fields still work
-}
-```
-
-### New API Endpoints
-
-- `GET /api/info` - System information (providers, strategies, tasks)
-- `GET /api/health` - Health check endpoint
-
-## 📝 What Stayed the Same
-
-- **All existing API endpoints** work exactly as before
-- **Dataset format** remains the same
-- **UI workflow** is unchanged
-- **Model outputs** are identical
-- **Installation process** is the same
-
-## 🔧 For Developers
-
-### Easier Extensibility
-
-**Adding a New Provider** (e.g., vLLM):
-```python
-# 1. Create provider class (1 file)
-class VLLMProvider:
-    def load_model(self, ...): ...
-    def get_provider_name(self): return "vllm"
-
-# 2. Register in factory (1 line)
-ProviderFactory._providers["vllm"] = VLLMProvider
-```
-
-**Adding a New Strategy** (e.g., ORPO):
-```python
-# 1. Create strategy class (1 file)
-class ORPOStrategy:
-    def prepare_model(self, ...): ...
-    def get_strategy_name(self): return "orpo"
-
-# 2. Register in factory (1 line)
-StrategyFactory._strategies["orpo"] = ORPOStrategy
-```
-
-### Better Testing
-
-With dependency injection, everything is now testable:
-
-```python
-def test_training_service():
-    mock_db = MagicMock(spec=DatabaseManager)
-    service = TrainingService(mock_db)
-    assert service.get_training_status()["status"] == "idle"
-```
-
-## 🚦 Migration Guide
-
-### For End Users
-
-**No action required!** Continue using ModelForge as before, or:
-
-**Try new features** (optional):
-1. **Faster training**: Set `"provider": "unsloth"`
-2. **Save memory**: Set `"strategy": "qlora"`
-3. **Enable evaluation**: Set `"eval_split": 0.2`
-
-### For Contributors
-
-**Old pattern**:
-```python
-from globals_instance import global_manager
-db = global_manager.db_manager
-```
-
-**New pattern**:
-```python
-from dependencies import get_db_manager
-db = get_db_manager()
-```
-
-**In routers**:
-```python
-from fastapi import Depends
-from dependencies import get_model_service
-
-@router.get("/models")
-async def get_models(service: ModelService = Depends(get_model_service)):
-    return service.get_all_models()
-```
-
-## 🎓 Learn More
-
-- **[Provider Documentation](../providers/overview.md)** - Deep dive into providers
-- **[Strategy Documentation](../strategies/overview.md)** - Understanding strategies
-- **[Architecture Overview](../contributing/architecture.md)** - How it all works
-- **[Configuration Guide](../configuration/configuration-guide.md)** - All config options
-
-## 🙏 Thank You
-
-This refactoring was a massive undertaking that improves every aspect of ModelForge while maintaining the user experience. The architecture is now ready for scale and community-driven growth.
-
-**ModelForge v2.0: Modular, Extensible, Maintainable** 🚀
+- [Quick Start](quickstart.md)
+- [Post-Installation Setup](../installation/post-installation.md)
+- [FAQ](../troubleshooting/faq.md)

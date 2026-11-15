@@ -1,229 +1,66 @@
-# Provider Overview
+# Provider overview
 
-ModelForge v3 introduces a modular provider system that allows you to choose different model loading and optimization backends.
+A **provider** is the part of ModelForge that loads a base model and its tokenizer for training. Strategies decide how to train. The provider decides where the weights come from and how they are instantiated. ModelForge 4 ships one provider, Hugging Face.
 
-## What Are Providers?
+## What a provider does
 
-**Providers** are backends that handle:
-- Loading models from model hubs or local storage
-- Applying optimizations and patches
-- Managing tokenizers
-- Setting up device mappings
+The provider interface is two methods (`providers/provider.py`):
 
-Different providers offer different trade-offs in terms of speed, memory usage, and compatibility.
+| Method | Called with | Returns |
+|---|---|---|
+| `load_model(model_name, model_class, **kwargs)` | The model ID or path, the task's `AutoModel` class, and the plan's `model_init_kwargs` | An instantiated model |
+| `load_tokenizer(model_name)` | The model ID or path | A tokenizer with a pad token |
 
-## Available Providers
+Everything else (datasets, chat templates, LoRA, trainers, saving) is handled by the strategy. A provider does not take part in planning, Hub search or the playground.
 
-| Provider | Speed | Memory | Platform Support | Description |
-|----------|-------|--------|------------------|-------------|
-| **[HuggingFace](huggingface.md)** | 1x (baseline) | Standard | Windows/Linux | Standard HuggingFace Transformers |
-| **[Unsloth](unsloth.md)** | 2x faster | 20% less | Linux/WSL/Docker only | Optimized training kernels |
+## Where it fits
 
-## Choosing a Provider
-
-### Use HuggingFace When:
-
-✅ Running on native Windows  
-✅ Maximum compatibility needed  
-✅ Using models not supported by Unsloth  
-✅ Debugging or development  
-✅ First time using ModelForge  
-
-### Use Unsloth When:
-
-✅ Running on Linux or WSL  
-✅ Training large models (7B+ parameters)  
-✅ Need faster training times  
-✅ Have limited VRAM  
-✅ Using supported architectures (Llama, Mistral, etc.)  
-
-## How to Specify a Provider
-
-### In Configuration File
-
-```json
-{
-  "provider": "huggingface",
-  "model_name": "meta-llama/Llama-3.2-3B",
-  "task": "text-generation",
-  ...
-}
+```text
+Recommendation.provider_slug ──► ProviderFactory.get_provider(slug) ──► provider instance
+                                                                          │
+strategy.finetune(model_id, dataset, task_slug, provider, ...) ◄──────────┘
+    ├─ provider.load_model(model_id, task.model_class, **model_init_kwargs)
+    ├─ provider.load_tokenizer(model_id)
+    └─ trainer.train()
 ```
 
-### Via UI
+1. The planner sets `provider_slug` on every recommendation. It is always `"huggingface"`.
+2. When a run starts, `workflow/training.py` looks the slug up with `ProviderFactory.get_provider` and creates an instance.
+3. The strategy calls `load_model` with the model class for the task (for example `AutoModelForCausalLM`) and any loading options from the plan, such as a QLoRA `quantization_config`.
+4. DPO with full fine-tuning calls `load_model` a second time, without options, for the frozen reference model.
 
-1. Go to Training tab
-2. Select **Provider** dropdown
-3. Choose `huggingface` or `unsloth`
+## Available providers
 
-### Via API
+| Provider | Slug | Libraries | Platforms |
+|---|---|---|---|
+| Hugging Face | `huggingface` | Transformers, TRL, PEFT, bitsandbytes | CUDA, Apple MPS, CPU |
 
-```bash
-curl -X POST http://localhost:8000/api/start_training \
-  -H "Content-Type: application/json" \
-  -d '{
-    "provider": "unsloth",
-    "model_name": "meta-llama/Llama-3.2-3B",
-    ...
-  }'
-```
+`GET /api/system` lists registered provider slugs under `providers`. Every built-in strategy (`sft`, `dpo`, `grpo`, `qa`) declares `supported_providers = ["huggingface"]`.
 
-## Provider Architecture
+!!! note "Unsloth was removed"
+    ModelForge 3 also offered an Unsloth provider and let you pick a provider per run. ModelForge 4 removes Unsloth and the provider choice. Memory savings now come from the planner's tier selection, QLoRA, gradient checkpointing, packing and optional Liger kernels. See [Memory optimizations](../strategies/memory-optimizations.md).
 
-### How Providers Work
+## Choosing a provider
 
-```
-Training Request
-       ↓
-Provider Factory
-       ↓
-  Load Provider ← (HuggingFace / Unsloth / Custom)
-       ↓
-  Load Model
-       ↓
-  Load Tokenizer
-       ↓
-  Validate Access
-       ↓
-Return (model, tokenizer)
-```
+You don't. There is no provider field in the console, the terminal wizard or the run request. The provider comes from the plan's `provider_slug`. A plan sent to `POST /api/runs` with a `provider_slug` the strategy doesn't support is rejected with `Recommendation provider is not supported by this strategy.`
 
-### Provider Protocol
+## Registration
 
-All providers implement the same interface:
+Providers register themselves when their class is defined. `Provider.__init_subclass__` checks that the class sets string `name`, `description` and `slug` attributes and that the slug is unique, then adds it to `Provider._registry`. `workflow/registries.py` imports `providers.huggingface` at startup, so the Hugging Face provider is registered before any run.
 
 ```python
-class ModelProvider(Protocol):
-    def load_model(self, model_id: str, model_class: str, 
-                   quantization_config, device_map, **kwargs) -> Model
-    
-    def load_tokenizer(self, model_id: str, **kwargs) -> Tokenizer
-    
-    def validate_model_access(self, model_id: str, model_class: str) -> bool
-    
-    def get_provider_name(self) -> str
+from workflow.registries import load_core_registries
+from providers.provider_factory import ProviderFactory
+
+load_core_registries()
+ProviderFactory.get_available_providers()   # ['huggingface']
+provider = ProviderFactory.get_provider("huggingface")()
 ```
 
-This ensures all providers work seamlessly with ModelForge.
+An unknown slug raises `ValueError: Unsupported provider type: <slug>. Please choose one of [...]`.
 
-## Provider Compatibility
+## See also
 
-### Model Architecture Support
-
-| Architecture | HuggingFace | Unsloth |
-|--------------|-------------|---------|
-| Llama (1/2/3) | ✅ | ✅ |
-| Mistral | ✅ | ✅ |
-| Qwen | ✅ | ✅ |
-| Gemma | ✅ | ✅ |
-| Phi | ✅ | ✅ |
-| BART | ✅ | ❌ |
-| T5 | ✅ | ❌ |
-| BERT-based | ✅ | ❌ |
-
-### Task Support
-
-| Task | HuggingFace | Unsloth |
-|------|-------------|---------|
-| Text Generation | ✅ | ✅ |
-| Summarization | ✅ | ⚠️ Limited |
-| Question Answering | ✅ | ⚠️ Limited |
-
-### Strategy Support
-
-| Strategy | HuggingFace | Unsloth |
-|----------|-------------|---------|
-| SFT | ✅ | ✅ |
-| QLoRA | ✅ | ✅ |
-| RLHF | ✅ | ⚠️ Experimental |
-| DPO | ✅ | ⚠️ Experimental |
-
-## Performance Comparison
-
-### Training Speed
-
-Based on Llama-3.2-3B with 1000 examples:
-
-| Provider | Time | Speedup |
-|----------|------|---------|
-| HuggingFace | 45 min | 1x |
-| Unsloth | 22 min | 2x |
-
-### Memory Usage
-
-Based on Llama-3.2-7B with batch_size=4:
-
-| Provider | VRAM | Reduction |
-|----------|------|-----------|
-| HuggingFace | 16 GB | - |
-| Unsloth | 12.8 GB | 20% |
-
-> Results may vary based on hardware and configuration.
-
-## Platform Requirements
-
-### HuggingFace Provider
-
-**Supported Platforms:**
-- ✅ Windows 10/11
-- ✅ Linux (all distributions)
-- ✅ WSL 2
-- ✅ Docker
-
-**Requirements:**
-- Python 3.11
-- PyTorch 2.0+
-- transformers 4.40+
-
-### Unsloth Provider
-
-**Supported Platforms:**
-- ✅ Linux (Ubuntu 20.04+, Debian 11+)
-- ✅ WSL 2 on Windows
-- ✅ Docker with NVIDIA runtime
-- ❌ Native Windows
-
-**Requirements:**
-- Python 3.11
-- PyTorch 2.0+ with CUDA
-- transformers 4.40+
-- unsloth package
-- NVIDIA GPU with CUDA 11.8+
-
-## Troubleshooting
-
-### Provider Not Found
-
-**Error**: `ProviderError: Unknown provider 'xyz'`
-
-**Solution**: Check spelling. Valid providers: `huggingface`, `unsloth`
-
-### Unsloth Not Available on Windows
-
-**Error**: `ProviderError: Unsloth is not installed`
-
-**Solution**: Use WSL or Docker. See [Windows Installation](../installation/windows.md).
-
-### Provider Import Error
-
-**Error**: `ModuleNotFoundError: No module named 'unsloth'`
-
-**Solution**: Install the provider:
-```bash
-pip install unsloth
-```
-
-## Adding Custom Providers
-
-Want to add a new provider? See [Custom Providers Guide](custom-providers.md).
-
-## Next Steps
-
-- **[HuggingFace Provider](huggingface.md)** - Learn about the standard provider
-- **[Unsloth Provider](unsloth.md)** - Enable 2x faster training
-- **[Custom Providers](custom-providers.md)** - Add your own provider
-- **[Training Strategies](../strategies/overview.md)** - Choose a training strategy
-
----
-
-**Providers make ModelForge flexible and extensible!** Choose the right one for your needs.
+- [Hugging Face provider](huggingface.md): loading, authentication, cache, Hub search and push.
+- [Adding a provider](custom-providers.md)
+- [Architecture](../contributing/architecture.md)
