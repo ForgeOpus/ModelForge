@@ -141,7 +141,11 @@ export interface TrainingEvent {
     output_dir?: string;
     error?: string;
   };
-  /** Added client-side on arrival; replayed events carry the server's value. */
+  /**
+   * Unix timestamp in seconds, not milliseconds.
+   * The backend sets this from `time.time()`. When it is absent, the client
+   * fills `Date.now() / 1000` once at the event boundary before any ETA math.
+   */
   ts?: number;
 }
 
