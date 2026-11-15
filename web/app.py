@@ -72,7 +72,7 @@ def create_app(
     inference_playground = Playground(jobs, ledger)
 
     app.state.auth = auth
-    app.state.playground = session_playground
+    app.state.session_manager = session_playground
     app.state.inference_playground = inference_playground
     app.state.workflow = workflow
     app.state.jobs = jobs
@@ -140,7 +140,7 @@ def create_app(
     @app.post("/api/playground/infer", dependencies=[require_auth])
     def playground_infer(request: InferenceRequest):
         try:
-            return inference_playground.infer(request)
+            return app.state.inference_playground.infer(request)
         except PlaygroundError as exc:
             raise HTTPException(status_code=exc.status, detail=exc.message) from exc
 
@@ -279,8 +279,8 @@ def create_app(
 
     @app.get("/api/playground/status", dependencies=[require_auth])
     async def playground_status():
-        available, reason = session_playground.availability()
-        current = session_playground.current
+        available, reason = app.state.session_manager.availability()
+        current = app.state.session_manager.current
         return {
             "available": available,
             "reason": reason,
@@ -291,7 +291,7 @@ def create_app(
     @app.post("/api/playground/sessions", dependencies=[require_auth])
     async def open_playground(request: PlaygroundOpenRequest):
         try:
-            session = await asyncio.to_thread(session_playground.open, request.model_path)
+            session = await asyncio.to_thread(app.state.session_manager.open, request.model_path)
         except PlaygroundUnavailable as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return {
@@ -303,7 +303,7 @@ def create_app(
 
     @app.delete("/api/playground/sessions/{session_id}", dependencies=[require_auth])
     async def close_playground(session_id: str):
-        return {"closed": await asyncio.to_thread(session_playground.close, session_id)}
+        return {"closed": await asyncio.to_thread(app.state.session_manager.close, session_id)}
 
     @app.websocket("/api/playground/{session_id}/chat")
     async def playground_chat(websocket: WebSocket, session_id: str, token: str | None = None):
@@ -313,7 +313,7 @@ def create_app(
             await websocket.close(code=1008)
             return
         await websocket.accept()
-        session = session_playground.get(session_id)
+        session = app.state.session_manager.get(session_id)
         if session is None:
             await websocket.send_text(json.dumps({"type": "error", "message": "That playground session has closed."}))
             await websocket.close()
