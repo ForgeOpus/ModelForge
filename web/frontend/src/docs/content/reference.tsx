@@ -153,7 +153,7 @@ X-ModelForge-Token: <token>
       ['GET /api/system','Version, providers, strategies, use cases.'],
       ['GET /api/hardware','Detected GPUs, RAM and disk.'],
       ['GET /api/use-cases','Use cases with their objectives and data formats.'],
-      ['POST /api/recommendations','{use_case_slug, objective, gpu_indices?, n=5} → a recommendation.'],
+      ['POST /api/recommendations','{use_case_slug, objective, gpu_indices?, model_id?, n=5} → a recommendation.'],
       ['POST /api/datasets/validate','{path, remote, use_case_slug?, objective} → {valid, columns, row_count, error}.'],
       ['POST /api/models/validate','{model_id, task_slug?} → {valid, num_parameters, pipeline_tag, error}.'],
     ]}/>},

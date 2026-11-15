@@ -51,11 +51,11 @@ export const intermediate:DocPage[]=[
 {
   slug:'full-fine-tuning',title:'Full fine-tuning',group:'Intermediate',minutes:4,readFirst:'where-vram-goes',
   summary:'Updating every weight: cost, precision, outputs and when it is chosen.',
-  lead:<>Full fine-tuning updates every weight in the model. It gives the best results for a given base model and is what ModelForge picks whenever a model fits, but it costs about nine times more memory per parameter than LoRA.</>,
+  lead:<>Full fine-tuning updates every weight in the model. It gives the best results for a given base model and is what ModelForge uses whenever the chosen model fits its ceiling, but it costs about nine times more memory per parameter than LoRA.</>,
   sections:[
     {id:'cost',title:'What it costs',body:<p>Each parameter needs its weight, its gradient and two Adam optimizer states. ModelForge budgets this at <b>18 bytes per parameter</b> plus 2 GB for activations. A 1B-parameter model needs about 20 GB. A 7B model needs about 128 GB, which means several GPUs with <D to="data-parallel-vs-fsdp">FSDP</D>.</p>},
     {id:'when',title:'When ModelForge uses it',body:<>
-      <p>The planner tries tiers from highest to lowest quality and stops at the first one with room for a model. Full fine-tuning is first, so on any CUDA GPU with more than 2 GB of adjusted VRAM the plan says <C>full_finetune</C>. The recommended models are then the ones small enough to train that way.</p>
+      <p>The planner computes a size ceiling for every tier, searches the Hub up to the largest of them, and picks the largest popular model on the shortlist. It then trains that model with the least-quantized tier it fits in. Full fine-tuning is chosen when the chosen model fits its ceiling, which on most GPUs means a small model. When the shortlist has a larger model that only fits with an adapter, LoRA or QLoRA wins instead.</p>
       <p>If you want a larger model than full fine-tuning allows, use more GPUs. The planner sums their memory and switches to FSDP when a single GPU can't hold the model.</p>
     </>},
     {id:'precision',title:'Precision',body:<p>Training runs in <C>bf16</C> when every GPU supports it (compute capability 8.0 or newer, such as Ampere, Ada and Hopper), and in <C>fp16</C> otherwise. CPU and Apple MPS runs use full precision.</p>},
@@ -83,7 +83,7 @@ export const intermediate:DocPage[]=[
         [<b>QLoRA 4-bit</b>,'0.5','Frozen 4-bit weights + adapters','3.5 GB'],
       ]}/>
     </>},
-    {id:'when',title:'When ModelForge picks it',body:<Callout title="When ModelForge picks it.">The engine takes the highest-fidelity tier whose ceiling is above zero. On any CUDA GPU with more than about 2 GB, that's full fine-tuning of a smaller model. Adapters are used on Apple MPS when full fine-tuning doesn't fit (LoRA bf16), and on CPU-only machines, which train an adapter on unquantized weights. The console has no control to force a lower tier yet.</Callout>},
+    {id:'when',title:'When ModelForge picks it',body:<Callout title="When ModelForge picks it.">The engine picks the largest model on its Hub shortlist, then the least-quantized tier that model fits in. On a CUDA GPU that's often LoRA or QLoRA on a larger model rather than full fine-tuning of a small one. Apple MPS uses LoRA bf16 when full fine-tuning doesn't fit, and CPU-only machines train an adapter on unquantized weights. The console has no control to force a tier yet.</Callout>},
     {id:'configure',title:'Configure it',body:<>
       <p>The recommendation's <C>peft_config</C> holds the adapter settings. This is what ModelForge generates for a 3B model:</p>
       <Code label="# recommendation.peft_config">{`{
@@ -117,12 +117,12 @@ export const intermediate:DocPage[]=[
         ['qlora_8bit','(adjusted − 2.1) / 1'],
         ['qlora_4bit','(adjusted − 2.1) / 0.5'],
       ]}/>
-      <p>Adjusted VRAM comes from <D to="where-vram-goes">Where VRAM goes</D>. The selection order is full, then LoRA bf16, 8-bit, 4-bit, and the first ceiling above zero wins. That ceiling then filters the <D to="picking-a-base-model">model search</D>.</p>
+      <p>Adjusted VRAM comes from <D to="where-vram-goes">Where VRAM goes</D>. On CUDA, the full fine-tuning ceiling uses the adjusted VRAM of all GPUs together, while the adapter ceilings use the smallest GPU, since every GPU holds a whole copy of an adapter-trained model. The Hub is searched up to the largest ceiling. The largest candidate found is chosen, and its tier is the first of full, LoRA bf16, 8-bit and 4-bit whose ceiling it fits under. See <D to="picking-a-base-model">Picking a base model</D>.</p>
     </>},
     {id:'special',title:'CPU and Apple Silicon',body:<Table head={['Hardware','Tier','Ceiling']} mono={[]} rows={[
       [<b>CPU only</b>,<C>qlora_4bit</C>,'The smaller of 500M parameters and RAM ÷ 3 bytes. Quantization is switched off, so it trains an adapter on full-precision weights. Expect it to be very slow.'],
       [<b>Apple MPS</b>,<><C>full_finetune</C>, else <C>lora_bf16</C></>,'MPS memory is counted as 8 GB. bitsandbytes doesn\'t support MPS, so the 8-bit and 4-bit tiers are disabled.'],
-      [<b>CUDA</b>,'First ceiling above zero','Full fine-tuning whenever adjusted VRAM is above 2 GB.'],
+      [<b>CUDA</b>,'Least-quantized tier that fits the chosen model','Full fine-tuning only when the chosen model fits its ceiling.'],
     ]}/>},
     {id:'read-plan',title:'Reading the plan',body:<>
       <p>The plan's <b>PEFT decision</b> names the tier and why. <b>VRAM estimate</b> shows raw and adjusted VRAM and the ceilings. Warnings appear below. The ones to act on:</p>
@@ -144,8 +144,8 @@ export const intermediate:DocPage[]=[
     {id:'search',title:'How the search works',body:<ol>
       <li>Query the Hub for the use case's pipeline tag, sorted by downloads.</li>
       <li>Skip models that don't publish a parameter count in their safetensors metadata. The plan says how many were skipped.</li>
-      <li>Keep models at or under the tier's ceiling, up to five.</li>
-      <li>Build the training config for the top result, the most downloaded.</li>
+      <li>Keep models at or under the largest tier ceiling, up to five.</li>
+      <li>Sort by parameter count, then downloads, and build the training config for the top result: the largest model, on the least-quantized tier it fits.</li>
     </ol>},
     {id:'choosing',title:'Choosing from the list',body:<p>The table shows each candidate's parameters and downloads. Downloads measure popularity, not quality. When two candidates are close, prefer the newer model, or the instruct variant for instruction following. Picking a model other than the top one rebuilds the config for that model when the run starts.</p>},
     {id:'custom',title:'Using your own model ID',body:<>
@@ -155,7 +155,7 @@ export const intermediate:DocPage[]=[
         <li>have the pipeline tag the use case expects;</li>
         <li>publish its parameter count, and fit under the plan's ceiling.</li>
       </ul>
-      <p>Otherwise <b>Start training</b> is refused with <i>“Cannot safely configure this model without valid parameter metadata”</i>, <i>“Selected model exceeds the recommendation's memory budget”</i>, or a message naming the incompatible pipeline tag.</p>
+      <p>Otherwise <b>Start training</b> is refused with <i>“Cannot safely configure this model without valid parameter metadata”</i>, <i>“Selected model exceeds the available training memory budget.”</i>, or a message naming the incompatible pipeline tag.</p>
     </>},
     {id:'tips',title:'Tips',body:<ul>
       <li>Smaller is often fine. A 0.5B model fine-tuned on good data beats a larger one fine-tuned on noise, and trains several times faster.</li>

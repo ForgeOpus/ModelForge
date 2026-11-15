@@ -81,7 +81,7 @@ export const basics:DocPage[]=[
     ]}/>},
     {id:'instruction-vs-text',title:'Instruction following vs. text generation',body:<p>Both train the same kind of model. They differ in how your columns are described and which aliases they accept. Instruction following speaks in instructions and responses, text generation in input text and continuations. Pick whichever matches how your data is already labelled. See <D to="preparing-a-dataset">Preparing a dataset</D>.</p>},
     {id:'summarization',title:'Summarization',body:<p>Uses a sequence-to-sequence model such as T5 or BART, trained with a native encoder-decoder trainer rather than a chat-style one. Your <C>document</C> is the input and <C>summary</C> is the target. Both are truncated to the plan's <C>max_length</C>.</p>},
-    {id:'qa',title:'Extractive QA',body:<p>The model doesn't write an answer. It points at the start and end of the answer inside a passage. Long passages are split into overlapping windows (384 tokens, overlapping by 128), so answers near a boundary aren't lost. The model's tokenizer needs a CLS token.</p>},
+    {id:'qa',title:'Extractive QA',body:<p>The model doesn't write an answer. It points at the start and end of the answer inside a passage. Long passages are split into overlapping windows (384 tokens, or 256 on GPUs under 12 GB, overlapping by 128), so answers near a boundary aren't lost. The model's tokenizer needs a CLS token.</p>},
     {id:'tasks',title:'How the model is picked',body:<p>Each use case maps to a Hub <C>pipeline_tag</C>. The recommendation searches that tag for the most-downloaded models with known parameter counts that fit your memory. Any model ID you type in is checked against the same tag. See <D to="picking-a-base-model">Picking a base model</D>.</p>},
   ],
 },
@@ -106,7 +106,7 @@ export const basics:DocPage[]=[
         ['Text generation · supervised',<><C>prompt</C>, <C>completion</C></>,<><C>input_text</C>, <C>generated_text</C></>],
         ['Text generation · preference',<><C>chosen</C>, <C>rejected</C> (+ optional <C>prompt</C>)</>,<><C>preferred_continuation</C>, <C>rejected_continuation</C>, <C>input_text</C></>],
         ['Text generation · reinforcement',<><C>prompt</C>, <C>answer</C></>,<><C>input_text</C>, <C>ideal_continuation</C></>],
-        ['Summarization',<><C>document</C>, <C>summary</C></>,'—'],
+        ['Summarization',<><C>document</C>, <C>summary</C></>,<><C>prompt</C>, <C>completion</C></>],
         ['Extractive QA',<><C>context</C>, <C>question</C>, <C>answers</C></>,'—'],
       ]}/>
     </>},

@@ -241,7 +241,7 @@ class WorkflowService:
                         "model_id": model_id,
                         "num_parameters": None,
                         "error": "No model with that ID is visible on the Hub. Check the "
-                                 "spelling, or run `huggingface-cli login` if it is private "
+                                 "spelling, or run `hf auth login` if it is private "
                                  "or gated.",
                     }
                 return {"valid": False, "model_id": model_id, "num_parameters": None,

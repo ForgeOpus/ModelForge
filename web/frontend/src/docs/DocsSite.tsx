@@ -1,9 +1,10 @@
 import {useEffect, useMemo, useRef, useState} from 'react';
 import {Link, useNavigate, useParams} from 'react-router-dom';
-import {Menu, Moon, Search, Sun, X} from 'lucide-react';
+import {ExternalLink, Menu, Moon, Search, Sun, X} from 'lucide-react';
 import './docs.css';
 import {PAGES} from './pages';
 import {GROUPS, LEVELS, docPath} from './ui';
+import {RTD_BASE, rtdUrl} from './rtd';
 
 const bySlug=new Map(PAGES.map(p=>[p.slug,p]));
 const ORDER=GROUPS.flatMap(g=>PAGES.filter(p=>p.group===g));
@@ -67,6 +68,7 @@ export function DocsSite(){
         <Link className={top==='Guides'?'on':''} to={docPath('introduction')}>Guides</Link>
         <Link className={top==='Reference'?'on':''} to={docPath('recommendation-fields')}>Reference</Link>
         <Link className={top==='CLI'?'on':''} to={docPath('cli-commands')}>CLI</Link>
+        <a href={RTD_BASE} target="_blank" rel="noreferrer">Full docs</a>
         <a href="https://github.com/ForgeOpus/ModelForge" target="_blank" rel="noreferrer">GitHub</a>
       </nav>
       <button className="mfd-icon" aria-label="Toggle theme" onClick={toggleDark}>{dark?<Sun size={15}/>:<Moon size={15}/>}</button>
@@ -100,6 +102,7 @@ export function DocsSite(){
       <aside className="mfd-toc" aria-label="On this page">
         <div className="tl">On this page</div>
         {page.sections.map(s=><a key={s.id} href={'#'+s.id} className={active===s.id?'on':''} onClick={e=>{e.preventDefault();document.getElementById(s.id)?.scrollIntoView({behavior:'smooth'});history.replaceState(null,'','#'+s.id)}}>{s.title}</a>)}
+        <a className="mfd-rtd" href={rtdUrl(page.slug)} target="_blank" rel="noreferrer">Full guide on Read the Docs <ExternalLink size={12}/></a>
         {page.tryIt&&<div className="mfd-try"><b>Try it</b><p>{page.tryIt.text}</p><Link className="mfd-btn" to={page.tryIt.to}>{page.tryIt.label}</Link></div>}
       </aside>
     </div>

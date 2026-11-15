@@ -73,8 +73,8 @@ The startup token is required for API and WebSocket access.`}</Code>
     </>},
     {id:'hub-login',title:'Hugging Face login',body:<>
       <p>Public models and datasets need no login. For gated models such as Llama, accept the licence on the model's Hub page, then log in once on the machine running the server:</p>
-      <Code>{`$ huggingface-cli login`}</Code>
-      <p>The server uses this cached login whenever it downloads from the Hub.</p>
+      <Code>{`$ hf auth login`}</Code>
+      <p>The server uses this cached login whenever it downloads from the Hub. The older <C>huggingface-cli login</C> command no longer works with the <C>huggingface_hub</C> version ModelForge requires.</p>
     </>},
     {id:'where-data-lives',title:'Where things are stored',body:<Table head={['What','Where']} mono={[]} rows={[
       ['Run history, checkpoints list, model registry',<><C>modelforge.db</C> in your user data folder (<C>~/.local/share/ModelForge</C> on Linux)</>],
@@ -119,23 +119,30 @@ The startup token is required for API and WebSocket access.`}</Code>
 {
   slug:'using-the-playground',title:'Using the Playground',group:'Get started',minutes:4,readFirst:'tour-of-the-console',
   summary:'Chat with a trained model or checkpoint; context windows, memory and offload.',
-  lead:<>The Playground loads a trained model for each message you send, generates a reply, and unloads it again. It can spread a model across GPU, CPU memory and disk, so it works even while a run is training.</>,
+  lead:<>The Playground chats with a trained model or checkpoint. <b>One-shot</b> mode loads the model for each message and can spread it across GPU, CPU memory and disk, so it works even while a run is training. <b>Streaming</b> mode keeps the model loaded and streams tokens as they're generated.</>,
   tryIt:{text:'Pick a completed run and send it a message.',to:'/app/playground',label:'Open Playground'},
   sections:[
     {id:'choose',title:'Choosing what to talk to',body:<>
       <Table head={['Control','What it does']} mono={[]} rows={[
         ['Run','Any run. Completed runs offer their final model.'],
         ['Model output',<><b>Final model</b> for completed runs, or a checkpoint listed as <b>Step N</b>. Checkpoints work on runs that are still training or that failed.</>],
-        ['Context window','1,024, 4,096 (default), 8,016 or 32,768 tokens.'],
+        ['Context window','One-shot only. 1,024, 4,096 (default), 8,016 or 32,768 tokens.'],
       ]}/>
       <p>Changing the run or checkpoint starts a fresh conversation.</p>
     </>},
+    {id:'modes',title:'One-shot and Streaming',body:<Table head={['','One-shot (default)','Streaming']} mono={[]} rows={[
+      ['Model lifetime','Loaded for each message, then unloaded.',<>Loaded by <b>Open streaming session</b>, kept until <b>Close session</b>.</>],
+      ['While a run is training','Works, on CPU RAM and disk only.','Refused. An open session also blocks starting a run.'],
+      ['Decoding','Greedy, up to 256 new tokens.','Sampling (temperature 0.7, top-p 0.9), up to 256 new tokens.'],
+      ['Context window control','Yes.','No.'],
+      ['Export and New chat','Yes.','No.'],
+    ]}/>},
     {id:'context',title:'Context windows',body:<>
-      <p>The effective limit is the smallest of the window you choose, the model's own maximum, and its tokenizer's limit. Every reply reserves 256 tokens for output. If the conversation and the reply don't fit, the request is refused with an error. Earlier messages are never silently dropped.</p>
+      <p>In One-shot mode the effective limit is the smallest of the window you choose, the model's own maximum, and its tokenizer's limit. Text-generating models reserve 256 tokens for the reply (extractive QA reserves none). If the conversation and the reply don't fit, the request is refused with an error. Earlier messages are never silently dropped.</p>
       <p>Below each reply the console shows the input token count, the limit that applied, and the device used.</p>
     </>},
     {id:'memory',title:'Memory and offload',body:<>
-      <p>Weights are loaded at full float32 precision and placed across devices with Accelerate. When no run is training, the Playground can use free GPU memory, then CPU RAM, then disk. While a run is training, it never touches the GPUs, so the run keeps its VRAM.</p>
+      <p>In One-shot mode, weights are loaded at full float32 precision and placed across devices with Accelerate. When no run is training, the Playground can use free GPU memory, then CPU RAM, then disk. While a run is training, it never touches the GPUs, so the run keeps its VRAM.</p>
       <ul>
         <li>It keeps back at least 2 GB of RAM (8 GB while training) for the system and the training job.</li>
         <li>Disk offload goes to a temporary folder that is deleted afterwards. Set <C>MODELFORGE_OFFLOAD_DIR</C> to put it on a faster or larger drive.</li>
@@ -147,7 +154,7 @@ The startup token is required for API and WebSocket access.`}</Code>
       <p>Send a JSON message with a question and a context. The reply is a span copied out of the context.</p>
       <Code>{`{"question": "Where is Paris?", "context": "Paris is in France."}`}</Code>
     </>},
-    {id:'privacy',title:'Conversations',body:<p>Conversations exist only in this browser tab. <b>New chat</b>, switching models or leaving the page discards them, and the server stores nothing. Use <b>Export Markdown</b> to keep a copy. Replies are greedy (no sampling), so the same conversation gives the same answer.</p>},
+    {id:'privacy',title:'Conversations',body:<p>Conversations exist only in this browser tab. <b>New chat</b>, switching models or leaving the page discards them, and the server stores nothing. Use <b>Export Markdown</b> to keep a copy (One-shot only). One-shot replies are greedy, so the same conversation gives the same answer. Streaming replies are sampled and vary.</p>},
   ],
 },
 ];

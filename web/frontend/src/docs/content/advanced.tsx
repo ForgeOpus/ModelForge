@@ -133,7 +133,7 @@ activation_offloading = false`}</Code>
       [<b>Add GPUs</b>,'With two or more, large full fine-tunes switch to FSDP automatically.'],
       [<b>Resume</b>,<>If it failed partway through, fix the cause and <D to="resuming-from-checkpoints">resume from the last checkpoint</D>.</>],
     ]}/>},
-    {id:'playground',title:'Out of memory in the Playground',body:<p>The Playground checks memory before loading and refuses requests it can't fit. Choose a smaller context window, shorten the conversation, or set <C>MODELFORGE_OFFLOAD_DIR</C> to a drive with more free space.</p>},
+    {id:'playground',title:'Out of memory in the Playground',body:<p>The Playground checks memory before loading and refuses requests it can't fit. Choose a smaller context window, shorten the conversation, or set <C>MODELFORGE_OFFLOAD_DIR</C> to a drive with more free space (One-shot mode).</p>},
     {id:'api',title:'Changing hyperparameters',body:<p>The console shows the training config read-only. Through the <D to="http-api">HTTP API</D> you can send an edited <C>recommendation</C> to <C>POST /api/runs</C>, for example with a smaller <C>max_length</C>. That's used as sent when <C>model_id</C> is the recommendation's top candidate.</p>},
   ],
 },
