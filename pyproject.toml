@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,23 @@ name = "modelforge-finetuning"
 version = "4.0.0"
 description = "Hardware-aware fine-tuning utility with browser, terminal, and notebook interfaces."
 readme = "README.md"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+authors = [
+    {name = "R3tr0 M1ll3r", email = "r3tr0.m1ll3r@gmail.com"},
+]
+keywords = ["fine-tuning", "llm", "huggingface", "lora", "qlora", "dpo", "grpo", "peft", "transformers"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.13.0",
@@ -44,6 +61,14 @@ dev = [
     "pytest>=9.0.3",
     "rich>=13.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ForgeOpus/ModelForge"
+Documentation = "https://modelforge-finetuning.readthedocs.io"
+Repository = "https://github.com/ForgeOpus/ModelForge"
+Issues = "https://github.com/ForgeOpus/ModelForge/issues"
+Changelog = "https://modelforge-finetuning.readthedocs.io/en/latest/getting-started/whats-new/"
+Organization = "https://github.com/ForgeOpus"
 
 [project.scripts]
 modelforge = "cli.main:cli"

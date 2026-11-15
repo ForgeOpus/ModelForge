@@ -139,3 +139,24 @@ jobs:
       - name: Smoke-test the installed wheel
         working-directory: /tmp
         run: /tmp/modelforge-wheel/bin/python "$GITHUB_WORKSPACE/scripts/distribution_smoke.py"
+
+  docs:
+    name: Docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install Python from .python-version
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version-file: .python-version
+
+      - name: Install docs requirements
+        run: pip install -r docs/requirements.txt
+
+      - name: Build docs (strict)
+        run: mkdocs build --strict
