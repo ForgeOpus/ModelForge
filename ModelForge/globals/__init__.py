@@ -1,1 +1,0 @@
-from . import globals, globals_instance

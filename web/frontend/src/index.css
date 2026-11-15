@@ -1,0 +1,213 @@
+@import "tailwindcss";
+
+/* Self-hosted: these boxes are often air-gapped, so no font CDN. */
+@import "@fontsource-variable/archivo/wdth.css";
+@import "@fontsource-variable/inter-tight";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------------------------------------------------------------
+   Colour system.
+
+   Every foreground below clears 4.5:1 against every surface it is drawn
+   on -- ground, surface, and raised -- in both themes.
+
+   Two families, and they never mix:
+     --brand-*  identity and action (logo, primary buttons, active nav).
+                Sampled from the official mark, whose glow reads #d95805.
+     --tier-*   the PEFT precision ladder, cold = expensive, warm = cheap.
+                Used everywhere a tier appears so colour always means
+                the same thing: chip, budget meter, model row, loss curve.
+   Semantic ok/warn/danger stay out of both.
+   --------------------------------------------------------------- */
+:root {
+  --ground: #eef2f3;
+  --surface: #ffffff;
+  --raised: #f7fafa;
+  --line: #d5dee1;
+  --line-strong: #b3c1c6;
+  --text: #101a1e;
+  --dim: #52646c;
+  --faint: #626f75;
+
+  --brand: #b84b04;
+  --brand-hi: #a34204;
+  --brand-ink: #ffffff;
+
+  --tier-full: #167882;
+  --tier-lora: #3563c4;
+  --tier-8bit: #8148b0;
+  --tier-4bit: #a5590e;
+
+  --ok: #187c53;
+  --warn: #8a670b;
+  --danger: #c0343c;
+
+  --track: #e2e9eb;
+  --activation: #a9bac1;
+
+  --shadow-card: 0 1px 2px rgb(16 26 30 / 0.06), 0 8px 24px -14px rgb(16 26 30 / 0.28);
+}
+
+.dark {
+  --ground: #0e1417;
+  --surface: #141c20;
+  --raised: #1a2429;
+  --line: #243137;
+  --line-strong: #33454d;
+  --text: #e4edf0;
+  --dim: #8da1aa;
+  --faint: #768f9b;
+
+  --brand: #ff771f;
+  --brand-hi: #ff8f45;
+  --brand-ink: #140906;
+
+  --tier-full: #7fe3e8;
+  --tier-lora: #7fa6f0;
+  --tier-8bit: #c79be8;
+  --tier-4bit: #f2a65a;
+
+  --ok: #4fbf8b;
+  --warn: #e3b341;
+  --danger: #e5646a;
+
+  --track: #223038;
+  --activation: #3f565f;
+
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+}
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-dim: var(--dim);
+  --color-faint: var(--faint);
+
+  --color-brand: var(--brand);
+  --color-brand-hi: var(--brand-hi);
+  --color-brand-ink: var(--brand-ink);
+
+  --color-tier-full: var(--tier-full);
+  --color-tier-lora: var(--tier-lora);
+  --color-tier-8bit: var(--tier-8bit);
+  --color-tier-4bit: var(--tier-4bit);
+
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+
+  --color-track: var(--track);
+  --color-activation: var(--activation);
+
+  --font-display: "Archivo Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Inter Tight Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+}
+
+@layer base {
+  * {
+    border-color: var(--line);
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* The display face is Archivo at its widest cut — signage on a machine.
+     Restricted to screen titles, the wordmark, and the big VRAM figure. */
+  .font-display {
+    font-family: var(--font-display);
+    font-stretch: 125%;
+  }
+
+  /* Half this app is identifiers and figures; the mono face carries them. */
+  .font-mono,
+  code,
+  pre {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--brand) 30%, transparent);
+  }
+
+  /* Scrollbars, tuned to the ground rather than the OS default. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@layer utilities {
+  /* Leading edge of a live loss curve: a slow breath so you can tell at a
+     glance that points are still arriving. */
+  .mf-live-dot {
+    animation: mf-pulse-dot 2.1s ease-in-out infinite;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+
+  @keyframes mf-pulse-dot {
+    0%, 100% { r: 3; opacity: 1; }
+    50% { r: 5.5; opacity: 0.75; }
+  }
+
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .eyebrow {
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
