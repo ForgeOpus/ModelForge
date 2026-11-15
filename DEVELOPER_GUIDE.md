@@ -462,7 +462,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs on every pull request and every
 
 These are the exact local commands those jobs run. Run the Python and distribution commands from the repository root.
 
-Python tests use the version in `.python-version` and `uv.lock`:
+Python tests use the version in `.python-version` and `uv.lock`. The installed-wheel test builds the frontend from a clean tree, so Node from `.node-version` must be on `PATH`; the CI job installs it. `uv sync` does not install pip, and that test uses `uv build` when the environment has no pip module.
 
 ```bash
 uv sync --frozen --extra dev
@@ -491,7 +491,7 @@ root="$PWD"
 ( cd /tmp && /tmp/modelforge-wheel/bin/python "$root/scripts/distribution_smoke.py" )
 ```
 
-The last command must be started from a directory other than the checkout so Python imports the installed package. It checks `modelforge` and `modelforge-nb`, confirms the installed package contains the frontend bundle, and starts `modelforge run` to verify `/`, `/app`, and an authenticated `/api/use-cases` request.
+The last command must be started from a directory other than the checkout so Python imports the installed package. It does not require the clean environment to be activated: console scripts are resolved next to that interpreter. It checks `modelforge` and `modelforge-nb`, confirms the installed package contains the frontend bundle, and starts `modelforge run` to verify `/`, `/app`, and an authenticated `/api/use-cases` request.
 
 ---
 

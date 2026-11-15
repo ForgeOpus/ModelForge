@@ -87,6 +87,23 @@ def test_complete_archives_pass(tmp_path):
     smoke.assert_distribution_archives(tmp_path)
 
 
+def test_smoke_finds_console_scripts_beside_the_interpreter(tmp_path, monkeypatch):
+    smoke = _load_smoke()
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    executable = bindir / "python"
+    executable.write_text("", encoding="utf-8")
+    script = bindir / "modelforge"
+    script.write_text("", encoding="utf-8")
+    script.chmod(0o755)
+    monkeypatch.setattr(smoke.sys, "executable", str(executable))
+    monkeypatch.setattr(smoke.shutil, "which", lambda _name: None)
+
+    assert smoke._console_script("modelforge") == str(script)
+    with pytest.raises(SystemExit, match="modelforge-nb"):
+        smoke._console_script("modelforge-nb")
+
+
 def test_frontend_bundle_requires_referenced_assets(tmp_path):
     smoke = _load_smoke()
     (tmp_path / "index.html").write_text(

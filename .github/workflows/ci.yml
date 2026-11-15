@@ -48,6 +48,13 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --frozen --extra dev
 
+      - name: Install Node from .node-version
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: web/frontend/package-lock.json
+
       - name: Run pytest
         run: uv run pytest
 
