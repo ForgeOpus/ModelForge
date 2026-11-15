@@ -66,7 +66,11 @@ def test_api_accepts_startup_token(tmp_path):
     assert response.json()["package"] == "modelforge-finetuning"
 
 
-def test_frontend_is_served_without_api_token(tmp_path):
+def test_frontend_is_served_without_api_token(tmp_path, monkeypatch):
+    dist = tmp_path / "frontend_dist"
+    dist.mkdir()
+    (dist / "index.html").write_text("<title>ModelForge</title>", encoding="utf-8")
+    monkeypatch.setattr("web.app.frontend_dist_path", lambda: dist)
     client = make_client(tmp_path)
 
     response = client.get("/app")
