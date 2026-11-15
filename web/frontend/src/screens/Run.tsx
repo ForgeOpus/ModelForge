@@ -448,7 +448,7 @@ function Console({
           shown.map((e, i) => (
             <div key={i} className="flex gap-3 border-b border-line px-3.5 py-1.5 last:border-b-0">
               <time className="shrink-0 text-faint">
-                {e.ts ? new Date(e.ts > 1e12 ? e.ts : e.ts * 1000).toLocaleTimeString() : "—"}
+                {e.ts != null ? new Date(e.ts * 1000).toLocaleTimeString() : "—"}
               </time>
               <span
                 className="w-[74px] shrink-0 text-[10px] uppercase tracking-wider"

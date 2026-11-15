@@ -45,6 +45,9 @@ const GROUPS: { heading: string; items: NavItem[] }[] = [
   },
 ];
 
+/** Every path the rail links to. The production route map must cover these. */
+export const APP_SHELL_ROUTES = GROUPS.flatMap((group) => group.items.map((item) => item.to));
+
 const TITLES: Record<string, string> = {
   "/app": "Configure a fine-tune",
   "/app/run": "Training run",
