@@ -105,11 +105,14 @@ def test_frontend_is_served_without_api_token(tmp_path, monkeypatch):
 def test_spa_fallback_serves_landing_and_workbench_routes(tmp_path, monkeypatch):
     client = _client_with_spa(tmp_path, monkeypatch)
 
+    bodies = []
     for path in SPA_ROUTES:
         response = client.get(path)
         assert response.status_code == 200, path
         assert "text/html" in response.headers["content-type"]
         assert "ModelForge" in response.text
+        bodies.append(response.text)
+    assert len(set(bodies)) == 1
 
     static = client.get("/logo.svg")
     assert static.status_code == 200

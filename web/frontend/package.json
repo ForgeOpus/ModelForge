@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run && node --test src/lib/progress.test.ts"
   },
   "dependencies": {
     "@fontsource-variable/archivo": "^5.2.5",

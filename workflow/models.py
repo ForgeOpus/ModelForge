@@ -91,4 +91,10 @@ class TrainingEvent(BaseModel):
     type: str
     message: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)
-    ts: float = Field(default_factory=time.time, description="Unix seconds the event was emitted.")
+    ts: float = Field(
+        default_factory=time.time,
+        description=(
+            "Unix timestamp in seconds, not milliseconds, from time.time(). "
+            "Clients must not treat this value as Date.now() milliseconds."
+        ),
+    )
