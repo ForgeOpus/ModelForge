@@ -24,6 +24,9 @@ def main() -> None:
             for run in jobs.ledger.list_runs():
                 print(f"{run['id']}: {run['status']} {run['model_id']} -> {run['output_dir']}")
         elif choice == "3":
+            if jobs is not None and jobs.has_active_jobs():
+                print("A training run is still active. Wait for it to finish before exiting.")
+                continue
             return
         else:
             print("Please enter 1, 2, or 3.")
