@@ -17,3 +17,6 @@ node_modules/
 web/frontend/tsconfig.tsbuildinfo
 test-results/
 web/frontend_dist/
+
+## Generated training output
+/modelforge_output/
