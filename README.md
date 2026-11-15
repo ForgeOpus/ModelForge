@@ -4,6 +4,11 @@
 [![Python](https://img.shields.io/pypi/pyversions/modelforge-finetuning)](https://pypi.org/project/modelforge-finetuning/)
 [![Docs](https://readthedocs.org/projects/modelforge-finetuning/badge/?version=latest)](https://modelforge-finetuning.readthedocs.io)
 [![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/modelforge-finetuning?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=BLUE&left_text=downloads)](https://pepy.tech/projects/modelforge-finetuning)
+
+<a href="https://www.producthunt.com/products/forgeopus?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-forgeopus" target="_blank" rel="noopener noreferrer"><img alt="ForgeOpus - Where AI masterpieces are forged. Your work, your opus. | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1080450&amp;theme=light&amp;t=1771311433851"></a>
+
+![ModelForge logo](https://github.com/user-attachments/assets/12b3545d-0e8b-4460-9291-d0786c9cb0fa)
 
 Hardware-aware fine-tuning for open models from the Hugging Face Hub, with browser, terminal and notebook interfaces.
 
