@@ -188,6 +188,30 @@ def test_wheel_build_uses_uv_when_the_environment_has_no_pip(tmp_path, monkeypat
     ]
 
 
+def test_wheel_install_does_not_reinstall_locked_dependencies(tmp_path, monkeypatch):
+    calls: list[list[str]] = []
+    wheel = tmp_path / "modelforge.whl"
+    wheel.write_bytes(b"placeholder")
+
+    monkeypatch.setattr(sys.modules[__name__], "_has_pip", lambda *_args, **_kwargs: True)
+
+    def capture(command, **_kwargs):
+        calls.append(list(command))
+
+    monkeypatch.setattr(subprocess, "check_call", capture)
+    _install_wheel(sys.executable, wheel, {})
+
+    assert calls == [[
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--no-deps",
+        "--no-cache-dir",
+        str(wheel),
+    ]]
+
+
 def test_installed_wheel_serves_frontend(tmp_path):
     """Build a wheel from a tree with no prebuilt UI, install it, and serve it."""
     source = tmp_path / "source"
