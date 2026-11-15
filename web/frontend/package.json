@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
+    "test": "node --test src/lib/progress.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

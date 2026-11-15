@@ -1,6 +1,8 @@
 # Playground inference
 
-The authenticated `POST /api/playground/infer` endpoint accepts a run ID, an optional registered checkpoint path, a context window (`1024`, `4096`, `8016`, or `32768`), and alternating user/assistant messages ending with a user message. `max_new_tokens` defaults to 256. It returns a reply or token labels. The selected window is capped by the model's known limit; input plus reserved output tokens must fit. ModelForge rejects an oversized conversation instead of dropping earlier messages.
+The canonical browser playground is session-based. It is served by `workflow.playground.PlaygroundManager` (`app.state.session_manager`), not by the one-shot inference service. The UI checks `GET /api/playground/status`, opens a model with `POST /api/playground/sessions`, closes it with `DELETE /api/playground/sessions/{session_id}`, and streams chat on the `/api/playground/{session_id}/chat` WebSocket. That manager refuses to load a model while a training job is active.
+
+`POST /api/playground/infer` remains a compatibility endpoint for clients that have not migrated. It is served only by `web.playground.Playground` (`app.state.inference_playground`) and does not share state with the session manager. The authenticated endpoint accepts a run ID, an optional registered checkpoint path, a context window (`1024`, `4096`, `8016`, or `32768`), and alternating user/assistant messages ending with a user message. `max_new_tokens` defaults to 256. It returns a reply or token labels. The selected window is capped by the model's known limit; input plus reserved output tokens must fit. ModelForge rejects an oversized conversation instead of dropping earlier messages.
 
 The browser keeps conversation text in component memory. Starting a new chat, choosing another model, or leaving the page discards it. Markdown export is initiated by the user. The server does not persist conversations or keep the model loaded between requests.
 
