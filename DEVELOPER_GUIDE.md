@@ -14,16 +14,54 @@ The key idea: **hardware-aware recommendations + automated training pipeline.**
 
 ## How to Run It
 
-Install the project with `uv` or `pip` (see `pyproject.toml` for deps), then:
+Install the project with `uv` or `pip` (see `pyproject.toml` for deps). Building or installing from a source checkout requires Node.js and npm so the browser UI can be packaged (see below). Then:
 
 ```bash
-modelforge run        # interactive fine-tuning wizard
-modelforge recommend  # show recommendations without training
-modelforge list-tasks # show available use cases
-modelforge history    # view past training runs
+modelforge run --no-browser  # browser UI at http://127.0.0.1:8000/
+modelforge cli               # optional terminal wizard
+modelforge recommend         # show recommendations without training
+modelforge list-tasks        # show available use cases
+modelforge history           # view past training runs
 ```
 
 The `modelforge` command maps to `cli/main.py:cli` (defined in `pyproject.toml`).
+
+---
+
+## Browser UI build and packaging
+
+`modelforge run` serves the SPA from `web/frontend_dist/`. That directory is generated, not committed. `/`, `/app`, and deep links such as `/app/history` all return `web/frontend_dist/index.html`. Hashed files under `assets/` and files copied from `web/frontend/public/` are served next to it.
+
+### Local development
+
+Node.js and npm must be on `PATH`. The frontend build is locked to `web/frontend/package-lock.json`.
+
+```bash
+python scripts/build_frontend.py
+# equivalent:
+cd web/frontend && npm ci && npm run build
+
+uv sync --extra dev          # or: pip install -e ".[dev]"
+modelforge run --no-browser
+```
+
+`scripts/build_frontend.py` runs `npm ci` and then `npm run build`. Vite writes the bundle to `web/frontend_dist/`. An editable install runs the same script, so `uv sync` / `pip install -e .` also produces the bundle.
+
+For UI iteration, start the API with `modelforge run --no-browser` and, in another shell, `cd web/frontend && npm run dev`. Vite serves the app on port 5173 and proxies `/api` to `http://127.0.0.1:8000`.
+
+### Wheels and releases
+
+`pip wheel .`, `python -m build`, and `uv build` run the locked frontend build before collecting package data. The wheel contains `web/frontend_dist/index.html`, every file that page references, and the public assets from `web/frontend/public/`.
+
+If Node.js or npm is missing, or if `npm ci` / `npm run build` fails, the package build exits with an error and does not produce a wheel. Installing a wheel that was already built does not require Node. Installing from a source checkout or sdist does, because that path builds the wheel.
+
+```bash
+python -m build --wheel
+pip install dist/modelforge_finetuning-*.whl
+modelforge run --no-browser
+```
+
+`tests/unit_tests/frontend_packaging_test.py` builds a wheel from a clean tree that has no prebuilt `frontend_dist`, installs that wheel in a fresh virtualenv, and requests `/`, `/app`, and `/app/history`. It fails if the bundle or a referenced asset is missing. The test needs Python 3.13, Node.js, npm, and network access for `npm ci` and the wheel's Python dependencies.
 
 ---
 
@@ -43,6 +81,10 @@ ModelForge/
 │   └── validation_models/      # Pydantic output types for recommendations
 ├── utilities/                  # Shared helpers: hardware detection, DB, enums, parallelism config
 ├── dataset_manager/            # Loads datasets from disk or HuggingFace Hub
+├── web/                        # Browser UI server and Vite frontend
+│   ├── frontend/               # React source; build with npm ci && npm run build
+│   └── frontend_dist/          # Generated bundle served by modelforge run
+├── scripts/build_frontend.py   # Locked frontend build used by packaging
 └── tests/unit_tests/           # All tests live here
 ```
 
