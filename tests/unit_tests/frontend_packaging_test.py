@@ -76,6 +76,7 @@ def _copy_clean_source(destination: Path) -> None:
             "venv",
             "node_modules",
             "frontend_dist",
+            "modelforge_output",
             "dist",
             "build",
             "*.egg-info",
@@ -209,6 +210,25 @@ def test_wheel_install_does_not_reinstall_locked_dependencies(tmp_path, monkeypa
         "--no-cache-dir",
         str(wheel),
     ]]
+
+
+def test_editable_build_ignores_stale_frontend_packages(tmp_path):
+    """npm ci replaces node_modules after setuptools discovers Python packages."""
+    source = tmp_path / "source"
+    _copy_clean_source(source)
+    stale = source / "web" / "frontend" / "node_modules" / "@floating-ui" / "old-package"
+    stale.mkdir(parents=True)
+    wheel_dir = tmp_path / "editable"
+    wheel_dir.mkdir()
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    subprocess.check_call(
+        [_python313(), "-c", "import setuptools.build_meta as b, sys; b.build_editable(sys.argv[1])", str(wheel_dir)],
+        cwd=source,
+        env=env,
+    )
+    assert list(wheel_dir.glob("*.whl"))
+    assert (source / "web" / "frontend_dist" / "index.html").is_file()
 
 
 def test_installed_wheel_serves_frontend(tmp_path):
