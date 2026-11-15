@@ -13,6 +13,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import signal
 import socket
 import subprocess
@@ -137,7 +138,7 @@ def assert_running_app() -> None:
     port = _free_port()
     token = "ci-smoke-token"
     command = [
-        "modelforge",
+        _console_script("modelforge"),
         "run",
         "--no-browser",
         "--host",
