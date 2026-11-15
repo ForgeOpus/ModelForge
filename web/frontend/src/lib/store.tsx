@@ -59,6 +59,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       else throw sys.reason;
       if (hw.status === "fulfilled") setHardware(hw.value);
       if (runList.status === "fulfilled") setRuns(runList.value);
+      setUnauthorised(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.friendly : String(err));
       setUnauthorised(err instanceof ApiError && (err.status === 401 || err.status === 403));
