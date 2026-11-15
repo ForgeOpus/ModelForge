@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools"]
+requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -54,10 +54,13 @@ where = ["."]
 include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_strategies*", "recommendation_engine*", "workflow*", "web*", "notebook_cli*"]
 
 [tool.setuptools]
-include-package-data = true
+# Frontend source is listed in MANIFEST.in so sdists can run the npm build.
+# The wheel's UI files are added by setup.py after that build, not via the manifest.
+include-package-data = false
 
 [tool.setuptools.package-data]
-web = ["frontend_dist/index.html", "frontend_dist/*.svg", "frontend_dist/*.ico", "frontend_dist/*.png", "frontend_dist/*.jpg", "frontend_dist/assets/*", "frontend_dist/landing-mock/*"]
+# setup.py replaces this with the files produced by `npm ci && npm run build`.
+web = ["frontend_dist/**/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
