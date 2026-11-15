@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "lucide-react": "^0.555.0",
@@ -15,11 +16,14 @@
     "react-router-dom": "^7.9.1"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.10.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^31.0.1",
     "typescript": "^5.9.3",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "vitest": "^5.1.0"
   }
 }
