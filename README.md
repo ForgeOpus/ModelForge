@@ -1,20 +1,85 @@
 # ModelForge
 
-Hardware-aware fine-tuning utility with browser, terminal, and notebook interfaces.
+[![PyPI](https://img.shields.io/pypi/v/modelforge-finetuning)](https://pypi.org/project/modelforge-finetuning/)
+[![Python](https://img.shields.io/pypi/pyversions/modelforge-finetuning)](https://pypi.org/project/modelforge-finetuning/)
+[![Docs](https://readthedocs.org/projects/modelforge-finetuning/badge/?version=latest)](https://modelforge-finetuning.readthedocs.io)
+[![License](https://img.shields.io/badge/license-BSD--3--Clause-blue)](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE)
 
-## Browser UI
+Hardware-aware fine-tuning for open models from the Hugging Face Hub, with browser, terminal and notebook interfaces.
 
-`modelforge run` serves the UI from `web/frontend_dist/`. That directory is not committed. Source checkouts and wheel builds create it with the locked frontend build:
+ModelForge reads your GPUs, works out how large a model fits, picks a training recipe for your goal, and runs it while you watch the loss come down. It shows its reasoning before anything starts, so you don't find out at step 40 that the run doesn't fit in memory.
+
+## Features
+
+- **Hardware-aware planning.** Total VRAM, the strategy's memory overhead and a per-parameter cost set a ceiling on model size. ModelForge picks full fine-tuning, LoRA or QLoRA (8-bit or 4-bit) to match.
+- **A recipe for each goal.** Supervised fine-tuning (SFT), preference training (DPO) and reinforcement training (GRPO), plus native trainers for summarization and extractive QA.
+- **Model recommendations.** Searches the Hub for popular models of the right type that fit your hardware, or validates any model ID you enter.
+- **Multi-GPU.** Data parallel by default, switching to FSDP automatically when a full fine-tune is too large for one card.
+- **Live runs.** Streamed training logs, checkpoints you can resume from, and TensorBoard logging.
+- **Playground.** Chat with a finished model or any checkpoint in the browser, even while another run is training.
+
+## Install
+
+ModelForge needs Python 3.13 or newer. Real training needs an NVIDIA GPU with CUDA. Apple Silicon (MPS) and CPU-only machines work, but only with small models.
 
 ```bash
-python scripts/build_frontend.py
-# or, from web/frontend: npm ci && npm run build
+pip install modelforge-finetuning
+
+# Optional extras: the terminal wizard, and Liger kernels for CUDA
+pip install "modelforge-finetuning[cli,gpu]"
 ```
 
-`pip wheel .`, `python -m build`, and `uv build` run `npm ci` and `npm run build` automatically. The build fails if Node.js/npm is missing or the frontend build fails, so a wheel is not published without a UI. Installing an already-built wheel does not require Node.
+Per-OS instructions, including PyTorch with CUDA, are in the [installation guides](https://modelforge-finetuning.readthedocs.io/en/latest/installation/linux/).
+
+## Quick start
 
 ```bash
-modelforge run --no-browser
+modelforge run
 ```
 
-`/`, `/app`, and SPA deep links such as `/app/history` return `index.html`. See `DEVELOPER_GUIDE.md` for the local workflow and packaging smoke test.
+This starts the server and opens the browser console. The link it prints includes a one-time token that connects your browser. On a remote machine, use `modelforge run --no-browser --host 127.0.0.1` and connect through an SSH tunnel.
+
+For gated models such as Llama, accept the licence on the model's Hub page, then log in once with `hf auth login`.
+
+| Interface | Command | Best for |
+|---|---|---|
+| Browser console | `modelforge run` | Most people |
+| Terminal wizard | `modelforge cli` | Headless servers over SSH (needs `[cli]`) |
+| Notebook | `modelforge-nb` | Jupyter and Colab |
+
+The [Quick Start guide](https://modelforge-finetuning.readthedocs.io/en/latest/getting-started/quickstart/) walks through a first run.
+
+## Documentation
+
+Full documentation is at **[modelforge-finetuning.readthedocs.io](https://modelforge-finetuning.readthedocs.io)**. A shorter version ships inside the app at `/app/docs`.
+
+- [What's new in v4 and migrating from v3](https://modelforge-finetuning.readthedocs.io/en/latest/getting-started/whats-new/)
+- [Dataset formats](https://modelforge-finetuning.readthedocs.io/en/latest/configuration/dataset-formats/)
+- [How planning works](https://modelforge-finetuning.readthedocs.io/en/latest/configuration/configuration-guide/)
+- [Training strategies](https://modelforge-finetuning.readthedocs.io/en/latest/strategies/overview/)
+- [REST API](https://modelforge-finetuning.readthedocs.io/en/latest/api-reference/rest-api/)
+- [Troubleshooting](https://modelforge-finetuning.readthedocs.io/en/latest/troubleshooting/common-issues/)
+
+## Running from source
+
+Building or installing from a source checkout needs Node.js and npm, because the browser UI is compiled into `web/frontend_dist/`. That directory isn't committed.
+
+```bash
+git clone https://github.com/ForgeOpus/ModelForge.git
+cd ModelForge
+uv sync --extra dev
+python scripts/build_frontend.py   # or, from web/frontend: npm ci && npm run build
+uv run modelforge run --no-browser
+```
+
+`pip wheel .`, `python -m build` and `uv build` run the frontend build automatically, and fail if Node.js is missing, so a wheel is never published without a UI. Installing an already-built wheel doesn't need Node.
+
+See the [development guide](https://modelforge-finetuning.readthedocs.io/en/latest/contributing/development/) and [DEVELOPER_GUIDE.md](https://github.com/ForgeOpus/ModelForge/blob/main/DEVELOPER_GUIDE.md) for the codebase tour, tests and the release process.
+
+## Contributing
+
+Contributions are welcome. Read the [contributing guide](https://modelforge-finetuning.readthedocs.io/en/latest/contributing/contributing/) and the [code of conduct](https://github.com/ForgeOpus/ModelForge/blob/main/CODE_OF_CONDUCT.md), and report bugs or request features through [GitHub issues](https://github.com/ForgeOpus/ModelForge/issues).
+
+## License
+
+ModelForge is released under the [BSD 3-Clause License](https://github.com/ForgeOpus/ModelForge/blob/main/LICENSE).
