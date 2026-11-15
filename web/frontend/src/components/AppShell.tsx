@@ -20,6 +20,16 @@ interface NavItem {
   icon: LucideIcon;
 }
 
+export const APP_SHELL_ROUTES = [
+  "/app",
+  "/app/run",
+  "/app/history",
+  "/app/models",
+  "/app/playground",
+  "/app/system",
+  "/app/docs",
+] as const;
+
 const GROUPS: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Train",
