@@ -118,6 +118,21 @@ def assert_installed_package() -> Path:
     return dist
 
 
+def _console_script(name: str) -> str:
+    """Find an installed entry point without requiring the venv to be activated."""
+    suffix = ".exe" if os.name == "nt" else ""
+    candidate = Path(sys.executable).resolve().parent / f"{name}{suffix}"
+    if candidate.is_file():
+        return str(candidate)
+    found = shutil.which(name)
+    if found:
+        return found
+    raise SystemExit(
+        f"Console script {name!r} was not found next to {sys.executable} or on PATH. "
+        "Run this smoke test with the Python from the environment where the wheel was installed."
+    )
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -214,19 +229,21 @@ def assert_running_app() -> None:
 
 
 def assert_cli_entry_points() -> None:
-    help_result = subprocess.run(["modelforge", "--help"], check=False, text=True, capture_output=True)
+    modelforge = _console_script("modelforge")
+    notebook_cli = _console_script("modelforge-nb")
+    help_result = subprocess.run([modelforge, "--help"], check=False, text=True, capture_output=True)
     if help_result.returncode != 0 or "usage: modelforge" not in help_result.stdout:
         raise SystemExit(f"modelforge --help failed:\n{help_result.stdout}\n{help_result.stderr}")
 
-    tasks = subprocess.run(["modelforge", "list-tasks"], check=False, text=True, capture_output=True)
+    tasks = subprocess.run([modelforge, "list-tasks"], check=False, text=True, capture_output=True)
     if tasks.returncode != 0 or not tasks.stdout.strip():
         raise SystemExit(f"modelforge list-tasks failed:\n{tasks.stdout}\n{tasks.stderr}")
 
-    history = subprocess.run(["modelforge", "history"], check=False, text=True, capture_output=True)
+    history = subprocess.run([modelforge, "history"], check=False, text=True, capture_output=True)
     if history.returncode != 0:
         raise SystemExit(f"modelforge history failed:\n{history.stdout}\n{history.stderr}")
 
-    notebook = subprocess.run(["modelforge-nb"], input="3\n", check=False, text=True, capture_output=True)
+    notebook = subprocess.run([notebook_cli], input="3\n", check=False, text=True, capture_output=True)
     if notebook.returncode != 0:
         raise SystemExit(f"modelforge-nb failed:\n{notebook.stdout}\n{notebook.stderr}")
 

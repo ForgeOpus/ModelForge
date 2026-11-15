@@ -100,6 +100,88 @@ def _referenced_assets(html: str) -> list[str]:
     return refs
 
 
+def _has_pip(python: str, env: dict[str, str]) -> bool:
+    return (
+        subprocess.run(
+            [python, "-m", "pip", "--version"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+def _build_wheel(source: Path, wheel_dir: Path, python: str, env: dict[str, str]) -> None:
+    """Build a wheel. uv environments have no pip, so fall back to ``uv build``."""
+    if _has_pip(python, env):
+        subprocess.check_call(
+            [
+                python,
+                "-m",
+                "pip",
+                "wheel",
+                "--no-deps",
+                "--no-cache-dir",
+                "--wheel-dir",
+                str(wheel_dir),
+                str(source),
+            ],
+            cwd=source,
+            env=env,
+        )
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        raise AssertionError(
+            f"{python} has no pip module, and uv is not on PATH. "
+            "uv-created environments do not include pip."
+        )
+    subprocess.check_call(
+        [uv, "build", "--python", python, "--wheel", "--out-dir", str(wheel_dir)],
+        cwd=source,
+        env=env,
+    )
+
+
+def _install_wheel(python: str, wheel: Path, env: dict[str, str]) -> None:
+    if _has_pip(python, env):
+        subprocess.check_call(
+            [python, "-m", "pip", "install", "--no-cache-dir", str(wheel)],
+            env=env,
+        )
+        return
+    uv = shutil.which("uv")
+    if uv is None:
+        raise AssertionError(
+            f"{python} has no pip module, and uv is not on PATH. "
+            "Cannot install the wheel into the clean environment."
+        )
+    subprocess.check_call(
+        [uv, "pip", "install", "--python", python, str(wheel)],
+        env=env,
+    )
+
+
+def test_wheel_build_uses_uv_when_the_environment_has_no_pip(tmp_path, monkeypatch):
+    calls: list[list[str]] = []
+
+    monkeypatch.setattr(sys.modules[__name__], "_has_pip", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(shutil, "which", lambda name: "/usr/bin/uv" if name == "uv" else None)
+
+    def capture(command, **_kwargs):
+        calls.append(list(command))
+
+    monkeypatch.setattr(subprocess, "check_call", capture)
+    source = tmp_path / "source"
+    source.mkdir()
+    _build_wheel(source, tmp_path / "wheels", sys.executable, {})
+
+    assert calls == [
+        ["/usr/bin/uv", "build", "--python", sys.executable, "--wheel", "--out-dir", str(tmp_path / "wheels")]
+    ]
+
+
 def test_installed_wheel_serves_frontend(tmp_path):
     """Build a wheel from a tree with no prebuilt UI, install it, and serve it."""
     source = tmp_path / "source"
@@ -110,21 +192,7 @@ def test_installed_wheel_serves_frontend(tmp_path):
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
 
-    subprocess.check_call(
-        [
-            python,
-            "-m",
-            "pip",
-            "wheel",
-            "--no-deps",
-            "--no-cache-dir",
-            "--wheel-dir",
-            str(wheel_dir),
-            str(source),
-        ],
-        cwd=source,
-        env=env,
-    )
+    _build_wheel(source, wheel_dir, python, env)
     wheels = list(wheel_dir.glob("*.whl"))
     assert len(wheels) == 1, wheels
     wheel = wheels[0]
@@ -149,10 +217,7 @@ def test_installed_wheel_serves_frontend(tmp_path):
     _create_venv(python, venv, env)
     bindir = venv / ("Scripts" if os.name == "nt" else "bin")
     venv_python = bindir / ("python.exe" if os.name == "nt" else "python")
-    subprocess.check_call(
-        [str(venv_python), "-m", "pip", "install", "--no-cache-dir", str(wheel)],
-        env=env,
-    )
+    _install_wheel(str(venv_python), wheel, env)
     modelforge = bindir / ("modelforge.exe" if os.name == "nt" else "modelforge")
     assert modelforge.is_file()
 
