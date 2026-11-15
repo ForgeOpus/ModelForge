@@ -104,6 +104,30 @@ def test_smoke_finds_console_scripts_beside_the_interpreter(tmp_path, monkeypatc
         smoke._console_script("modelforge-nb")
 
 
+def test_smoke_finds_scripts_beside_a_symlinked_venv_interpreter(tmp_path, monkeypatch):
+    smoke = _load_smoke()
+    global_bin = tmp_path / "global" / "bin"
+    global_bin.mkdir(parents=True)
+    target = global_bin / "python"
+    target.write_text("", encoding="utf-8")
+
+    venv_bin = tmp_path / "venv" / "bin"
+    venv_bin.mkdir(parents=True)
+    interpreter = venv_bin / "python"
+    try:
+        interpreter.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks are unavailable on this platform")
+    script = venv_bin / "modelforge"
+    script.write_text("", encoding="utf-8")
+    script.chmod(0o755)
+
+    monkeypatch.setattr(smoke.sys, "executable", str(interpreter))
+    monkeypatch.setattr(smoke.shutil, "which", lambda _name: None)
+
+    assert smoke._console_script("modelforge") == str(script)
+
+
 def test_frontend_bundle_requires_referenced_assets(tmp_path):
     smoke = _load_smoke()
     (tmp_path / "index.html").write_text(
