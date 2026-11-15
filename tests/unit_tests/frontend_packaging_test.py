@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import site
 import socket
 import subprocess
 import sys
@@ -145,9 +146,14 @@ def _build_wheel(source: Path, wheel_dir: Path, python: str, env: dict[str, str]
 
 
 def _install_wheel(python: str, wheel: Path, env: dict[str, str]) -> None:
+    """Install only the project wheel; CI already has its locked dependencies.
+
+    Reinstalling the full PyTorch/CUDA dependency graph in a nested environment
+    can exhaust a GitHub runner's disk before the packaging assertions run.
+    """
     if _has_pip(python, env):
         subprocess.check_call(
-            [python, "-m", "pip", "install", "--no-cache-dir", str(wheel)],
+            [python, "-m", "pip", "install", "--no-deps", "--no-cache-dir", str(wheel)],
             env=env,
         )
         return
@@ -158,7 +164,7 @@ def _install_wheel(python: str, wheel: Path, env: dict[str, str]) -> None:
             "Cannot install the wheel into the clean environment."
         )
     subprocess.check_call(
-        [uv, "pip", "install", "--python", python, str(wheel)],
+        [uv, "pip", "install", "--python", python, "--no-deps", str(wheel)],
         env=env,
     )
 
@@ -218,6 +224,12 @@ def test_installed_wheel_serves_frontend(tmp_path):
     bindir = venv / ("Scripts" if os.name == "nt" else "bin")
     venv_python = bindir / ("python.exe" if os.name == "nt" else "python")
     _install_wheel(str(venv_python), wheel, env)
+    # Reuse the dependencies from the pytest environment without reinstalling
+    # the multi-gigabyte ML/CUDA graph. The project itself still comes from the
+    # wheel installed in the isolated venv.
+    dependency_paths = [path for path in site.getsitepackages() if Path(path).is_dir()]
+    assert dependency_paths
+    env["PYTHONPATH"] = os.pathsep.join(dependency_paths)
     modelforge = bindir / ("modelforge.exe" if os.name == "nt" else "modelforge")
     assert modelforge.is_file()
 
