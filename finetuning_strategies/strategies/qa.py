@@ -65,9 +65,9 @@ class ExtractiveQA(FinetuningStrategy):
         max_length = 256 if raw_vram < 12 else 384
         bf16, fp16 = training_precision(hardware)
         if peft_tier == "qlora_4bit":
-            model_init_kwargs = {"load_in_4bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True}}
         elif peft_tier == "qlora_8bit":
-            model_init_kwargs = {"load_in_8bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_8bit": True}}
         else:
             model_init_kwargs = {}
         if raw_vram == 0:
@@ -179,7 +179,7 @@ class ExtractiveQA(FinetuningStrategy):
         trainer = Trainer(model=model, args=args, train_dataset=dataset,
                           processing_class=tokenizer, data_collator=DataCollatorWithPadding(tokenizer),
                           callbacks=callbacks)
-        self.launch_tensorboard(args)
+        self.launch_tensorboard(args, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         trainer.save_model(output_dir)
         return trainer

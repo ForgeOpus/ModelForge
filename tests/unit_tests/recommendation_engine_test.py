@@ -439,6 +439,17 @@ class TestRecommend:
 # ---------------------------------------------------------------------------
 
 class TestQueryHub:
+    def test_excludes_internal_testing_and_random_models(self):
+        candidates = [
+            self._make_hub_model("trl-internal-testing/tiny-Qwen3ForCausalLM", 2_457_640, 9_000_000),
+            self._make_hub_model("other/tiny-random-gpt2", 100_000, 8_000_000),
+            self._make_hub_model("org/pretrained-instruct", 135_000_000, 1000),
+        ]
+        with patch("utilities.recommendation_engine.HfApi") as api:
+            api.return_value.list_models.return_value = candidates
+            results, _, _ = RecommendationEngine._query_hub("text-generation", 300_000_000, 5, 300_000_000)
+        assert [model.model_id for model in results] == ["org/pretrained-instruct"]
+
     def _make_hub_model(self, model_id, total_params, downloads):
         m = MagicMock()
         m.id = model_id

@@ -207,9 +207,9 @@ class GRPO(FinetuningStrategy):
         elif peft_tier == "lora_bf16":
             model_init_kwargs = {}
         elif peft_tier == "qlora_8bit":
-            model_init_kwargs = {"load_in_8bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_8bit": True}}
         elif peft_tier == "qlora_4bit":
-            model_init_kwargs = {"load_in_4bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True}}
         else:
             raise ValueError(f"Unknown peft_tier '{peft_tier}'.")
 
@@ -267,7 +267,10 @@ class GRPO(FinetuningStrategy):
         model = provider.load_model(
             model_name, task_class.model_class, **(config.model_init_kwargs or {})
         )
-        tokenizer = provider.load_tokenizer(model_name)
+        from utilities.chat_format import ensure_chat_template, normalize_prompts, map_evaluation
+        tokenizer = ensure_chat_template(provider.load_tokenizer(model_name))
+        dataset = dataset.map(normalize_prompts)
+        eval_dataset = map_evaluation(eval_dataset, normalize_prompts)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
             tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -282,10 +285,11 @@ class GRPO(FinetuningStrategy):
             callbacks=callbacks,
             peft_config=peft_config,
         )
-        self.launch_tensorboard(config)
+        self.launch_tensorboard(config, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         if peft_approach == "full_finetune":
             trainer.save_model(output_dir)
         else:
             trainer.model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
         return trainer

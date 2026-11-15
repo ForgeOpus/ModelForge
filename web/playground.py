@@ -197,12 +197,7 @@ class Playground:
             token_limit = getattr(tokenizer, "model_max_length", None)
             limits = [v for v in (model_limit, token_limit) if isinstance(v, int) and 0 < v < 10_000_000]
             context_limit = min([request.context_window, *limits])
-            if task == "token_classification":
-                prompt = request.messages[-1].content
-            elif getattr(tokenizer, "chat_template", None):
-                prompt = tokenizer.apply_chat_template([m.model_dump() for m in request.messages], tokenize=False, add_generation_prompt=True)
-            else:
-                prompt = "\n\n".join(f"{m.role.title()}: {m.content}" for m in request.messages) + "\n\nAssistant:"
+            prompt = request.messages[-1].content
             encoding = None
             if task == "question_answering":
                 from utilities.qa_inference import parse_question, decode_answer
@@ -212,6 +207,9 @@ class Playground:
                     raise PlaygroundError(str(exc), 422) from exc
                 encoding = tokenizer(question, context, return_tensors="pt", return_offsets_mapping=True, truncation=False)
                 inputs = {key: value for key, value in encoding.items() if key != "offset_mapping"}
+            elif task == "causal_language_modeling":
+                from utilities.chat_format import chat_inputs
+                inputs = chat_inputs(tokenizer, [m.model_dump() for m in request.messages], truncation=False)
             else:
                 inputs = tokenizer(prompt, return_tensors="pt", truncation=False)
             input_tokens = inputs["input_ids"].shape[-1]
@@ -224,7 +222,13 @@ class Playground:
                 raise PlaygroundError(f"This conversation needs {needed} tokens, exceeding the {context_limit}-token limit. Start a new chat or choose a larger supported context.", 422)
             offload = tempfile.TemporaryDirectory(prefix="modelforge-offload-", dir=offload_root) if uses_disk else None
             offload_path = offload.name if offload else None
-            model = cls.from_pretrained(str(path) if adapter else source, trust_remote_code=False, torch_dtype=torch.float32, device_map=device_map, offload_folder=offload_path)
+            # Load the declared base explicitly. Reused output folders can
+            # contain a stale full-model config/weights alongside a new adapter;
+            # passing that mixed directory to AutoModel can load the old model.
+            model = cls.from_pretrained(source, config=config, trust_remote_code=False, torch_dtype=torch.float32, device_map=device_map, offload_folder=offload_path)
+            if adapter:
+                model.load_adapter(str(path), is_trainable=False,
+                                   device_map=device_map, disk_offload_folder=offload_path)
             model.eval()
             placement, device = placement_description(getattr(model, "hf_device_map", device_map))
             inputs = {key: value.to(device) for key, value in inputs.items()}

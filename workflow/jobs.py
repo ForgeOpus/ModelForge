@@ -14,7 +14,7 @@ from utilities.database_manager import WebRunLedger
 from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.parallelism_validator import validate_parallelism_compatibility
 from utilities.recommendation_engine import RecommendationEngine
-from utilities.tensorboard import default_log_dir
+from utilities.tensorboard import default_log_dir, isolated_log_dir
 from workflow.models import RecommendationRequest, TrainingEvent, TrainingRunRequest
 from workflow.service import WorkflowService
 from workflow.training import assemble_and_train
@@ -127,6 +127,7 @@ class TrainingJobManager:
                     objective=request.objective,
                     gpu_indices=request.gpu_indices,
                     n=5,
+                    model_id=request.model_id,
                 )
             )
         )
@@ -155,11 +156,12 @@ class TrainingJobManager:
                         raise ValueError("Cannot safely configure this model without valid parameter metadata.")
                     chosen = RecommendedModel(model_id=request.model_id, num_parameters=result["num_parameters"], downloads=0)
                 hardware, _ = self.workflow.select_gpus(self.workflow.detect_hardware(), request.gpu_indices)
-                ceiling = recommendation.vram_estimate.max_params_by_tier.get(recommendation.peft_approach, 0) if recommendation.vram_estimate else 0
-                if not ceiling or chosen.num_parameters > ceiling:
-                    raise ValueError("Selected model exceeds the recommendation's memory budget.")
-                config, peft = strategy_cls.build_recommended_config(recommendation.peft_approach, hardware, chosen)
-                recommendation = recommendation.model_copy(update={"strategy_config": config, "peft_config": peft})
+                recommendation = RecommendationEngine.recommend(
+                    request.use_case_slug, request.objective, hardware, selected_model=chosen,
+                )
+                if request.parallelism_strategy_override is not None:
+                    recommendation = recommendation.model_copy(update={"parallelism_strategy": request.parallelism_strategy_override})
+                validate_parallelism_compatibility(recommendation)
         tensorboard_log_dir = request.tensorboard_log_dir if request.tensorboard else None
         if request.tensorboard and tensorboard_log_dir is None:
             tensorboard_log_dir = default_log_dir(request.output_dir)
@@ -172,8 +174,11 @@ class TrainingJobManager:
             tensorboard_log_dir=tensorboard_log_dir,
             config_json=recommendation.model_dump_json(),
         )
+        if tensorboard_log_dir:
+            tensorboard_log_dir = isolated_log_dir(tensorboard_log_dir, run_id)
         self.ledger.update_run(
             run_id,
+            tensorboard_log_dir=tensorboard_log_dir,
             launch_json=json.dumps({"gpu_indices": request.gpu_indices, "dataset_remote": request.dataset_remote}),
             task_slug=recommendation.task_slug,
             strategy=recommendation.strategy_slug,

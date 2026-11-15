@@ -15,4 +15,5 @@ build/
 ## Frontend
 node_modules/
 web/frontend/tsconfig.tsbuildinfo
+test-results/
 web/frontend_dist/

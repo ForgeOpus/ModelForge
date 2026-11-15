@@ -114,7 +114,10 @@ def create_app(
 
     @app.post("/api/recommendations", dependencies=[require_auth])
     async def recommendations(request: RecommendationRequest):
-        recommendation = workflow.recommend(request)
+        try:
+            recommendation = workflow.recommend(request)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return recommendation.model_dump()
 
     @app.post("/api/datasets/validate", dependencies=[require_auth])

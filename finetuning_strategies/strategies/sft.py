@@ -300,11 +300,11 @@ class SFT(FinetuningStrategy):
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_8bit":
-            model_init_kwargs = {"load_in_8bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_8bit": True}}
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_4bit":
-            model_init_kwargs = {"load_in_4bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True}}
             bf16 = True
             fp16 = False
         else:
@@ -396,6 +396,13 @@ class SFT(FinetuningStrategy):
                 eval_dataset, callbacks, resume_from_checkpoint,
             )
 
+        from utilities.chat_format import ensure_chat_template, normalize_supervised, map_evaluation
+        if formatting_func is None and "text" not in dataset.column_names:
+            ensure_chat_template(tokenizer)
+            if "prompt" in dataset.column_names and "completion" in dataset.column_names:
+                dataset = dataset.map(normalize_supervised)
+                eval_dataset = map_evaluation(eval_dataset, normalize_supervised)
+
         trainer = SFTTrainer(
             model=model,
             args=sft_config,
@@ -408,7 +415,7 @@ class SFT(FinetuningStrategy):
             formatting_func=formatting_func,
         )
 
-        self.launch_tensorboard(sft_config)
+        self.launch_tensorboard(sft_config, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
@@ -416,6 +423,7 @@ class SFT(FinetuningStrategy):
         else:
             trainer.save_model(output_dir)
 
+        tokenizer.save_pretrained(output_dir)
         return trainer
 
     def _finetune_seq2seq(
@@ -504,7 +512,8 @@ class SFT(FinetuningStrategy):
             data_collator=DataCollatorForSeq2Seq(tokenizer, model=model),
             callbacks=callbacks,
         )
-        self.launch_tensorboard(args)
+        self.launch_tensorboard(args, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         trainer.save_model(output_dir)
+        tokenizer.save_pretrained(output_dir)
         return trainer

@@ -158,14 +158,11 @@ class PlaygroundSession:
                 yield decode_answer(result, encoding, context)
                 return
 
-            try:
-                prompt = tokenizer.apply_chat_template(
-                    messages, tokenize=False, add_generation_prompt=True
-                )
-            except Exception:  # noqa: BLE001 - base models often have no chat template
-                prompt = "\n\n".join(m["content"] for m in messages) + "\n"
-
-            inputs = tokenizer(prompt, return_tensors="pt").to(self._model.device)
+            if self._task_slug == "causal_language_modeling":
+                from utilities.chat_format import chat_inputs
+                inputs = chat_inputs(tokenizer, messages).to(self._model.device)
+            else:
+                inputs = tokenizer(messages[-1]["content"], return_tensors="pt").to(self._model.device)
             if self._task_slug == "token_classification":
                 with torch.no_grad():
                     logits = self._model(**inputs).logits[0]

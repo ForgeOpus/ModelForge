@@ -151,11 +151,20 @@ class WorkflowService:
     def recommend(self, request: RecommendationRequest):
         hardware = self.detect_hardware()
         filtered_hardware, _ = self.select_gpus(hardware, request.gpu_indices)
+        selected_model = None
+        if request.model_id:
+            from recommendation_engine.validation_models.recommendation import RecommendedModel
+            _, _, task_slug, _, _ = RecommendationEngine._resolve_use_case_and_strategy(request.use_case_slug, request.objective)
+            result = self.validate_model_id(request.model_id, task_slug)
+            if not result["valid"] or not result.get("num_parameters"):
+                raise ValueError(result.get("error") or "Cannot configure this model without parameter metadata.")
+            selected_model = RecommendedModel(model_id=request.model_id, num_parameters=result["num_parameters"], downloads=0)
         recommendation = RecommendationEngine.recommend(
             request.use_case_slug,
             request.objective,
             filtered_hardware,
             n=request.n,
+            **({"selected_model": selected_model} if selected_model is not None else {}),
         )
         validate_parallelism_compatibility(recommendation)
         return recommendation
