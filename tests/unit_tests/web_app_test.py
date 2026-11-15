@@ -75,6 +75,20 @@ def test_frontend_is_served_without_api_token(tmp_path):
     assert "ModelForge" in response.text
 
 
+def test_spa_deep_link_falls_back_to_index(tmp_path):
+    client = make_client(tmp_path)
+
+    app = client.get("/app")
+    deep_link = client.get("/app/history")
+    root = client.get("/")
+
+    assert app.status_code == 200
+    assert deep_link.status_code == 200
+    assert root.status_code == 200
+    assert deep_link.text == app.text == root.text
+    assert "ModelForge" in deep_link.text
+
+
 def test_run_errors_are_http_responses(tmp_path):
     client = make_client(tmp_path)
 
