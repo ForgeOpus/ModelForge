@@ -52,6 +52,7 @@ modelforge-nb = "notebook_cli.main:main"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["cli*", "providers*", "utilities*", "dataset_manager*", "finetuning_strategies*", "recommendation_engine*", "workflow*", "web*", "notebook_cli*"]
+exclude = ["web.frontend", "web.frontend.*", "web.frontend_dist", "web.frontend_dist.*"]
 
 [tool.setuptools]
 # Frontend source is listed in MANIFEST.in so sdists can run the npm build.
