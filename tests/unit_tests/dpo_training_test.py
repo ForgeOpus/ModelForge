@@ -23,3 +23,29 @@ def test_real_preference_training_saves_model(tmp_path, explicit_prompt):
     trainer = strategy.finetune("tiny", Dataset.from_dict(rows), "causal_language_modeling", provider, "full_finetune", str(tmp_path))
     assert trainer.state.global_step == 1
     assert (tmp_path / "config.json").is_file()
+    from transformers import AutoTokenizer
+    saved = AutoTokenizer.from_pretrained(tmp_path)
+    assert saved.chat_template == fast.chat_template
+    assert trainer.train_dataset[0]["prompt"][0]["role"] == "user"
+    assert trainer.train_dataset[0]["chosen"][0]["role"] == "assistant"
+
+
+def test_mixed_text_prompt_and_conversational_pairs_are_normalized_for_trl():
+    """Datasets such as UltraFeedback include a text prompt and full chats."""
+    dataset = Dataset.from_dict({
+        "prompt": ["What color is the sky?"],
+        "chosen": [[
+            {"role": "user", "content": "What color is the sky?"},
+            {"role": "assistant", "content": "Blue."},
+        ]],
+        "rejected": [[
+            {"role": "user", "content": "What color is the sky?"},
+            {"role": "assistant", "content": "Green."},
+        ]],
+    })
+
+    normalized = DPO.normalize_conversational_pairs(dataset)
+
+    assert normalized[0]["prompt"] == [{"role": "user", "content": "What color is the sky?"}]
+    assert normalized[0]["chosen"] == [{"role": "assistant", "content": "Blue."}]
+    assert normalized[0]["rejected"] == [{"role": "assistant", "content": "Green."}]

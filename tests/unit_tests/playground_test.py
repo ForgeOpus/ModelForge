@@ -49,6 +49,11 @@ def tiny_model(tmp_path):
 
 
 def test_actual_cpu_generation_and_model_context_limit(tiny_model, monkeypatch):
+    # Exercise the CPU placement branch explicitly; the CI/desktop host may
+    # legitimately have a CUDA device available.
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     monkeypatch.setattr("psutil.virtual_memory", lambda: SimpleNamespace(available=128 * 1024**3))
     ledger = Ledger(tiny_model)
     service = Playground(Jobs(ledger), ledger)
@@ -266,3 +271,28 @@ def test_automatic_disk_placement(tiny_model, tmp_path, monkeypatch):
     assert "disk" in result["device"]
     assert not list(tmp_path.glob("modelforge-offload-*"))
 
+
+
+def test_adapter_loading_ignores_stale_full_model_in_checkpoint(tiny_model, tmp_path, monkeypatch, caplog):
+    from peft import LoraConfig, TaskType, get_peft_model
+    from transformers import AutoModelForCausalLM, GPT2Config, GPT2LMHeadModel
+    monkeypatch.setattr('psutil.virtual_memory', lambda: SimpleNamespace(available=128 * 1024**3))
+    path = tmp_path / 'mixed-checkpoint'
+    # Simulate a reused checkpoint folder holding weights with incompatible
+    # dimensions, plus a newer adapter trained against the declared base.
+    GPT2LMHeadModel(GPT2Config(vocab_size=7, n_positions=64, n_embd=16, n_layer=2, n_head=1)).save_pretrained(path)
+    base = AutoModelForCausalLM.from_pretrained(tiny_model)
+    get_peft_model(base, LoraConfig(task_type=TaskType.CAUSAL_LM, r=2, lora_alpha=4, target_modules=['c_attn'])).save_pretrained(path)
+    original = AutoModelForCausalLM.from_pretrained
+    sources = []
+    def load(source, *args, **kwargs):
+        sources.append(str(source))
+        return original(source, *args, **kwargs)
+    monkeypatch.setattr(AutoModelForCausalLM, 'from_pretrained', load)
+    ledger = Ledger(path)
+    ledger.run['model_id'] = str(tiny_model)
+    result = Playground(Jobs(ledger, active=True), ledger).infer(request())
+    assert isinstance(result['reply'], str)
+    assert sources == [str(tiny_model)]
+    assert 'MISMATCH' not in caplog.text
+    assert (path / 'model.safetensors').exists()  # never repair artifacts by deleting them

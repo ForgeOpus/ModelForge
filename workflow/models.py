@@ -17,6 +17,7 @@ class GpuSelection(BaseModel):
 
 
 class RecommendationRequest(BaseModel):
+    model_id: str | None = None
     use_case_slug: str
     objective: TrainingObjective = TrainingObjective.SUPERVISED
     gpu_indices: list[int] | None = None

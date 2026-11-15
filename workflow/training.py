@@ -13,6 +13,7 @@ from recommendation_engine.validation_models.recommendation import Recommendatio
 from dataset_manager.dataset_factory import DatasetFactory
 from utilities.parallelism_strategy import ParallelismStrategy
 from utilities.fsdp_config import build_fsdp_config
+from workflow.registries import load_core_registries
 
 
 def _as_dict(config: Any) -> dict:
@@ -55,6 +56,10 @@ def assemble_and_train(
     tensorboard_log_dir: str | None = None,
     resume_from_checkpoint: str | None = None,
 ) -> str:
+    # ``assemble_and_train`` is the shared public execution boundary.  CLI,
+    # web, and notebook callers normally bootstrap registries earlier, but
+    # direct callers (including automation) must be executable too.
+    load_core_registries()
     if cuda_visible_devices:
         os.environ["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
 
@@ -78,10 +83,16 @@ def assemble_and_train(
 
     config_dict = {key: value for key, value in _as_dict(recommendation.strategy_config).items() if value is not None}
     if tensorboard_log_dir:
+        from utilities.tensorboard import isolated_log_dir, viewer_log_dir
+        # Web jobs already allocate a directory using their durable run ID.
+        # Direct CLI/notebook launches receive a unique directory here.
+        if viewer_log_dir(tensorboard_log_dir) == str(Path(tensorboard_log_dir)):
+            tensorboard_log_dir = isolated_log_dir(tensorboard_log_dir)
         Path(tensorboard_log_dir).mkdir(parents=True, exist_ok=True)
         config_dict.update({
             "report_to": ["tensorboard"],
             "logging_dir": tensorboard_log_dir,
+            "logging_first_step": True,
         })
     # FSDP is activated through the trainer's own fsdp/fsdp_config arguments so the Trainer's
     # internal Accelerator actually enables it. Guarded on num_processes >= 2 because the engine's

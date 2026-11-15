@@ -75,6 +75,13 @@ class DPO(FinetuningStrategy):
             )
 
     @staticmethod
+    def normalize_conversational_pairs(dataset: Union[Dataset, IterableDataset]):
+        """Normalize every preference row before TRL applies the model template."""
+        from utilities.chat_format import normalize_preference
+
+        return dataset.map(normalize_preference)
+
+    @staticmethod
     def apply_data_format(
         prompt: Optional[str],
         preferred_output: str,
@@ -212,11 +219,11 @@ class DPO(FinetuningStrategy):
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_8bit":
-            model_init_kwargs = {"load_in_8bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_8bit": True}}
             bf16 = True
             fp16 = False
         elif peft_tier == "qlora_4bit":
-            model_init_kwargs = {"load_in_4bit": True}
+            model_init_kwargs = {"quantization_config": {"load_in_4bit": True, "bnb_4bit_quant_type": "nf4", "bnb_4bit_use_double_quant": True}}
             bf16 = True
             fp16 = False
         else:
@@ -299,13 +306,16 @@ class DPO(FinetuningStrategy):
         resume_from_checkpoint: Optional[str] = None,
     ) -> DPOTrainer:
         self.validate_data_format(dataset)
+        dataset = self.normalize_conversational_pairs(dataset)
+        from utilities.chat_format import ensure_chat_template, map_evaluation, normalize_preference
+        eval_dataset = map_evaluation(eval_dataset, normalize_preference)
 
         dpo_config = self.config if self.config is not None else DPOConfig(output_dir=output_dir)
 
         model_init_kwargs = dpo_config.model_init_kwargs or {}
         task_class: type[FinetuningTask] = TaskModels.get_task_class(task_slug)
         model = provider.load_model(model_name, task_class.model_class, **model_init_kwargs)
-        tokenizer = provider.load_tokenizer(model_name)
+        tokenizer = ensure_chat_template(provider.load_tokenizer(model_name))
 
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
@@ -319,6 +329,12 @@ class DPO(FinetuningStrategy):
             for param in ref_model.parameters():
                 param.requires_grad = False
 
+        # The provider has already consumed these loading options. Keep the
+        # saved strategy config intact, but don't ask TRL to apply them again
+        # to an instantiated model.
+        from copy import copy
+        dpo_config = copy(dpo_config)
+        dpo_config.model_init_kwargs = None
         trainer = DPOTrainer(
             model=model,
             ref_model=ref_model,
@@ -330,7 +346,7 @@ class DPO(FinetuningStrategy):
             peft_config=peft_config,
         )
 
-        self.launch_tensorboard(dpo_config)
+        self.launch_tensorboard(dpo_config, trainer=trainer)
         trainer.train(resume_from_checkpoint=resume_from_checkpoint)
 
         if peft_approach != "full_finetune":
@@ -338,4 +354,5 @@ class DPO(FinetuningStrategy):
         else:
             trainer.save_model(output_dir)
 
+        tokenizer.save_pretrained(output_dir)
         return trainer
